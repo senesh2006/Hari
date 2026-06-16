@@ -33,6 +33,13 @@ import urllib.request
 MCP_URL = os.environ.get("KAPRUKA_MCP_URL", "https://mcp.kapruka.com/mcp")
 PROTOCOL_VERSION = "2025-03-26"
 TIMEOUT = float(os.environ.get("KAPRUKA_MCP_TIMEOUT", "30"))
+# Cloudflare bans the default "Python-urllib" agent (error 1010), so present a
+# normal browser signature.
+USER_AGENT = os.environ.get(
+    "KAPRUKA_MCP_USER_AGENT",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+)
 
 
 class MCPError(AssertionError):
@@ -90,6 +97,7 @@ def mcp_request(method: str, params: dict | None, request_id, session_id: str | 
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
+        "User-Agent": USER_AGENT,
     }
     if session_id:
         headers["Mcp-Session-Id"] = session_id
