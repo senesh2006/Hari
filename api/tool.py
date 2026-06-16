@@ -146,7 +146,7 @@ PRICE_KEYS = (
 )
 IMAGE_KEYS = (
     "image", "image_url", "imageUrl", "imageURL", "img", "thumbnail", "thumb",
-    "picture", "photo", "image_link", "imageLink",
+    "picture", "photo", "image_link", "imageLink", "images",
 )
 URL_KEYS = (
     "url", "link", "product_url", "productUrl", "href", "permalink",
@@ -166,6 +166,8 @@ def _first(d, keys):
 
 
 def _abs_url(u):
+    if isinstance(u, list):  # e.g. images: [url, ...]
+        u = u[0] if u else None
     if not isinstance(u, str) or not u:
         return u
     if u.startswith("//"):
@@ -175,6 +177,13 @@ def _abs_url(u):
     return u
 
 
+def _money(v):
+    """Kapruka returns price as {"amount", "currency"}; also accept scalars."""
+    if isinstance(v, dict):
+        return v.get("amount"), v.get("currency")
+    return v, None
+
+
 def _looks_like_product(d):
     if not isinstance(d, dict) or _first(d, NAME_KEYS) is None:
         return False
@@ -182,10 +191,11 @@ def _looks_like_product(d):
 
 
 def _normalize_product(d):
+    amount, currency_from_price = _money(_first(d, PRICE_KEYS))
     return {
         "name": _first(d, NAME_KEYS),
-        "price": _first(d, PRICE_KEYS),
-        "currency": _first(d, CURRENCY_KEYS),
+        "price": amount,
+        "currency": _first(d, CURRENCY_KEYS) or currency_from_price,
         "image": _abs_url(_first(d, IMAGE_KEYS)),
         "url": _abs_url(_first(d, URL_KEYS)),
         "description": _first(d, DESC_KEYS),

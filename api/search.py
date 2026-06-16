@@ -56,29 +56,33 @@ _TOOLS_CACHE = None
 SYSTEM_PROMPT = (
     "You are a thoughtful gift & shopping concierge for Kapruka, a Sri Lankan "
     "online store. Do NOT just search the user's literal words. First REASON "
-    "about the recipient and the occasion, then brainstorm several CONCRETE "
-    "product types that would make good gifts. For example, for a mother's "
-    "birthday think: flower bouquet, chocolate hamper, perfume, a watch, a "
-    "saree or dress, jewellery, a scented candle set, a personalized photo "
-    "frame. Then search for those concrete product types (specific nouns like "
-    "'perfume', 'flower bouquet', 'chocolate hamper', 'watch') — never search "
-    "vague phrases like 'birthday gift' or 'gifts'.\n\n"
-    "Run a few targeted searches for DIFFERENT ideas (not the same one twice), "
-    "then curate a short, VARIED selection of the best real products across "
-    "those categories. For each pick give the name, price, link, and a "
-    "one-line reason it suits the recipient.\n\n"
+    "about the recipient and the occasion, then brainstorm several DIFFERENT "
+    "concrete product types that would make good gifts. For example, for a "
+    "50-year-old mother's birthday think across categories: perfume, a flower "
+    "bouquet, a chocolate hamper, a wrist watch, a handbag, a saree, jewellery, "
+    "a scented candle set, a personalized photo frame, a tea/spa gift set.\n\n"
+    "MANDATORY search rules:\n"
+    "- Run a SEPARATE kapruka_search_products call for EACH idea, using a short "
+    "specific noun as q (e.g. q='perfume', q='wrist watch', q='handbag', "
+    "q='flower bouquet'). Do at least 4 searches covering DIFFERENT categories.\n"
+    "- NEVER search vague phrases like 'birthday gift', 'gift for mom', or "
+    "'gifts'. They return generic cakes, not a thoughtful spread.\n"
+    "- Do NOT pass a category filter unless you got the exact category name from "
+    "kapruka_list_categories — a wrong category returns zero results.\n"
+    "- Cakes are fine as ONE option, but the final list must be VARIED: do not "
+    "recommend 5 items of the same type. Aim for a mix across categories.\n\n"
+    "After searching, curate ~5 of the best real products spanning different "
+    "categories. For each give the name, price, link, and a one-line reason it "
+    "suits the recipient.\n\n"
     "Ask before guessing: if information needed to make a genuinely good "
     "recommendation is missing — such as the budget, the recipient's age or "
     "interests, the delivery city, or the occasion date — call the ask_user "
     "tool with 1-3 short, specific questions BEFORE searching. Only ask when it "
-    "would materially improve the choice; if you already have enough to choose "
-    "well, just proceed.\n\n"
-    "Rules: rely only on tool data — never invent products or prices. Never "
-    "list the same product twice (drop duplicates and near-identical items). "
-    "Only include tool parameters you actually need — never pass the string "
-    "'null' or placeholder values for optional parameters; omit them. If a "
-    "search returns nothing, don't repeat it — try a different concrete idea, a "
-    "shorter query, or browse kapruka_list_categories."
+    "would materially improve the choice; if you already have enough, proceed.\n\n"
+    "Rules: rely only on tool data — never invent products or prices. Never list "
+    "the same product twice. Only include tool parameters you actually need — "
+    "never pass the string 'null' or placeholder values; omit them. If a search "
+    "returns nothing, try a different concrete idea rather than repeating it."
 )
 
 # A synthetic tool (not part of the MCP) that lets the model pause and ask the
@@ -328,7 +332,7 @@ PRICE_KEYS = (
 )
 IMAGE_KEYS = (
     "image", "image_url", "imageUrl", "imageURL", "img", "thumbnail", "thumb",
-    "picture", "photo", "image_link", "imageLink",
+    "picture", "photo", "image_link", "imageLink", "images",
 )
 URL_KEYS = (
     "url", "link", "product_url", "productUrl", "href", "permalink",
@@ -350,6 +354,8 @@ def _first(d: dict, keys) -> object:
 
 
 def _abs_url(u):
+    if isinstance(u, list):  # e.g. images: [url, ...]
+        u = u[0] if u else None
     if not isinstance(u, str) or not u:
         return u
     if u.startswith("//"):
@@ -357,6 +363,13 @@ def _abs_url(u):
     if u.startswith("/"):
         return SITE_BASE.rstrip("/") + u
     return u
+
+
+def _money(v):
+    """Kapruka returns price as {"amount", "currency"}; also accept scalars."""
+    if isinstance(v, dict):
+        return v.get("amount"), v.get("currency")
+    return v, None
 
 
 def _looks_like_product(d: dict) -> bool:
@@ -368,10 +381,11 @@ def _looks_like_product(d: dict) -> bool:
 
 
 def _normalize_product(d: dict) -> dict:
+    amount, currency_from_price = _money(_first(d, PRICE_KEYS))
     return {
         "name": _first(d, NAME_KEYS),
-        "price": _first(d, PRICE_KEYS),
-        "currency": _first(d, CURRENCY_KEYS),
+        "price": amount,
+        "currency": _first(d, CURRENCY_KEYS) or currency_from_price,
         "image": _abs_url(_first(d, IMAGE_KEYS)),
         "url": _abs_url(_first(d, URL_KEYS)),
         "description": _first(d, DESC_KEYS),
