@@ -25,6 +25,22 @@
     .pending { background: #f59e0b22; border-color: #f59e0b; }
     pre { overflow-x: auto; background: #8881; padding: .75rem; border-radius: .5rem; }
     code { font-size: .9rem; }
+    .summary { white-space: pre-wrap; margin: .25rem 0 1rem; }
+    .grid {
+      display: grid; gap: 1rem; margin: 1rem 0;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    }
+    .card {
+      border: 1px solid #8883; border-radius: .6rem; overflow: hidden;
+      display: flex; flex-direction: column; background: #8881;
+    }
+    .card img { width: 100%; height: 150px; object-fit: cover; background: #8882; }
+    .cardbody { padding: .6rem .7rem; display: flex; flex-direction: column; gap: .35rem; }
+    .pname { font-weight: 600; font-size: .95rem; line-height: 1.25; }
+    .pname a { color: inherit; text-decoration: none; }
+    .pname a:hover { text-decoration: underline; }
+    .price { color: #16a34a; font-weight: 700; }
+    .desc { font-size: .8rem; color: #888; }
   </style>
 </head>
 <body>
@@ -88,6 +104,30 @@
       return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     }
 
+    function escapeAttr(s) {
+      return escapeHtml(s).replace(/"/g, "&quot;");
+    }
+
+    function renderProducts(products) {
+      if (!Array.isArray(products) || !products.length) return "";
+      const cards = products.map(p => {
+        const img = p.image
+          ? `<img src="${escapeAttr(p.image)}" alt="" loading="lazy" onerror="this.style.display='none'" />`
+          : "";
+        const priceText = (p.price !== null && p.price !== undefined && p.price !== "")
+          ? ((p.currency ? p.currency + " " : "") + p.price)
+          : "";
+        const price = priceText ? `<div class="price">${escapeHtml(priceText)}</div>` : "";
+        const name = escapeHtml(p.name || "Product");
+        const title = p.url
+          ? `<a href="${escapeAttr(p.url)}" target="_blank" rel="noopener">${name}</a>`
+          : name;
+        const desc = p.description ? `<div class="desc">${escapeHtml(p.description)}</div>` : "";
+        return `<div class="card">${img}<div class="cardbody"><div class="pname">${title}</div>${price}${desc}</div></div>`;
+      }).join("");
+      return `<div class="grid">${cards}</div>`;
+    }
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const query = queryInput.value.trim();
@@ -104,9 +144,13 @@
         const data = await res.json();
         if (data.ok) {
           result.className = "status ok";
+          const cards = renderProducts(data.products);
+          const summary = data.answer
+            ? `<div class="summary">${escapeHtml(data.answer)}</div>` : "";
+          const empty = (!cards && !data.answer)
+            ? "<div>No products found for that query.</div>" : "";
           result.innerHTML =
-            "<strong>Results</strong>" +
-            "<div style='white-space:pre-wrap; margin:.5rem 0;'>" + escapeHtml(data.answer || "") + "</div>" +
+            "<strong>Results</strong>" + summary + cards + empty +
             "<details><summary>Raw tool data</summary><pre><code>" +
             escapeHtml(JSON.stringify(data.results || [], null, 2)) + "</code></pre></details>";
         } else {

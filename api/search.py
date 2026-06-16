@@ -163,6 +163,112 @@ def mcp_tools_to_openai(tools: list) -> list:
     return converted
 
 
+# === Product extraction ======================================================
+# Field aliases used to recognise product-shaped objects in arbitrary MCP
+# tool output, so the UI can render cards without knowing the exact schema.
+NAME_KEYS = ("name", "title", "product_name", "productname", "productName", "product")
+PRICE_KEYS = (
+    "price", "price_lkr", "priceLkr", "amount", "selling_price", "sellingPrice",
+    "sale_price", "salePrice", "cost", "mrp", "unit_price", "unitPrice",
+)
+IMAGE_KEYS = (
+    "image", "image_url", "imageUrl", "imageURL", "img", "thumbnail", "thumb",
+    "picture", "photo", "image_link", "imageLink",
+)
+URL_KEYS = (
+    "url", "link", "product_url", "productUrl", "href", "permalink",
+    "product_link", "productLink", "page",
+)
+DESC_KEYS = ("description", "desc", "summary", "details", "short_description")
+CURRENCY_KEYS = ("currency", "currency_code", "currencyCode")
+
+SITE_BASE = os.environ.get("KAPRUKA_SITE_BASE", "https://www.kapruka.com")
+
+
+def _first(d: dict, keys) -> object:
+    lower = {str(k).lower(): v for k, v in d.items()}
+    for k in keys:
+        v = lower.get(k.lower())
+        if v not in (None, "", []):
+            return v
+    return None
+
+
+def _abs_url(u):
+    if not isinstance(u, str) or not u:
+        return u
+    if u.startswith("//"):
+        return "https:" + u
+    if u.startswith("/"):
+        return SITE_BASE.rstrip("/") + u
+    return u
+
+
+def _looks_like_product(d: dict) -> bool:
+    if not isinstance(d, dict):
+        return False
+    if _first(d, NAME_KEYS) is None:
+        return False
+    return any(_first(d, ks) is not None for ks in (PRICE_KEYS, URL_KEYS, IMAGE_KEYS))
+
+
+def _normalize_product(d: dict) -> dict:
+    return {
+        "name": _first(d, NAME_KEYS),
+        "price": _first(d, PRICE_KEYS),
+        "currency": _first(d, CURRENCY_KEYS),
+        "image": _abs_url(_first(d, IMAGE_KEYS)),
+        "url": _abs_url(_first(d, URL_KEYS)),
+        "description": _first(d, DESC_KEYS),
+    }
+
+
+def _walk_products(obj, found: list) -> None:
+    if isinstance(obj, dict):
+        if _looks_like_product(obj):
+            found.append(_normalize_product(obj))
+            return  # don't descend into a product's own sub-fields
+        for v in obj.values():
+            _walk_products(v, found)
+    elif isinstance(obj, list):
+        for v in obj:
+            _walk_products(v, found)
+
+
+def _coerce_json(text: str):
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # The output may wrap JSON in prose; grab the outermost [...] or {...}.
+        for opener, closer in (("[", "]"), ("{", "}")):
+            start, end = text.find(opener), text.rfind(closer)
+            if 0 <= start < end:
+                try:
+                    return json.loads(text[start:end + 1])
+                except json.JSONDecodeError:
+                    continue
+    return None
+
+
+def extract_products(results: list) -> list:
+    """Pull normalized product objects out of raw MCP tool outputs."""
+    found = []
+    for r in results:
+        data = _coerce_json(r.get("output", ""))
+        if data is not None:
+            _walk_products(data, found)
+    seen, unique = set(), []
+    for p in found:
+        key = (str(p.get("name")), str(p.get("url")))
+        if key not in seen:
+            seen.add(key)
+            unique.append(p)
+    return unique
+
+
 # === NVIDIA NIM plumbing =====================================================
 def nim_chat(messages: list, tools: list) -> dict:
     if not NIM_API_KEY:
@@ -232,6 +338,7 @@ def search(query: str) -> dict:
                 "query": query,
                 "model": NIM_MODEL,
                 "answer": message.get("content", ""),
+                "products": extract_products(results),
                 "tools_available": [t.get("name") for t in tools],
                 "tool_calls": trace,
                 "results": results,
@@ -260,6 +367,7 @@ def search(query: str) -> dict:
         "model": NIM_MODEL,
         "answer": "Stopped after the maximum number of tool rounds without a "
         "final answer. Try a more specific query.",
+        "products": extract_products(results),
         "tools_available": [t.get("name") for t in tools],
         "tool_calls": trace,
         "results": results,
