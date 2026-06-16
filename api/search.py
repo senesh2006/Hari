@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler
@@ -52,7 +53,10 @@ SYSTEM_PROMPT = (
     "search tools as needed, then recommend the best matches. For each "
     "recommendation give the product name, price, and a link if available, "
     "and a one-line reason it fits. If nothing matches, say so honestly. "
-    "Only rely on data returned by the tools — never invent products or prices."
+    "Only rely on data returned by the tools — never invent products or prices. "
+    "Never list the same product twice: if the tools return duplicate or "
+    "near-identical items (same product, same price, or same link), keep only "
+    "one of them."
 )
 
 
@@ -253,19 +257,49 @@ def _coerce_json(text: str):
     return None
 
 
+def _norm_url(u) -> str | None:
+    """Canonicalize a URL for dedup: drop scheme, www, query and trailing slash."""
+    if not isinstance(u, str) or not u.strip():
+        return None
+    s = u.strip().lower()
+    s = re.sub(r"^https?://", "", s)
+    s = re.sub(r"^www\.", "", s)
+    s = s.split("?")[0].split("#")[0]
+    return s.rstrip("/") or None
+
+
+def _norm_text(t) -> str:
+    """Collapse to lowercase alphanumerics+spaces for fuzzy dedup."""
+    if t is None:
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", str(t).lower()).strip()
+
+
 def extract_products(results: list) -> list:
-    """Pull normalized product objects out of raw MCP tool outputs."""
+    """Pull normalized, de-duplicated product objects out of MCP tool outputs.
+
+    The agent often calls the search tool several times, so the same product
+    reappears (sometimes with a different query string on its URL). Dedup by
+    canonical URL first, then by name+price for items that lack a URL.
+    """
     found = []
     for r in results:
         data = _coerce_json(r.get("output", ""))
         if data is not None:
             _walk_products(data, found)
-    seen, unique = set(), []
+
+    seen_urls, seen_names, unique = set(), set(), []
     for p in found:
-        key = (str(p.get("name")), str(p.get("url")))
-        if key not in seen:
-            seen.add(key)
-            unique.append(p)
+        url_key = _norm_url(p.get("url"))
+        name_key = _norm_text(p.get("name")) + "|" + _norm_text(p.get("price"))
+        if url_key and url_key in seen_urls:
+            continue
+        if name_key.strip("|") and name_key in seen_names:
+            continue
+        if url_key:
+            seen_urls.add(url_key)
+        seen_names.add(name_key)
+        unique.append(p)
     return unique
 
 
