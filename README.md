@@ -94,3 +94,32 @@ Environment Variables**, then redeploy:
 | `SEARCH_MAX_ROUNDS` | no    | `5`                              | Max tool-calling rounds per query.        |
 
 The Kapruka MCP itself needs no key.
+
+### Performance
+
+Each query runs an agentic tool-calling loop, so latency is dominated by the
+NIM model and the number of tool rounds. Defaults are tuned for speed:
+
+- `NVIDIA_NIM_MODEL` defaults to the fast `meta/llama-3.1-8b-instruct`
+  (set it to `meta/llama-3.3-70b-instruct` for higher-quality answers).
+- `SEARCH_MAX_ROUNDS` defaults to `3`, and the tool catalogue is cached across
+  warm invocations to skip a round-trip.
+
+## All MCP tools (`api/tool.py`)
+
+Beyond search, every tool the Kapruka MCP exposes is available directly:
+
+```bash
+# List all tools and their input schemas
+curl -s https://<your-app>.vercel.app/api/tool
+
+# Invoke any tool by name
+curl -s -X POST https://<your-app>.vercel.app/api/tool \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"<tool_name>","arguments":{ ... }}'
+```
+
+The catalogue is discovered at runtime — no tool names are hard-coded. The home
+page renders a schema-driven form for every tool. Tools whose names imply a
+side effect (order/checkout/payment/…) are flagged `writes` and require an
+explicit confirmation in the UI before they run.

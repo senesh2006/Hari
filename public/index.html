@@ -41,6 +41,20 @@
     .pname a:hover { text-decoration: underline; }
     .price { color: #16a34a; font-weight: 700; }
     .desc { font-size: .8rem; color: #888; }
+    .tool { border: 1px solid #8883; border-radius: .6rem; margin: .75rem 0; padding: .5rem .9rem; }
+    .tool summary { cursor: pointer; font-weight: 600; }
+    .tool .tdesc { color: #888; font-size: .85rem; margin: .35rem 0 .75rem; }
+    .tool label { display: block; font-size: .85rem; margin: .5rem 0 .15rem; }
+    .tool label .req { color: #dc2626; }
+    .tool input[type=text], .tool input[type=number], .tool textarea {
+      width: 100%; font-size: .9rem; padding: .45rem .6rem; border-radius: .45rem;
+      border: 1px solid #8884; box-sizing: border-box; font-family: inherit;
+    }
+    .tool .badge {
+      font-size: .7rem; font-weight: 700; color: #fff; background: #dc2626;
+      border-radius: .35rem; padding: .05rem .4rem; margin-left: .5rem; vertical-align: middle;
+    }
+    .tout { margin-top: .75rem; }
   </style>
 </head>
 <body>
@@ -61,6 +75,12 @@
     <button type="submit">Search</button>
   </form>
   <div id="result" class="status pending" style="display:none;"></div>
+
+  <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid #8883;" />
+
+  <h2>🧰 All MCP tools</h2>
+  <p class="sub">Every tool the Kapruka MCP exposes — call any of them directly.</p>
+  <div id="tools">Loading tools…</div>
 
   <script>
     const btn = document.getElementById("run");
@@ -163,6 +183,114 @@
         result.textContent = "❌ Request failed: " + err;
       }
     });
+
+    // --- Generic tool panel (all MCP tools, schema-driven forms) ---
+    const toolsBox = document.getElementById("tools");
+
+    function fieldFor(name, schema, required) {
+      const t = schema.type;
+      const label =
+        `<label>${escapeHtml(name)}${required ? " <span class='req'>*</span>" : ""}` +
+        (schema.description ? ` — <span style='color:#888'>${escapeHtml(schema.description)}</span>` : "") +
+        "</label>";
+      const attr = `data-field="${escapeAttr(name)}" data-type="${escapeAttr(t || "string")}"`;
+      if (t === "boolean") {
+        return `<label><input type="checkbox" ${attr} /> ${escapeHtml(name)}</label>`;
+      }
+      if (t === "integer" || t === "number") {
+        return label + `<input type="number" ${attr} placeholder="${escapeAttr(t)}" />`;
+      }
+      if (t === "object" || t === "array") {
+        return label + `<textarea rows="2" ${attr} placeholder="JSON ${escapeAttr(t)}"></textarea>`;
+      }
+      return label + `<input type="text" ${attr} placeholder="${escapeAttr(t || "string")}" />`;
+    }
+
+    function collectArgs(form) {
+      const args = {};
+      form.querySelectorAll("[data-field]").forEach(el => {
+        const key = el.getAttribute("data-field");
+        const type = el.getAttribute("data-type");
+        if (type === "boolean") { if (el.checked) args[key] = true; return; }
+        const raw = el.value.trim();
+        if (raw === "") return;
+        if (type === "integer") args[key] = parseInt(raw, 10);
+        else if (type === "number") args[key] = parseFloat(raw);
+        else if (type === "object" || type === "array") {
+          try { args[key] = JSON.parse(raw); } catch { args[key] = raw; }
+        } else args[key] = raw;
+      });
+      return args;
+    }
+
+    function renderToolForm(tool) {
+      const schema = tool.inputSchema || {};
+      const props = schema.properties || {};
+      const required = schema.required || [];
+      const names = Object.keys(props);
+      const fields = names.length
+        ? names.map(n => fieldFor(n, props[n], required.includes(n))).join("")
+        : "<p class='desc'>No parameters.</p>";
+      const confirm = tool.writes
+        ? `<label><input type="checkbox" class="confirm" /> I understand this may place a real order / change data.</label>`
+        : "";
+      const badge = tool.writes ? "<span class='badge'>writes</span>" : "";
+      const det = document.createElement("details");
+      det.className = "tool";
+      det.innerHTML =
+        `<summary>${escapeHtml(tool.name)}${badge}</summary>` +
+        (tool.description ? `<div class="tdesc">${escapeHtml(tool.description)}</div>` : "") +
+        `<form>${fields}${confirm}<div style="margin-top:.6rem"><button type="submit">Run ${escapeHtml(tool.name)}</button></div></form>` +
+        `<div class="tout"></div>`;
+
+      const form = det.querySelector("form");
+      const out = det.querySelector(".tout");
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (tool.writes) {
+          const ok = form.querySelector(".confirm");
+          if (!ok || !ok.checked) {
+            out.innerHTML = "<div class='status fail'>Tick the confirmation box first.</div>";
+            return;
+          }
+        }
+        out.innerHTML = "<div class='status pending'>Running…</div>";
+        try {
+          const res = await fetch("/api/tool", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: tool.name, arguments: collectArgs(form) }),
+          });
+          const data = await res.json();
+          const cls = data.ok ? "ok" : "fail";
+          const cards = data.ok ? renderProducts(data.products) : "";
+          out.innerHTML =
+            `<div class="status ${cls}">` + cards +
+            "<details><summary>Raw output</summary><pre><code>" +
+            escapeHtml(data.output != null ? data.output : JSON.stringify(data, null, 2)) +
+            "</code></pre></details></div>";
+        } catch (err) {
+          out.innerHTML = "<div class='status fail'>❌ " + escapeHtml(String(err)) + "</div>";
+        }
+      });
+      return det;
+    }
+
+    (async function loadTools() {
+      try {
+        const res = await fetch("/api/tool", { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok || !Array.isArray(data.tools) || !data.tools.length) {
+          toolsBox.innerHTML = "<div class='status fail'>No tools returned.<pre><code>" +
+            escapeHtml(JSON.stringify(data, null, 2)) + "</code></pre></div>";
+          return;
+        }
+        toolsBox.innerHTML = "";
+        data.tools.forEach(t => toolsBox.appendChild(renderToolForm(t)));
+      } catch (err) {
+        toolsBox.innerHTML = "<div class='status fail'>❌ Could not load tools: " + escapeHtml(String(err)) + "</div>";
+      }
+    })();
   </script>
 </body>
 </html>

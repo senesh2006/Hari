@@ -41,10 +41,16 @@ USER_AGENT = os.environ.get(
 
 # --- NVIDIA NIM config -------------------------------------------------------
 NIM_BASE_URL = os.environ.get("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
-NIM_MODEL = os.environ.get("NVIDIA_NIM_MODEL", "meta/llama-3.3-70b-instruct")
+# Default to a fast tool-calling model; override with NVIDIA_NIM_MODEL (e.g.
+# "meta/llama-3.3-70b-instruct") for higher quality at the cost of latency.
+NIM_MODEL = os.environ.get("NVIDIA_NIM_MODEL", "meta/llama-3.1-8b-instruct")
 NIM_API_KEY = os.environ.get("NVIDIA_API_KEY")
 NIM_TIMEOUT = float(os.environ.get("NVIDIA_NIM_TIMEOUT", "60"))
-MAX_TOOL_ROUNDS = int(os.environ.get("SEARCH_MAX_ROUNDS", "5"))
+MAX_TOOL_ROUNDS = int(os.environ.get("SEARCH_MAX_ROUNDS", "3"))
+
+# Tool schemas are static; cache them across warm invocations to skip a
+# tools/list round-trip on every request.
+_TOOLS_CACHE = None
 
 SYSTEM_PROMPT = (
     "You are a shopping assistant for Kapruka, a Sri Lankan online store. "
@@ -56,7 +62,8 @@ SYSTEM_PROMPT = (
     "Only rely on data returned by the tools — never invent products or prices. "
     "Never list the same product twice: if the tools return duplicate or "
     "near-identical items (same product, same price, or same link), keep only "
-    "one of them."
+    "one of them. Be efficient: issue a single well-chosen search call when "
+    "possible and avoid repeating the same search."
 )
 
 
@@ -314,7 +321,7 @@ def nim_chat(messages: list, tools: list) -> dict:
         "model": NIM_MODEL,
         "messages": messages,
         "temperature": 0.2,
-        "max_tokens": 1024,
+        "max_tokens": 700,
     }
     if tools:
         payload["tools"] = tools
@@ -340,9 +347,12 @@ def nim_chat(messages: list, tools: list) -> dict:
 
 # === Orchestration ===========================================================
 def search(query: str) -> dict:
+    global _TOOLS_CACHE
     mcp = MCPSession()
     mcp.initialize()
-    tools = mcp.list_tools()
+    if _TOOLS_CACHE is None:
+        _TOOLS_CACHE = mcp.list_tools()
+    tools = _TOOLS_CACHE
     openai_tools = mcp_tools_to_openai(tools)
 
     messages = [
