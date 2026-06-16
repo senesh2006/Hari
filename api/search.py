@@ -63,8 +63,35 @@ SYSTEM_PROMPT = (
     "Never list the same product twice: if the tools return duplicate or "
     "near-identical items (same product, same price, or same link), keep only "
     "one of them. Be efficient: issue a single well-chosen search call when "
-    "possible and avoid repeating the same search."
+    "possible and avoid repeating the same search. Only include tool parameters "
+    "you actually need — never pass the string 'null' or placeholder values for "
+    "optional parameters; omit them entirely. If a search returns no products, "
+    "do not repeat the identical search: try a shorter or more specific query, "
+    "or browse categories with kapruka_list_categories."
 )
+
+
+# Values a model emits as placeholders for "unset" optional parameters. These
+# must be dropped, otherwise the MCP treats e.g. category="null" as a real
+# filter and returns nothing.
+NULLISH = {"null", "none", "nil", "undefined", "na", "n/a", ""}
+
+
+def sanitize_args(obj):
+    """Recursively drop placeholder/nullish values from tool arguments."""
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            v = sanitize_args(v)
+            if v is None:
+                continue
+            if isinstance(v, str) and v.strip().lower() in NULLISH:
+                continue
+            cleaned[k] = v
+        return cleaned
+    if isinstance(obj, list):
+        return [sanitize_args(v) for v in obj]
+    return obj
 
 
 # === MCP plumbing ============================================================
@@ -395,6 +422,7 @@ def search(query: str) -> dict:
                 args = json.loads(fn.get("arguments") or "{}")
             except json.JSONDecodeError:
                 args = {}
+            args = sanitize_args(args)
             try:
                 output = mcp.call_tool(name, args)
             except Exception as exc:  # feed tool errors back to the model

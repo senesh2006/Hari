@@ -36,6 +36,27 @@ WRITE_HINTS = ("order", "checkout", "buy", "purchase", "pay", "payment", "create
 
 _TOOLS_CACHE = None
 
+# Placeholder values some callers/models emit for unset optional params; the MCP
+# treats e.g. category="null" as a real filter, so drop them.
+NULLISH = {"null", "none", "nil", "undefined", "na", "n/a", ""}
+
+
+def sanitize_args(obj):
+    """Recursively drop placeholder/nullish values from tool arguments."""
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            v = sanitize_args(v)
+            if v is None:
+                continue
+            if isinstance(v, str) and v.strip().lower() in NULLISH:
+                continue
+            cleaned[k] = v
+        return cleaned
+    if isinstance(obj, list):
+        return [sanitize_args(v) for v in obj]
+    return obj
+
 
 # === MCP plumbing (self-contained so the function bundles cleanly) ===========
 def _loads(text: str) -> dict:
@@ -255,13 +276,14 @@ def list_tools_payload() -> dict:
 
 
 def invoke_tool(name: str, arguments: dict) -> dict:
+    arguments = sanitize_args(arguments or {})
     mcp = MCPSession()
     mcp.initialize()
-    output = mcp.call_tool(name, arguments or {})
+    output = mcp.call_tool(name, arguments)
     return {
         "ok": True,
         "tool": name,
-        "arguments": arguments or {},
+        "arguments": arguments,
         "output": output,
         "products": extract_products(output),
     }
