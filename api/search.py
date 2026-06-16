@@ -129,10 +129,69 @@ def _normalize_questions(raw) -> list:
                 parsed = ast.literal_eval(raw)
             except (ValueError, SyntaxError):
                 parsed = None
-        raw = parsed if isinstance(parsed, list) else [raw]
+        if isinstance(parsed, list):
+            raw = parsed
+        else:
+            # Last resort: a quoted list whose items contain apostrophes
+            # (e.g. "['mom's age?', 'budget?']") that neither parser accepts.
+            s = raw.strip()
+            if s.startswith("[") and s.endswith("]"):
+                s = s[1:-1]
+            parts = re.split(r"['\"]\s*,\s*['\"]", s)
+            cleaned = [p.strip().strip("'\"").strip() for p in parts]
+            raw = [c for c in cleaned if c] or [raw]
     if not isinstance(raw, list):
         raw = [raw] if raw else []
     return [str(q).strip() for q in raw if str(q).strip()][:3]
+
+
+def parse_text_tool_calls(content, valid_names) -> list:
+    """Recover tool calls that a model emitted as plain text instead of as
+    structured tool_calls.
+
+    Some models (notably Llama 3.1 8B) sometimes answer with a Llama
+    "<|python_tag|>" block such as:
+        <|python_tag|>{"name": "search", "parameters": {...}}; {"name": ...}
+    using Python literals (True/False) and semicolon separators. Extract each
+    balanced {...} object, parse it (JSON or Python literal), and keep only
+    objects whose name is a real tool.
+    """
+    if not content or "name" not in content:
+        return []
+    text = content.replace("<|python_tag|>", " ")
+    calls, depth, start = [], 0, None
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                chunk = text[start:i + 1]
+                start = None
+                obj = None
+                try:
+                    obj = json.loads(chunk)
+                except json.JSONDecodeError:
+                    try:
+                        obj = ast.literal_eval(chunk)
+                    except (ValueError, SyntaxError):
+                        obj = None
+                if isinstance(obj, dict) and obj.get("name") in valid_names:
+                    args = obj.get("parameters")
+                    if args is None:
+                        args = obj.get("arguments") or {}
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            try:
+                                args = ast.literal_eval(args)
+                            except (ValueError, SyntaxError):
+                                args = {}
+                    calls.append({"name": obj["name"], "arguments": args if isinstance(args, dict) else {}})
+    return calls
 
 
 def sanitize_args(obj):
@@ -449,82 +508,102 @@ def search(query: str, allow_questions: bool = True) -> dict:
     ]
     trace = []
     results = []
+    tool_names = [t.get("name") for t in tools]
+    valid_names = set(tool_names) | {"ask_user"}
+
+    def finalize(answer: str) -> dict:
+        return {
+            "ok": True,
+            "query": query,
+            "model": NIM_MODEL,
+            "answer": answer,
+            "products": extract_products(results),
+            "tools_available": tool_names,
+            "tool_calls": trace,
+            "results": results,
+        }
+
+    def ask(questions: list) -> dict:
+        return {
+            "ok": True,
+            "needs_input": True,
+            "query": query,
+            "model": NIM_MODEL,
+            "questions": questions[:3],
+            "tools_available": tool_names,
+        }
 
     for _ in range(MAX_TOOL_ROUNDS):
         completion = nim_chat(messages, openai_tools)
         message = completion["choices"][0]["message"]
-        tool_calls = message.get("tool_calls") or []
+        structured = message.get("tool_calls") or []
 
-        # Re-append the assistant turn so the model keeps its own context.
-        messages.append(
-            {
-                "role": "assistant",
-                "content": message.get("content") or "",
-                **({"tool_calls": tool_calls} if tool_calls else {}),
-            }
-        )
-
-        if not tool_calls:
-            return {
-                "ok": True,
-                "query": query,
-                "model": NIM_MODEL,
-                "answer": message.get("content", ""),
-                "products": extract_products(results),
-                "tools_available": [t.get("name") for t in tools],
-                "tool_calls": trace,
-                "results": results,
-            }
-
-        # If the model wants to ask the user, stop and return the questions.
-        for call in tool_calls:
-            if call.get("function", {}).get("name") == "ask_user":
+        # Normalize calls from structured tool_calls OR from text the model
+        # emitted (e.g. a Llama <|python_tag|> block) when it failed to use the
+        # proper tool_calls field.
+        if structured:
+            norm = []
+            for c in structured:
+                fn = c.get("function", {})
                 try:
-                    qargs = json.loads(call["function"].get("arguments") or "{}")
+                    a = json.loads(fn.get("arguments") or "{}")
                 except json.JSONDecodeError:
-                    qargs = {}
-                questions = _normalize_questions(qargs.get("questions"))
-                if questions:
-                    return {
-                        "ok": True,
-                        "needs_input": True,
-                        "query": query,
-                        "model": NIM_MODEL,
-                        "questions": questions[:3],
-                        "tools_available": [t.get("name") for t in tools],
-                    }
+                    a = {}
+                norm.append({"name": fn.get("name"), "arguments": a, "id": c.get("id")})
+            messages.append(
+                {"role": "assistant", "content": message.get("content") or "", "tool_calls": structured}
+            )
+            text_mode = False
+        else:
+            norm = parse_text_tool_calls(message.get("content"), valid_names)
+            messages.append({"role": "assistant", "content": message.get("content") or ""})
+            if not norm:
+                return finalize(message.get("content", ""))  # genuine final answer
+            text_mode = True
 
-        for call in tool_calls:
-            fn = call.get("function", {})
-            name = fn.get("name")
+        # Clarifying questions take priority.
+        for c in norm:
+            if c["name"] == "ask_user" and allow_questions:
+                questions = _normalize_questions((c["arguments"] or {}).get("questions"))
+                if questions:
+                    return ask(questions)
+
+        # Execute the real tool calls.
+        text_outputs = []
+        for c in norm:
+            name = c["name"]
             if name == "ask_user":
+                if not text_mode:  # structured calls must each get a tool reply
+                    messages.append({"role": "tool", "tool_call_id": c.get("id"), "content": "(no questions)"})
                 continue
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            args = sanitize_args(args)
+            args = sanitize_args(c["arguments"] or {})
             try:
                 output = mcp.call_tool(name, args)
             except Exception as exc:  # feed tool errors back to the model
                 output = f"ERROR calling {name}: {exc}"
             trace.append({"tool": name, "arguments": args})
             results.append({"tool": name, "arguments": args, "output": output})
+            if text_mode:
+                text_outputs.append(f"{name} ->\n{output}")
+            else:
+                messages.append({"role": "tool", "tool_call_id": c.get("id"), "content": output})
+
+        if text_mode and text_outputs:
             messages.append(
-                {"role": "tool", "tool_call_id": call.get("id"), "content": output}
+                {
+                    "role": "user",
+                    "content": "Tool results — use ONLY these to recommend products "
+                    "(name, price, link, one-line reason). Do NOT call tools again; "
+                    "reply with your recommendations now.\n\n" + "\n\n".join(text_outputs),
+                }
             )
 
-    return {
-        "ok": True,
-        "query": query,
-        "model": NIM_MODEL,
-        "answer": "Stopped after the maximum number of tool rounds without a "
-        "final answer. Try a more specific query.",
-        "products": extract_products(results),
-        "tools_available": [t.get("name") for t in tools],
-        "tool_calls": trace,
-        "results": results,
-    }
+    # Ran out of rounds; if we did gather products, present them anyway.
+    if results:
+        return finalize("Here are the best matches I found.")
+    return finalize(
+        "I couldn't complete the search in time — please try again with a bit more detail."
+    )
 
 
 # === HTTP handler ============================================================
