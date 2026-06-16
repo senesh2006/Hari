@@ -53,22 +53,57 @@ MAX_TOOL_ROUNDS = int(os.environ.get("SEARCH_MAX_ROUNDS", "3"))
 _TOOLS_CACHE = None
 
 SYSTEM_PROMPT = (
-    "You are a shopping assistant for Kapruka, a Sri Lankan online store. "
-    "Use the available tools to find real products that match the user's "
-    "requirements (budget, category, occasion, recipient, etc.). Call the "
-    "search tools as needed, then recommend the best matches. For each "
-    "recommendation give the product name, price, and a link if available, "
-    "and a one-line reason it fits. If nothing matches, say so honestly. "
-    "Only rely on data returned by the tools — never invent products or prices. "
-    "Never list the same product twice: if the tools return duplicate or "
-    "near-identical items (same product, same price, or same link), keep only "
-    "one of them. Be efficient: issue a single well-chosen search call when "
-    "possible and avoid repeating the same search. Only include tool parameters "
-    "you actually need — never pass the string 'null' or placeholder values for "
-    "optional parameters; omit them entirely. If a search returns no products, "
-    "do not repeat the identical search: try a shorter or more specific query, "
-    "or browse categories with kapruka_list_categories."
+    "You are a thoughtful gift & shopping concierge for Kapruka, a Sri Lankan "
+    "online store. Do NOT just search the user's literal words. First REASON "
+    "about the recipient and the occasion, then brainstorm several CONCRETE "
+    "product types that would make good gifts. For example, for a mother's "
+    "birthday think: flower bouquet, chocolate hamper, perfume, a watch, a "
+    "saree or dress, jewellery, a scented candle set, a personalized photo "
+    "frame. Then search for those concrete product types (specific nouns like "
+    "'perfume', 'flower bouquet', 'chocolate hamper', 'watch') — never search "
+    "vague phrases like 'birthday gift' or 'gifts'.\n\n"
+    "Run a few targeted searches for DIFFERENT ideas (not the same one twice), "
+    "then curate a short, VARIED selection of the best real products across "
+    "those categories. For each pick give the name, price, link, and a "
+    "one-line reason it suits the recipient.\n\n"
+    "Ask before guessing: if information needed to make a genuinely good "
+    "recommendation is missing — such as the budget, the recipient's age or "
+    "interests, the delivery city, or the occasion date — call the ask_user "
+    "tool with 1-3 short, specific questions BEFORE searching. Only ask when it "
+    "would materially improve the choice; if you already have enough to choose "
+    "well, just proceed.\n\n"
+    "Rules: rely only on tool data — never invent products or prices. Never "
+    "list the same product twice (drop duplicates and near-identical items). "
+    "Only include tool parameters you actually need — never pass the string "
+    "'null' or placeholder values for optional parameters; omit them. If a "
+    "search returns nothing, don't repeat it — try a different concrete idea, a "
+    "shorter query, or browse kapruka_list_categories."
 )
+
+# A synthetic tool (not part of the MCP) that lets the model pause and ask the
+# user for missing details instead of guessing.
+ASK_USER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "ask_user",
+        "description": (
+            "Ask the user 1-3 short clarifying questions when key details "
+            "(budget, recipient interests/age, delivery city, occasion date) "
+            "are missing and would materially improve the recommendation."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "1-3 concise questions for the user.",
+                }
+            },
+            "required": ["questions"],
+        },
+    },
+}
 
 
 # Values a model emits as placeholders for "unset" optional parameters. These
@@ -373,7 +408,7 @@ def nim_chat(messages: list, tools: list) -> dict:
 
 
 # === Orchestration ===========================================================
-def search(query: str) -> dict:
+def search(query: str, allow_questions: bool = True) -> dict:
     global _TOOLS_CACHE
     mcp = MCPSession()
     mcp.initialize()
@@ -381,6 +416,9 @@ def search(query: str) -> dict:
         _TOOLS_CACHE = mcp.list_tools()
     tools = _TOOLS_CACHE
     openai_tools = mcp_tools_to_openai(tools)
+    # Offer the clarifying-question tool only on the first turn.
+    if allow_questions:
+        openai_tools = openai_tools + [ASK_USER_TOOL]
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -415,9 +453,29 @@ def search(query: str) -> dict:
                 "results": results,
             }
 
+        # If the model wants to ask the user, stop and return the questions.
+        for call in tool_calls:
+            if call.get("function", {}).get("name") == "ask_user":
+                try:
+                    qargs = json.loads(call["function"].get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    qargs = {}
+                questions = [str(q) for q in (qargs.get("questions") or []) if str(q).strip()]
+                if questions:
+                    return {
+                        "ok": True,
+                        "needs_input": True,
+                        "query": query,
+                        "model": NIM_MODEL,
+                        "questions": questions[:3],
+                        "tools_available": [t.get("name") for t in tools],
+                    }
+
         for call in tool_calls:
             fn = call.get("function", {})
             name = fn.get("name")
+            if name == "ask_user":
+                continue
             try:
                 args = json.loads(fn.get("arguments") or "{}")
             except json.JSONDecodeError:
@@ -456,11 +514,11 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _run(self, query: str):
+    def _run(self, query: str, allow_questions: bool = True):
         if not query or not query.strip():
             return self._respond(400, {"ok": False, "error": "Missing 'query'."})
         try:
-            self._respond(200, search(query.strip()))
+            self._respond(200, search(query.strip(), allow_questions=allow_questions))
         except PermissionError as exc:
             self._respond(400, {"ok": False, "error": str(exc)})
         except Exception as exc:
@@ -479,4 +537,6 @@ class handler(BaseHTTPRequestHandler):
             data = json.loads(raw or b"{}")
         except json.JSONDecodeError:
             return self._respond(400, {"ok": False, "error": "Body must be JSON."})
-        self._run(data.get("query", ""))
+        # allow_questions defaults true; the client sets it false when resubmitting
+        # with answers so the model proceeds to search instead of asking again.
+        self._run(data.get("query", ""), allow_questions=bool(data.get("allow_questions", True)))

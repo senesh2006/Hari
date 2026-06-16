@@ -67,11 +67,11 @@
 
   <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid #8883;" />
 
-  <h2>🔎 AI product search</h2>
-  <p class="sub">Describe what you want — NVIDIA NIM searches Kapruka for you.</p>
+  <h2>🎁 AI gift concierge</h2>
+  <p class="sub">Tell it who it's for — it brainstorms gift ideas, asks if it needs more, and finds real products.</p>
   <form id="searchForm" style="display:flex; gap:.5rem; flex-wrap:wrap;">
     <input id="query" type="text" style="flex:1; min-width:240px; font-size:1rem; padding:.6rem .75rem; border-radius:.5rem; border:1px solid #8884;"
-           placeholder="e.g. birthday gift for mom under 5000 LKR" />
+           placeholder="e.g. birthday gift for my mom" />
     <button type="submit">Search</button>
   </form>
   <div id="result" class="status pending" style="display:none;"></div>
@@ -148,20 +148,49 @@
       return `<div class="grid">${cards}</div>`;
     }
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const query = queryInput.value.trim();
-      if (!query) return;
+    function renderQuestions(originalQuery, questions) {
+      const fields = questions.map((q, i) =>
+        `<label style="display:block;margin:.6rem 0 .15rem;">${escapeHtml(q)}</label>` +
+        `<input type="text" data-q="${i}" style="width:100%;font-size:1rem;padding:.5rem .65rem;border-radius:.45rem;border:1px solid #8884;box-sizing:border-box;" />`
+      ).join("");
+      result.className = "status pending";
+      result.innerHTML =
+        "<strong>A few quick questions to find better gifts</strong>" +
+        `<form id="answers">${fields}` +
+        `<div style="margin-top:.7rem;display:flex;gap:.5rem;">` +
+        `<button type="submit">Find gifts</button>` +
+        `<button type="button" id="skipQ">Skip & search anyway</button></div></form>`;
+
+      const ansForm = document.getElementById("answers");
+      const combine = () => {
+        const parts = [];
+        ansForm.querySelectorAll("[data-q]").forEach(el => {
+          const a = el.value.trim();
+          if (a) parts.push("- " + questions[el.getAttribute("data-q")] + " " + a);
+        });
+        return parts.length
+          ? originalQuery + "\n\nAdditional details:\n" + parts.join("\n")
+          : originalQuery;
+      };
+      ansForm.addEventListener("submit", (e) => { e.preventDefault(); runSearch(combine(), false); });
+      document.getElementById("skipQ").addEventListener("click", () => runSearch(originalQuery, false));
+    }
+
+    async function runSearch(query, allowQuestions) {
       result.style.display = "block";
       result.className = "status pending";
-      result.textContent = "Searching with NVIDIA NIM…";
+      result.textContent = allowQuestions ? "Thinking…" : "Finding gifts with NVIDIA NIM…";
       try {
         const res = await fetch("/api/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query, allow_questions: allowQuestions }),
         });
         const data = await res.json();
+        if (data.ok && data.needs_input) {
+          renderQuestions(query, data.questions || []);
+          return;
+        }
         if (data.ok) {
           result.className = "status ok";
           const cards = renderProducts(data.products);
@@ -170,7 +199,7 @@
           const empty = (!cards && !data.answer)
             ? "<div>No products found for that query.</div>" : "";
           result.innerHTML =
-            "<strong>Results</strong>" + summary + cards + empty +
+            "<strong>Recommendations</strong>" + summary + cards + empty +
             "<details><summary>Raw tool data</summary><pre><code>" +
             escapeHtml(JSON.stringify(data.results || [], null, 2)) + "</code></pre></details>";
         } else {
@@ -182,6 +211,12 @@
         result.className = "status fail";
         result.textContent = "❌ Request failed: " + err;
       }
+    }
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const query = queryInput.value.trim();
+      if (query) runSearch(query, true);
     });
 
     // --- Generic tool panel (all MCP tools, schema-driven forms) ---

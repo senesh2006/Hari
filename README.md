@@ -55,14 +55,23 @@ needs no auth. The endpoint URL/timeout can optionally be overridden with the
 After deploying, open the site and you'll see a live ✅/❌ status; the raw
 check is available at `/api/check`.
 
-## AI product search (NVIDIA NIM)
+## AI gift concierge (NVIDIA NIM)
 
-`api/search.py` is an agentic product-search endpoint. It:
+`api/search.py` is an agentic, *reasoning* shopping endpoint — not a keyword
+search. It:
 
 1. opens an MCP session to Kapruka and **discovers its tools at runtime**,
 2. gives those tools to an **NVIDIA NIM** model (OpenAI-compatible chat API),
-3. lets the model call the tools to satisfy the user's requirements, and
-4. returns a ranked, plain-language answer plus the raw tool results.
+3. **brainstorms concrete gift ideas** from the request (e.g. for "birthday gift
+   for mom" it searches *bouquet, chocolate hamper, perfume, watch, saree…*
+   rather than the literal words "birthday gift"),
+4. **asks clarifying questions** when key details are missing (budget,
+   interests, delivery city, occasion date) before choosing, and
+5. returns a curated, varied answer plus the raw tool results.
+
+When the model needs more info it returns `{"needs_input": true, "questions":
+[...]}`; the client collects answers and re-POSTs with `"allow_questions":
+false` so the model proceeds to search. The home page handles this flow.
 
 Because tools are discovered dynamically, it adapts to whatever the Kapruka MCP
 exposes — no tool names are hard-coded.
