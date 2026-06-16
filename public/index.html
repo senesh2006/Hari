@@ -35,6 +35,17 @@
 
   <div id="status" class="status pending">Click “Run health check” to test the MCP server.</div>
 
+  <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid #8883;" />
+
+  <h2>🔎 AI product search</h2>
+  <p class="sub">Describe what you want — NVIDIA NIM searches Kapruka for you.</p>
+  <form id="searchForm" style="display:flex; gap:.5rem; flex-wrap:wrap;">
+    <input id="query" type="text" style="flex:1; min-width:240px; font-size:1rem; padding:.6rem .75rem; border-radius:.5rem; border:1px solid #8884;"
+           placeholder="e.g. birthday gift for mom under 5000 LKR" />
+    <button type="submit">Search</button>
+  </form>
+  <div id="result" class="status pending" style="display:none;"></div>
+
   <script>
     const btn = document.getElementById("run");
     const box = document.getElementById("status");
@@ -67,6 +78,47 @@
 
     btn.addEventListener("click", check);
     check(); // auto-run on load
+
+    // --- AI product search ---
+    const form = document.getElementById("searchForm");
+    const queryInput = document.getElementById("query");
+    const result = document.getElementById("result");
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const query = queryInput.value.trim();
+      if (!query) return;
+      result.style.display = "block";
+      result.className = "status pending";
+      result.textContent = "Searching with NVIDIA NIM…";
+      try {
+        const res = await fetch("/api/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          result.className = "status ok";
+          result.innerHTML =
+            "<strong>Results</strong>" +
+            "<div style='white-space:pre-wrap; margin:.5rem 0;'>" + escapeHtml(data.answer || "") + "</div>" +
+            "<details><summary>Raw tool data</summary><pre><code>" +
+            escapeHtml(JSON.stringify(data.results || [], null, 2)) + "</code></pre></details>";
+        } else {
+          result.className = "status fail";
+          result.innerHTML = "<strong>❌ Search failed</strong><pre><code>" +
+            escapeHtml(JSON.stringify(data, null, 2)) + "</code></pre>";
+        }
+      } catch (err) {
+        result.className = "status fail";
+        result.textContent = "❌ Request failed: " + err;
+      }
+    });
   </script>
 </body>
 </html>

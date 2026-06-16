@@ -54,3 +54,43 @@ needs no auth. The endpoint URL/timeout can optionally be overridden with the
 
 After deploying, open the site and you'll see a live ✅/❌ status; the raw
 check is available at `/api/check`.
+
+## AI product search (NVIDIA NIM)
+
+`api/search.py` is an agentic product-search endpoint. It:
+
+1. opens an MCP session to Kapruka and **discovers its tools at runtime**,
+2. gives those tools to an **NVIDIA NIM** model (OpenAI-compatible chat API),
+3. lets the model call the tools to satisfy the user's requirements, and
+4. returns a ranked, plain-language answer plus the raw tool results.
+
+Because tools are discovered dynamically, it adapts to whatever the Kapruka MCP
+exposes — no tool names are hard-coded.
+
+### Usage
+
+```bash
+# POST
+curl -s -X POST https://<your-app>.vercel.app/api/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"birthday gift for mom under 5000 LKR"}'
+
+# or GET
+curl -s 'https://<your-app>.vercel.app/api/search?q=red%20roses%20for%20delivery'
+```
+
+The home page also has a search box wired to this endpoint.
+
+### Required configuration
+
+NVIDIA NIM needs an API key. **Add this in Vercel → Project → Settings →
+Environment Variables**, then redeploy:
+
+| Env var          | Required | Default                          | Purpose                                   |
+| ---------------- | -------- | -------------------------------- | ----------------------------------------- |
+| `NVIDIA_API_KEY` | **yes**  | —                                | NIM API key from <https://build.nvidia.com> |
+| `NVIDIA_NIM_MODEL` | no     | `meta/llama-3.3-70b-instruct`    | Any NIM model that supports tool calling. |
+| `NVIDIA_NIM_BASE_URL` | no  | `https://integrate.api.nvidia.com/v1` | OpenAI-compatible NIM endpoint.      |
+| `SEARCH_MAX_ROUNDS` | no    | `5`                              | Max tool-calling rounds per query.        |
+
+The Kapruka MCP itself needs no key.
