@@ -55,6 +55,30 @@
       border-radius: .35rem; padding: .05rem .4rem; margin-left: .5rem; vertical-align: middle;
     }
     .tout { margin-top: .75rem; }
+    /* Chat */
+    .chat {
+      border: 1px solid #8883; border-radius: .8rem; padding: 1rem;
+      min-height: 120px; max-height: 60vh; overflow-y: auto;
+      display: flex; flex-direction: column; gap: .75rem; background: #8881;
+    }
+    .msg { display: flex; }
+    .msg.user { justify-content: flex-end; }
+    .bubble {
+      max-width: 85%; padding: .6rem .85rem; border-radius: 1rem; line-height: 1.45;
+      white-space: pre-wrap; word-wrap: break-word;
+    }
+    .msg.user .bubble { background: #2563eb; color: #fff; border-bottom-right-radius: .3rem; }
+    .msg.bot .bubble { background: #8882; border-bottom-left-radius: .3rem; }
+    .bubble .grid { margin: .6rem 0 0; }
+    .typing .bubble { color: #888; font-style: italic; }
+    .chatbar { display: flex; gap: .5rem; margin-top: .75rem; }
+    .chatbar input {
+      flex: 1; min-width: 0; font-size: 1rem; padding: .65rem .8rem;
+      border-radius: 1.5rem; border: 1px solid #8884; background: #8881; color: inherit;
+    }
+    .chatbar button { border-radius: 1.5rem; }
+    .dots::after { content: "…"; animation: blink 1.2s steps(4) infinite; }
+    @keyframes blink { 0% { opacity: .3 } 50% { opacity: 1 } 100% { opacity: .3 } }
   </style>
 </head>
 <body>
@@ -68,13 +92,12 @@
   <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid #8883;" />
 
   <h2>🎁 AI gift concierge</h2>
-  <p class="sub">Tell it who it's for — it brainstorms gift ideas, asks if it needs more, and finds real products.</p>
-  <form id="searchForm" style="display:flex; gap:.5rem; flex-wrap:wrap;">
-    <input id="query" type="text" style="flex:1; min-width:240px; font-size:1rem; padding:.6rem .75rem; border-radius:.5rem; border:1px solid #8884;"
-           placeholder="e.g. birthday gift for my mom" />
-    <button type="submit">Search</button>
+  <p class="sub">Chat with it — say who the gift is for and it brainstorms ideas, asks if it needs more, and finds real products.</p>
+  <div id="chat" class="chat"></div>
+  <form id="searchForm" class="chatbar">
+    <input id="query" type="text" autocomplete="off" placeholder="Tell me who the gift is for…" />
+    <button type="submit">Send</button>
   </form>
-  <div id="result" class="status pending" style="display:none;"></div>
 
   <hr style="margin: 2.5rem 0; border: none; border-top: 1px solid #8883;" />
 
@@ -115,10 +138,9 @@
     btn.addEventListener("click", check);
     check(); // auto-run on load
 
-    // --- AI product search ---
+    // --- AI gift concierge (chat) ---
     const form = document.getElementById("searchForm");
     const queryInput = document.getElementById("query");
-    const result = document.getElementById("result");
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
@@ -148,38 +170,26 @@
       return `<div class="grid">${cards}</div>`;
     }
 
-    function renderQuestions(originalQuery, questions) {
-      const fields = questions.map((q, i) =>
-        `<label style="display:block;margin:.6rem 0 .15rem;">${escapeHtml(q)}</label>` +
-        `<input type="text" data-q="${i}" style="width:100%;font-size:1rem;padding:.5rem .65rem;border-radius:.45rem;border:1px solid #8884;box-sizing:border-box;" />`
-      ).join("");
-      result.className = "status pending";
-      result.innerHTML =
-        "<strong>A few quick questions to find better gifts</strong>" +
-        `<form id="answers">${fields}` +
-        `<div style="margin-top:.7rem;display:flex;gap:.5rem;">` +
-        `<button type="submit">Find gifts</button>` +
-        `<button type="button" id="skipQ">Skip & search anyway</button></div></form>`;
+    const chat = document.getElementById("chat");
+    // Conversation state for the clarifying-question flow.
+    let awaitingAnswers = false;   // true when the bot just asked questions
+    let pendingQuery = "";         // the original request that triggered questions
 
-      const ansForm = document.getElementById("answers");
-      const combine = () => {
-        const parts = [];
-        ansForm.querySelectorAll("[data-q]").forEach(el => {
-          const a = el.value.trim();
-          if (a) parts.push("- " + questions[el.getAttribute("data-q")] + " " + a);
-        });
-        return parts.length
-          ? originalQuery + "\n\nAdditional details:\n" + parts.join("\n")
-          : originalQuery;
-      };
-      ansForm.addEventListener("submit", (e) => { e.preventDefault(); runSearch(combine(), false); });
-      document.getElementById("skipQ").addEventListener("click", () => runSearch(originalQuery, false));
+    function addBubble(role, html, extraClass) {
+      const wrap = document.createElement("div");
+      wrap.className = "msg " + role + (extraClass ? " " + extraClass : "");
+      wrap.innerHTML = `<div class="bubble">${html}</div>`;
+      chat.appendChild(wrap);
+      chat.scrollTop = chat.scrollHeight;
+      return wrap;
     }
 
-    async function runSearch(query, allowQuestions) {
-      result.style.display = "block";
-      result.className = "status pending";
-      result.textContent = allowQuestions ? "Thinking…" : "Finding gifts with NVIDIA NIM…";
+    // Greeting
+    addBubble("bot", "Hi! 🎁 Tell me who you're shopping for and the occasion — " +
+      "e.g. <em>“birthday gift for my mom”</em> — and I'll find some good options.");
+
+    async function callSearch(query, allowQuestions) {
+      const typing = addBubble("bot", '<span class="dots">Thinking</span>', "typing");
       try {
         const res = await fetch("/api/search", {
           method: "POST",
@@ -187,36 +197,49 @@
           body: JSON.stringify({ query, allow_questions: allowQuestions }),
         });
         const data = await res.json();
+        typing.remove();
+
         if (data.ok && data.needs_input) {
-          renderQuestions(query, data.questions || []);
+          awaitingAnswers = true;
+          pendingQuery = query;
+          const qs = (data.questions || []).map(q => "• " + escapeHtml(q)).join("<br>");
+          addBubble("bot",
+            "To pick the best gift, could you tell me a bit more?<br>" + qs +
+            "<br><br><span style='color:#888'>Just reply here, or say “skip”.</span>");
           return;
         }
+
         if (data.ok) {
-          result.className = "status ok";
+          const summary = data.answer ? escapeHtml(data.answer) : "";
           const cards = renderProducts(data.products);
-          const summary = data.answer
-            ? `<div class="summary">${escapeHtml(data.answer)}</div>` : "";
-          const empty = (!cards && !data.answer)
-            ? "<div>No products found for that query.</div>" : "";
-          result.innerHTML =
-            "<strong>Recommendations</strong>" + summary + cards + empty +
-            "<details><summary>Raw tool data</summary><pre><code>" +
-            escapeHtml(JSON.stringify(data.results || [], null, 2)) + "</code></pre></details>";
+          const empty = (!cards && !summary) ? "I couldn't find matching products — try giving me more detail." : "";
+          addBubble("bot", (summary || empty) + cards);
         } else {
-          result.className = "status fail";
-          result.innerHTML = "<strong>❌ Search failed</strong><pre><code>" +
-            escapeHtml(JSON.stringify(data, null, 2)) + "</code></pre>";
+          addBubble("bot", "⚠️ Something went wrong:<br><pre><code>" +
+            escapeHtml(JSON.stringify(data, null, 2)) + "</code></pre>");
         }
       } catch (err) {
-        result.className = "status fail";
-        result.textContent = "❌ Request failed: " + err;
+        typing.remove();
+        addBubble("bot", "❌ Request failed: " + escapeHtml(String(err)));
       }
     }
 
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      const query = queryInput.value.trim();
-      if (query) runSearch(query, true);
+      const text = queryInput.value.trim();
+      if (!text) return;
+      queryInput.value = "";
+      addBubble("user", escapeHtml(text));
+
+      if (awaitingAnswers) {
+        awaitingAnswers = false;
+        const skip = /^(skip|no|none|just search|search anyway)$/i.test(text);
+        const query = skip ? pendingQuery
+          : pendingQuery + "\n\nAdditional details from the user: " + text;
+        callSearch(query, false);   // don't ask again; proceed to search
+      } else {
+        callSearch(text, true);     // first turn: allow clarifying questions
+      }
     });
 
     // --- Generic tool panel (all MCP tools, schema-driven forms) ---

@@ -21,6 +21,7 @@ Standard library only — no third-party packages.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -110,6 +111,28 @@ ASK_USER_TOOL = {
 # must be dropped, otherwise the MCP treats e.g. category="null" as a real
 # filter and returns nothing.
 NULLISH = {"null", "none", "nil", "undefined", "na", "n/a", ""}
+
+
+def _normalize_questions(raw) -> list:
+    """Coerce the model's `questions` argument into a clean list of strings.
+
+    Models sometimes return this as a stringified list rather than a real
+    array — either JSON ("[\"a\",\"b\"]") or Python-style single quotes
+    ("['a','b']"). Handle string, stringified-list, and list.
+    """
+    if isinstance(raw, str):
+        parsed = None
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            try:
+                parsed = ast.literal_eval(raw)
+            except (ValueError, SyntaxError):
+                parsed = None
+        raw = parsed if isinstance(parsed, list) else [raw]
+    if not isinstance(raw, list):
+        raw = [raw] if raw else []
+    return [str(q).strip() for q in raw if str(q).strip()][:3]
 
 
 def sanitize_args(obj):
@@ -460,7 +483,7 @@ def search(query: str, allow_questions: bool = True) -> dict:
                     qargs = json.loads(call["function"].get("arguments") or "{}")
                 except json.JSONDecodeError:
                     qargs = {}
-                questions = [str(q) for q in (qargs.get("questions") or []) if str(q).strip()]
+                questions = _normalize_questions(qargs.get("questions"))
                 if questions:
                     return {
                         "ok": True,
