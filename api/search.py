@@ -138,6 +138,15 @@ SYSTEM_PROMPT = (
     "act and talk in the same turn; after any cart or instruction action, "
     "confirm what you did in one short, natural sentence. Use the suggestion and "
     "cart numbers exactly as given in the context.\n\n"
+    "BUDGET CHECK before adding to the cart: if the user has given a budget, "
+    "always check it before calling add_to_cart or add_all_suggestions_to_cart. "
+    "The current cart subtotal is in the context — work out the NEW total if you "
+    "added the requested item(s). If that new total would go OVER their budget, "
+    "do NOT add it silently: first warn the user — state the item's price, the "
+    "new total, and how much it exceeds the budget — and ask whether they'd like "
+    "to add it anyway, or remove/swap something to stay within budget. Only call "
+    "the add tool once it fits the budget OR the user clearly confirms they're "
+    "happy to go over. If there's no budget, just add it.\n\n"
     "Rules: rely ONLY on tool data from this conversation — never list products "
     "or prices from memory, and never say 'prices may change, check the "
     "website'. Never list the same product twice. Only include tool parameters "
@@ -477,8 +486,17 @@ URL_KEYS = (
 )
 DESC_KEYS = ("description", "desc", "summary", "details", "short_description")
 CURRENCY_KEYS = ("currency", "currency_code", "currencyCode")
+ID_KEYS = ("id", "product_id", "productId", "productid", "sku", "product_code")
 
 SITE_BASE = os.environ.get("KAPRUKA_SITE_BASE", "https://www.kapruka.com")
+
+
+def _id_from_url(url):
+    """Kapruka product URLs end in /kid/<product_id>; pull that out."""
+    if not isinstance(url, str):
+        return None
+    m = re.search(r"/kid/([^/?#]+)", url)
+    return m.group(1) if m else None
 
 
 def _first(d: dict, keys) -> object:
@@ -536,12 +554,14 @@ def _looks_like_product(d: dict) -> bool:
 
 def _normalize_product(d: dict) -> dict:
     amount, currency_from_price = _money(_first(d, PRICE_KEYS))
+    url = _abs_url(_first(d, URL_KEYS))
     return {
+        "id": _first(d, ID_KEYS) or _id_from_url(url),
         "name": _first(d, NAME_KEYS),
         "price": amount,
         "currency": _first(d, CURRENCY_KEYS) or currency_from_price,
         "image": _abs_url(_first(d, IMAGE_KEYS)),
-        "url": _abs_url(_first(d, URL_KEYS)),
+        "url": url,
         "description": _clean_desc(_first(d, DESC_KEYS)),
     }
 
@@ -679,8 +699,21 @@ def _context_message(suggestions: list, cart: list, instructions: list) -> str |
     if cart:
         lines.append("")
         lines.append("CURRENT CART (use these numbers for remove_from_cart):")
+        subtotal = 0.0
+        cart_cur = "LKR"
         for i, p in enumerate(cart, 1):
-            lines.append(f"{i}. {p.get('name')} x{p.get('qty', 1)}")
+            qty = p.get("qty", 1) or 1
+            cur = p.get("currency") or "LKR"
+            cart_cur = cur
+            price = p.get("price")
+            try:
+                line_total = float(re.sub(r"[^0-9.]", "", str(price))) * qty
+            except (TypeError, ValueError):
+                line_total = 0.0
+            subtotal += line_total
+            price_txt = f" — {cur} {price} each" if price not in (None, "") else ""
+            lines.append(f"{i}. {p.get('name')} x{qty}{price_txt}")
+        lines.append(f"CART SUBTOTAL SO FAR: {cart_cur} {subtotal:,.0f}")
     if instructions:
         lines.append("")
         lines.append("SAVED INSTRUCTIONS: " + "; ".join(str(x) for x in instructions))

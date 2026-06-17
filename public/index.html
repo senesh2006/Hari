@@ -141,6 +141,15 @@
     .btn-primary { width: 100%; margin-top: .6rem; padding: .7rem; border: none; border-radius: 12px; cursor: pointer; font: inherit; font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary-2)); box-shadow: 0 6px 16px rgba(15,157,107,.28); }
     .btn-primary:hover { filter: brightness(1.05); }
     .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 12px; padding: .7rem; cursor: pointer; font: inherit; }
+    .formgrid { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem .6rem; }
+    .formgrid .full { grid-column: 1 / -1; }
+    .formgrid label { margin: 0 0 .2rem; }
+    .formgrid input, .formgrid select, .formgrid textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: .9rem; padding: .5rem .6rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: inherit; }
+    .formgrid input:focus, .formgrid select:focus, .formgrid textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent); }
+    #checkoutResult { margin: .8rem 0 0; }
+    .co-ok { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 12px; padding: .8rem; font-size: .9rem; }
+    .co-ok .pay { display: block; text-align: center; margin-top: .6rem; padding: .65rem; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; text-decoration: none; font-weight: 600; }
+    .co-bad { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 12px; padding: .7rem; font-size: .88rem; }
 
     /* Toasts */
     .toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 1.1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 60; align-items: center; }
@@ -188,15 +197,39 @@
       <div id="cartItems"></div>
     </div>
     <div class="foot">
-      <div class="totrow"><span class="lbl">Estimated total</span><span id="cartTotal" class="val">LKR 0</span></div>
-      <label>Notes for the store — hampers, gift-wrap, custom requests</label>
-      <div id="instrList" class="instrlist"></div>
-      <textarea id="instrInput" rows="2" placeholder="e.g. gift-wrap everything together as one hamper"></textarea>
-      <div class="row">
-        <button id="addInstr" type="button" class="btn-soft">＋ Add note</button>
-        <button id="clearCart" type="button" class="btn-soft">Clear</button>
+      <!-- Cart summary view -->
+      <div id="cartView">
+        <div class="totrow"><span class="lbl">Estimated total</span><span id="cartTotal" class="val">LKR 0</span></div>
+        <label>Notes for the store — hampers, gift-wrap, custom requests</label>
+        <div id="instrList" class="instrlist"></div>
+        <textarea id="instrInput" rows="2" placeholder="e.g. gift-wrap everything together as one hamper"></textarea>
+        <div class="row">
+          <button id="addInstr" type="button" class="btn-soft">＋ Add note</button>
+          <button id="clearCart" type="button" class="btn-soft">Clear</button>
+        </div>
+        <button id="checkout" type="button" class="btn-primary">Proceed to checkout →</button>
       </div>
-      <button id="checkout" type="button" class="btn-primary">Proceed to checkout →</button>
+
+      <!-- Manual checkout form -->
+      <form id="checkoutForm" style="display:none">
+        <div class="totrow"><span class="lbl">Order total</span><span id="checkoutTotal" class="val">LKR 0</span></div>
+        <div class="formgrid">
+          <div class="full"><label>Recipient name *</label><input name="rname" required placeholder="Who receives the gift" /></div>
+          <div class="full"><label>Recipient phone *</label><input name="rphone" required placeholder="07X XXX XXXX or +9477…" /></div>
+          <div class="full"><label>Delivery address *</label><input name="address" required placeholder="No. 46, Pitipana Veediya" /></div>
+          <div><label>City *</label><input name="city" required placeholder="Negombo" /></div>
+          <div><label>Delivery date *</label><input name="date" type="date" required /></div>
+          <div class="full"><label>Address type</label>
+            <select name="location_type"><option value="house">House</option><option value="apartment">Apartment</option><option value="office">Office</option><option value="other">Other</option></select>
+          </div>
+          <div class="full"><label>Your name (sender) *</label><input name="sname" required placeholder="From…" /></div>
+          <div class="full"><label>Gift card message</label><textarea name="gift_message" rows="2" maxlength="300" placeholder="Happy birthday, Mom! 🎂"></textarea></div>
+          <div class="full"><label>Delivery instructions</label><textarea name="instructions" rows="2" maxlength="250" placeholder="Leave at the front gate, call on arrival…"></textarea></div>
+        </div>
+        <div id="checkoutResult"></div>
+        <button id="placeOrder" type="submit" class="btn-primary">Place order &amp; get pay link</button>
+        <button id="backToCart" type="button" class="btn-ghost" style="width:100%;margin-top:.5rem">← Back to cart</button>
+      </form>
     </div>
   </aside>
 
@@ -380,7 +413,7 @@
       const key = cartKey(product);
       const existing = cart.find(c => cartKey(c) === key);
       if (existing) existing.qty += qty;
-      else cart.push({ name: product.name, price: product.price, currency: product.currency || "LKR", url: product.url, image: product.image, qty });
+      else cart.push({ id: product.id, name: product.name, price: product.price, currency: product.currency || "LKR", url: product.url, image: product.image, qty });
       renderCart(); bumpBadge();
       if (!quiet) showToast(`Added “${product.name}”`, "🛒");
     }
@@ -427,7 +460,7 @@
 
     // drawer open/close
     const drawer = $("drawer"), scrim = $("scrim");
-    function openCart() { drawer.classList.add("open"); scrim.classList.add("open"); }
+    function openCart() { drawer.classList.add("open"); scrim.classList.add("open"); if (typeof showCartView === "function") showCartView(); }
     function closeCart() { drawer.classList.remove("open"); scrim.classList.remove("open"); }
     $("cartBtn").addEventListener("click", openCart);
     $("drawerClose").addEventListener("click", closeCart);
@@ -443,12 +476,80 @@
     });
     $("addInstr").addEventListener("click", () => { const el = $("instrInput"); const tx = el.value.trim(); if (!tx) return; instructions.push(tx); el.value = ""; renderInstructions(); showToast("Note saved", "📝"); });
     $("clearCart").addEventListener("click", () => { if (!cart.length) return; cart.length = 0; renderCart(); showToast("Cart cleared", "🗑️"); });
-    $("checkout").addEventListener("click", () => {
+    // ---- manual checkout (calls kapruka_create_order directly) ----
+    const cartView = $("cartView"), checkoutForm = $("checkoutForm");
+    function idFromUrl(u) { const m = String(u || "").match(/\/kid\/([^/?#]+)/); return m ? m[1] : null; }
+
+    function showCheckout() {
       if (!cart.length) { showToast("Your cart is empty", "🛒"); return; }
-      const lines = cart.map(c => `${c.qty}× ${c.name}`).join(", ");
-      const notes = instructions.length ? ` Please note: ${instructions.join("; ")}.` : "";
-      closeCart();
-      sendText(`I'd like to check out my cart: ${lines}.${notes} How do we arrange delivery and payment?`);
+      $("checkoutTotal").textContent = cartTotalEl.textContent;
+      // prefill delivery instructions from saved notes
+      const f = checkoutForm;
+      if (instructions.length && !f.instructions.value) f.instructions.value = instructions.join("; ");
+      // sensible min date = today
+      const today = new Date(); today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+      f.date.min = today.toISOString().slice(0, 10);
+      $("checkoutResult").innerHTML = "";
+      cartView.style.display = "none";
+      checkoutForm.style.display = "";
+    }
+    function showCartView() { checkoutForm.style.display = "none"; cartView.style.display = ""; }
+
+    $("checkout").addEventListener("click", showCheckout);
+    $("backToCart").addEventListener("click", showCartView);
+
+    checkoutForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!cart.length) { showToast("Your cart is empty", "🛒"); return; }
+      const f = checkoutForm;
+      const items = [];
+      for (const c of cart) {
+        const pid = c.id || idFromUrl(c.url);
+        if (!pid) { $("checkoutResult").innerHTML = `<div class="co-bad">Couldn't find a product ID for “${escapeHtml(c.name)}”. Please remove it and re-add it from the suggestions.</div>`; return; }
+        items.push({ product_id: pid, quantity: c.qty });
+      }
+      const params = {
+        cart: items,
+        recipient: { name: f.rname.value.trim(), phone: f.rphone.value.trim() },
+        delivery: { address: f.address.value.trim(), city: f.city.value.trim(), date: f.date.value, location_type: f.location_type.value },
+        sender: { name: f.sname.value.trim() },
+        currency: (cart[0] && cart[0].currency) || "LKR",
+        response_format: "json",
+      };
+      if (f.instructions.value.trim()) params.delivery.instructions = f.instructions.value.trim();
+      if (f.gift_message.value.trim()) params.gift_message = f.gift_message.value.trim();
+
+      const btn = $("placeOrder");
+      btn.disabled = true; btn.textContent = "Placing order…";
+      $("checkoutResult").innerHTML = "";
+      try {
+        const res = await fetch("/api/tool", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "kapruka_create_order", arguments: { params } }),
+        });
+        const data = await res.json();
+        let order = null;
+        try { order = JSON.parse(data.output); } catch (_) {}
+        if (data.ok && order && order.checkout_url) {
+          const s = order.summary || {};
+          const tot = s.grand_total != null ? fmtMoney(s.grand_total, s.currency) : "";
+          $("checkoutResult").innerHTML =
+            `<div class="co-ok"><strong>✅ Order ready!</strong>` +
+            (order.order_ref ? `<div>Ref: ${escapeHtml(order.order_ref)}</div>` : "") +
+            (tot ? `<div>Grand total: <strong>${escapeHtml(tot)}</strong>${s.delivery_fee != null ? ` (incl. ${escapeHtml(fmtMoney(s.delivery_fee, s.currency))} delivery)` : ""}</div>` : "") +
+            `<a class="pay" href="${escapeAttr(order.checkout_url)}" target="_blank" rel="noopener">Open secure checkout & pay →</a>` +
+            (order.expires_at ? `<div style="color:var(--muted);font-size:.78rem;margin-top:.4rem">Link expires ${escapeHtml(new Date(order.expires_at).toLocaleString())}</div>` : "") +
+            `</div>`;
+          showToast("Order created — open the pay link", "✅");
+        } else {
+          const msg = (data.output && String(data.output)) || (data.error && String(data.error)) || "Order could not be created.";
+          $("checkoutResult").innerHTML = `<div class="co-bad"><strong>Couldn't place the order.</strong><br>${escapeHtml(msg.slice(0, 400))}</div>`;
+        }
+      } catch (err) {
+        $("checkoutResult").innerHTML = `<div class="co-bad">❌ ${escapeHtml(String(err))}</div>`;
+      } finally {
+        btn.disabled = false; btn.textContent = "Place order & get pay link";
+      }
     });
     renderCart();
 
@@ -478,7 +579,7 @@
       try {
         const res = await fetch("/api/search", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: conversation, allow_questions: allowQuestions, suggestions: lastSuggestions, cart: cart.map(c => ({ name: c.name, qty: c.qty })), instructions }),
+          body: JSON.stringify({ messages: conversation, allow_questions: allowQuestions, suggestions: lastSuggestions, cart: cart.map(c => ({ name: c.name, qty: c.qty, price: c.price, currency: c.currency })), instructions }),
         });
         const data = await res.json();
         typing.remove();

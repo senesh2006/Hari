@@ -154,6 +154,14 @@ URL_KEYS = (
 )
 DESC_KEYS = ("description", "desc", "summary", "details", "short_description")
 CURRENCY_KEYS = ("currency", "currency_code", "currencyCode")
+ID_KEYS = ("id", "product_id", "productId", "productid", "sku", "product_code")
+
+
+def _id_from_url(url):
+    if not isinstance(url, str):
+        return None
+    m = re.search(r"/kid/([^/?#]+)", url)
+    return m.group(1) if m else None
 
 
 def _first(d, keys):
@@ -203,12 +211,14 @@ def _looks_like_product(d):
 
 def _normalize_product(d):
     amount, currency_from_price = _money(_first(d, PRICE_KEYS))
+    url = _abs_url(_first(d, URL_KEYS))
     return {
+        "id": _first(d, ID_KEYS) or _id_from_url(url),
         "name": _first(d, NAME_KEYS),
         "price": amount,
         "currency": _first(d, CURRENCY_KEYS) or currency_from_price,
         "image": _abs_url(_first(d, IMAGE_KEYS)),
-        "url": _abs_url(_first(d, URL_KEYS)),
+        "url": url,
         "description": _clean_desc(_first(d, DESC_KEYS)),
     }
 
