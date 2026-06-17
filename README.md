@@ -109,8 +109,8 @@ The Kapruka MCP itself needs no key.
 Each query runs an agentic tool-calling loop, so latency is dominated by the
 NIM model and the number of tool rounds. Defaults are tuned for speed:
 
-- `NVIDIA_NIM_MODEL` defaults to the fast `meta/llama-3.1-8b-instruct`
-  (set it to `meta/llama-3.3-70b-instruct` for higher-quality answers).
+- `NVIDIA_NIM_MODEL` defaults to `meta/llama-3.3-70b-instruct` for better
+  judgement and tone (set it to `meta/llama-3.1-8b-instruct` for lower latency).
 - `SEARCH_MAX_ROUNDS` defaults to `3`, and the tool catalogue is cached across
   warm invocations to skip a round-trip.
 

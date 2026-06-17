@@ -42,9 +42,10 @@ USER_AGENT = os.environ.get(
 
 # --- NVIDIA NIM config -------------------------------------------------------
 NIM_BASE_URL = os.environ.get("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
-# Default to a fast tool-calling model; override with NVIDIA_NIM_MODEL (e.g.
-# "meta/llama-3.3-70b-instruct") for higher quality at the cost of latency.
-NIM_MODEL = os.environ.get("NVIDIA_NIM_MODEL", "meta/llama-3.1-8b-instruct")
+# Default to the higher-quality 70B model for better judgement, tone and
+# reliable tool calls; override with NVIDIA_NIM_MODEL (e.g.
+# "meta/llama-3.1-8b-instruct") to trade quality for lower latency.
+NIM_MODEL = os.environ.get("NVIDIA_NIM_MODEL", "meta/llama-3.3-70b-instruct")
 NIM_API_KEY = os.environ.get("NVIDIA_API_KEY")
 NIM_TIMEOUT = float(os.environ.get("NVIDIA_NIM_TIMEOUT", "60"))
 # A full celebration package needs several searches (cake, flowers, card,
