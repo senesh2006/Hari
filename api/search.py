@@ -25,6 +25,7 @@ import ast
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler
@@ -51,6 +52,12 @@ NIM_TIMEOUT = float(os.environ.get("NVIDIA_NIM_TIMEOUT", "60"))
 # A full celebration package needs several searches (cake, flowers, card,
 # gift, decorations), so allow a few more rounds.
 MAX_TOOL_ROUNDS = int(os.environ.get("SEARCH_MAX_ROUNDS", "5"))
+# Overall wall-clock budget for one request. Kept just under Vercel's function
+# limit so we always return our own (partial) answer instead of being killed
+# with a raw 504. Each model call is capped to the time that remains.
+SEARCH_BUDGET = float(os.environ.get("SEARCH_BUDGET", "55"))
+# Don't start another model round unless this many seconds remain.
+MIN_ROUND_SECONDS = float(os.environ.get("SEARCH_MIN_ROUND_SECONDS", "8"))
 
 # Tool schemas are static; cache them across warm invocations to skip a
 # tools/list round-trip on every request.
@@ -616,7 +623,11 @@ def extract_products(results: list) -> list:
 
 
 # === NVIDIA NIM plumbing =====================================================
-def nim_chat(messages: list, tools: list) -> dict:
+class NimTimeout(Exception):
+    """The NIM model didn't answer in time (transient — worth degrading gracefully)."""
+
+
+def nim_chat(messages: list, tools: list, timeout: float | None = None) -> dict:
     if not NIM_API_KEY:
         raise PermissionError(
             "NVIDIA_API_KEY is not set. Add it in your Vercel project's "
@@ -643,11 +654,15 @@ def nim_chat(messages: list, tools: list) -> dict:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=NIM_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=timeout or NIM_TIMEOUT) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise ValueError(f"NVIDIA NIM HTTP {exc.code}: {detail[:500]}") from exc
+    except (TimeoutError, urllib.error.URLError, OSError) as exc:
+        # socket.timeout (read timed out) and transient network errors land
+        # here; signal a graceful degrade rather than a hard 502.
+        raise NimTimeout(str(exc)) from exc
 
 
 # === Orchestration ===========================================================
@@ -800,8 +815,28 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "tools_available": tool_names,
         }
 
+    deadline = time.monotonic() + SEARCH_BUDGET
+
+    def degrade() -> dict:
+        """Hand back whatever we have when the time budget runs out."""
+        if results:
+            return finalize("Here are the best matches I found so far — that took a little long on my side.")
+        if cart_actions:
+            return finalize("Done — I've updated your cart.")
+        return finalize(
+            "Sorry, that took longer than expected on my end. Please send your "
+            "last message again and I'll pick up right where we left off."
+        )
+
     for _ in range(MAX_TOOL_ROUNDS):
-        completion = nim_chat(messages, openai_tools)
+        remaining = deadline - time.monotonic()
+        if remaining < MIN_ROUND_SECONDS:
+            return degrade()
+        try:
+            completion = nim_chat(messages, openai_tools, timeout=min(NIM_TIMEOUT, remaining))
+        except NimTimeout:
+            # The model stalled; return whatever we already gathered.
+            return degrade()
         message = completion["choices"][0]["message"]
         structured = message.get("tool_calls") or []
 
