@@ -79,10 +79,16 @@ SYSTEM_PROMPT = (
     "interests, the delivery city, or the occasion date — call the ask_user "
     "tool with 1-3 short, specific questions BEFORE searching. Only ask when it "
     "would materially improve the choice; if you already have enough, proceed.\n\n"
-    "Rules: rely only on tool data — never invent products or prices. Never list "
-    "the same product twice. Only include tool parameters you actually need — "
-    "never pass the string 'null' or placeholder values; omit them. If a search "
-    "returns nothing, try a different concrete idea rather than repeating it."
+    "Follow-ups: this is a conversation — remember earlier details (budget, "
+    "interests, city, occasion). When the user asks for something new (e.g. 'I "
+    "also want a cake'), call kapruka_search_products for it and recommend from "
+    "those fresh results; honour the budget and context already given.\n\n"
+    "Rules: rely ONLY on tool data from this conversation — never list products "
+    "or prices from memory, and never say 'prices may change, check the "
+    "website'. Never list the same product twice. Only include tool parameters "
+    "you actually need — never pass the string 'null' or placeholder values; "
+    "omit them. If a search returns nothing, try a different concrete idea "
+    "rather than repeating it."
 )
 
 # A synthetic tool (not part of the MCP) that lets the model pause and ask the
@@ -504,8 +510,26 @@ def nim_chat(messages: list, tools: list) -> dict:
 
 
 # === Orchestration ===========================================================
-def search(query: str, allow_questions: bool = True) -> dict:
+def _build_messages(conversation: list) -> list:
+    """System prompt + the recent user/assistant turns (capped for latency)."""
+    msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for turn in conversation[-12:]:
+        role = turn.get("role")
+        content = str(turn.get("content") or "").strip()
+        if role in ("user", "assistant") and content:
+            msgs.append({"role": role, "content": content})
+    return msgs
+
+
+def search(conversation, allow_questions: bool = True) -> dict:
     global _TOOLS_CACHE
+    # Accept a plain string (single turn) or a full conversation list.
+    if isinstance(conversation, str):
+        conversation = [{"role": "user", "content": conversation}]
+    last_user = next(
+        (t.get("content", "") for t in reversed(conversation) if t.get("role") == "user"), ""
+    )
+
     mcp = MCPSession()
     mcp.initialize()
     if _TOOLS_CACHE is None:
@@ -516,10 +540,7 @@ def search(query: str, allow_questions: bool = True) -> dict:
     if allow_questions:
         openai_tools = openai_tools + [ASK_USER_TOOL]
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": query},
-    ]
+    messages = _build_messages(conversation)
     trace = []
     results = []
     tool_names = [t.get("name") for t in tools]
@@ -528,7 +549,7 @@ def search(query: str, allow_questions: bool = True) -> dict:
     def finalize(answer: str) -> dict:
         return {
             "ok": True,
-            "query": query,
+            "query": last_user,
             "model": NIM_MODEL,
             "answer": answer,
             "products": extract_products(results),
@@ -541,7 +562,7 @@ def search(query: str, allow_questions: bool = True) -> dict:
         return {
             "ok": True,
             "needs_input": True,
-            "query": query,
+            "query": last_user,
             "model": NIM_MODEL,
             "questions": questions[:3],
             "tools_available": tool_names,
@@ -630,11 +651,16 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _run(self, query: str, allow_questions: bool = True):
-        if not query or not query.strip():
-            return self._respond(400, {"ok": False, "error": "Missing 'query'."})
+    def _run(self, conversation, allow_questions: bool = True):
+        # conversation is a list of {role, content} turns (or [] if empty).
+        has_user = any(
+            t.get("role") == "user" and str(t.get("content") or "").strip()
+            for t in conversation
+        )
+        if not has_user:
+            return self._respond(400, {"ok": False, "error": "Missing 'query'/'messages'."})
         try:
-            self._respond(200, search(query.strip(), allow_questions=allow_questions))
+            self._respond(200, search(conversation, allow_questions=allow_questions))
         except PermissionError as exc:
             self._respond(400, {"ok": False, "error": str(exc)})
         except Exception as exc:
@@ -644,7 +670,8 @@ class handler(BaseHTTPRequestHandler):
         from urllib.parse import parse_qs, urlparse
 
         params = parse_qs(urlparse(self.path).query)
-        self._run((params.get("q") or [""])[0])
+        q = (params.get("q") or [""])[0]
+        self._run([{"role": "user", "content": q}])
 
     def do_POST(self):  # noqa: N802
         length = int(self.headers.get("Content-Length") or 0)
@@ -653,6 +680,10 @@ class handler(BaseHTTPRequestHandler):
             data = json.loads(raw or b"{}")
         except json.JSONDecodeError:
             return self._respond(400, {"ok": False, "error": "Body must be JSON."})
+        # Prefer full conversation history ('messages'); fall back to single 'query'.
+        conversation = data.get("messages")
+        if not isinstance(conversation, list) or not conversation:
+            conversation = [{"role": "user", "content": data.get("query", "")}]
         # allow_questions defaults true; the client sets it false when resubmitting
         # with answers so the model proceeds to search instead of asking again.
-        self._run(data.get("query", ""), allow_questions=bool(data.get("allow_questions", True)))
+        self._run(conversation, allow_questions=bool(data.get("allow_questions", True)))

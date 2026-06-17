@@ -171,9 +171,10 @@
     }
 
     const chat = document.getElementById("chat");
-    // Conversation state for the clarifying-question flow.
+    // Full conversation history (text turns) sent to the backend each request
+    // so the assistant remembers budget, interests, city, etc.
+    const conversation = [];
     let awaitingAnswers = false;   // true when the bot just asked questions
-    let pendingQuery = "";         // the original request that triggered questions
 
     function addBubble(role, html, extraClass) {
       const wrap = document.createElement("div");
@@ -184,28 +185,29 @@
       return wrap;
     }
 
-    // Greeting
+    // Greeting (UI only — not part of the model conversation)
     addBubble("bot", "Hi! 🎁 Tell me who you're shopping for and the occasion — " +
       "e.g. <em>“birthday gift for my mom”</em> — and I'll find some good options.");
 
-    async function callSearch(query, allowQuestions) {
+    async function callSearch(allowQuestions) {
       const typing = addBubble("bot", '<span class="dots">Thinking</span>', "typing");
       try {
         const res = await fetch("/api/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query, allow_questions: allowQuestions }),
+          body: JSON.stringify({ messages: conversation, allow_questions: allowQuestions }),
         });
         const data = await res.json();
         typing.remove();
 
         if (data.ok && data.needs_input) {
           awaitingAnswers = true;
-          pendingQuery = query;
           const qs = (data.questions || []).map(q => "• " + escapeHtml(q)).join("<br>");
-          addBubble("bot",
-            "To pick the best gift, could you tell me a bit more?<br>" + qs +
-            "<br><br><span style='color:#888'>Just reply here, or say “skip”.</span>");
+          const text = "To pick the best gift, could you tell me a bit more?<br>" + qs +
+            "<br><br><span style='color:#888'>Just reply here, or say “skip”.</span>";
+          addBubble("bot", text);
+          // Record that we asked, so the model has context next turn.
+          conversation.push({ role: "assistant", content: "Clarifying questions: " + (data.questions || []).join(" ") });
           return;
         }
 
@@ -214,6 +216,7 @@
           const cards = renderProducts(data.products);
           const empty = (!cards && !summary) ? "I couldn't find matching products — try giving me more detail." : "";
           addBubble("bot", (summary || empty) + cards);
+          if (data.answer) conversation.push({ role: "assistant", content: data.answer });
         } else {
           addBubble("bot", "⚠️ Something went wrong:<br><pre><code>" +
             escapeHtml(JSON.stringify(data, null, 2)) + "</code></pre>");
@@ -230,16 +233,13 @@
       if (!text) return;
       queryInput.value = "";
       addBubble("user", escapeHtml(text));
+      conversation.push({ role: "user", content: text });
 
-      if (awaitingAnswers) {
-        awaitingAnswers = false;
-        const skip = /^(skip|no|none|just search|search anyway)$/i.test(text);
-        const query = skip ? pendingQuery
-          : pendingQuery + "\n\nAdditional details from the user: " + text;
-        callSearch(query, false);   // don't ask again; proceed to search
-      } else {
-        callSearch(text, true);     // first turn: allow clarifying questions
-      }
+      // After the bot asked questions, the next turn is the user's answer:
+      // proceed straight to search (don't ask again).
+      const proceed = awaitingAnswers;
+      awaitingAnswers = false;
+      callSearch(!proceed);
     });
 
     // --- Generic tool panel (all MCP tools, schema-driven forms) ---
