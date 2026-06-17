@@ -184,6 +184,17 @@ def _money(v):
     return v, None
 
 
+def _clean_desc(text):
+    """Strip Kapruka's internal 'specialGifts - <tags> CATEGORY' prefix."""
+    if not isinstance(text, str):
+        return text
+    s = text.strip()
+    m = re.match(r"^\s*specialGifts\b.*?\b([A-Z]{4,})\b\s*", s)
+    if m:
+        s = s[m.end():].strip()
+    return s
+
+
 def _looks_like_product(d):
     if not isinstance(d, dict) or _first(d, NAME_KEYS) is None:
         return False
@@ -198,7 +209,7 @@ def _normalize_product(d):
         "currency": _first(d, CURRENCY_KEYS) or currency_from_price,
         "image": _abs_url(_first(d, IMAGE_KEYS)),
         "url": _abs_url(_first(d, URL_KEYS)),
-        "description": _first(d, DESC_KEYS),
+        "description": _clean_desc(_first(d, DESC_KEYS)),
     }
 
 

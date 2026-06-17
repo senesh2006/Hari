@@ -99,7 +99,22 @@ SYSTEM_PROMPT = (
     "Follow-ups: this is a conversation — remember earlier details (occasion, "
     "budget, interests, city, date). When the user asks for something new, call "
     "kapruka_search_products for it and recommend from those fresh results; "
-    "honour the budget and context already given.\n\n"
+    "honour the budget and context already given. For a celebratory or warm "
+    "occasion, after you give gift ideas, offer to add a cake and/or flowers "
+    "too (e.g. 'Would you like me to add a cake or flowers as well?'). Never "
+    "offer cakes, flowers-for-celebration or party items in a sombre or "
+    "sensitive situation.\n\n"
+    "CART & SELECTIONS: the user builds a cart from your suggestions. When they "
+    "pick specific items from your LATEST suggestions (by number, name or "
+    "description) call add_to_cart with those suggestion numbers. When they want "
+    "all of them ('add everything', 'the whole list') call "
+    "add_all_suggestions_to_cart. To drop items or empty the cart call "
+    "remove_from_cart. When they give a special request — gift-wrapping, "
+    "combining items into a hamper, a custom build, a delivery note or a message "
+    "for the card/store — call add_instruction to save it verbatim. You may both "
+    "act and talk in the same turn; after any cart or instruction action, "
+    "confirm what you did in one short, natural sentence. Use the suggestion and "
+    "cart numbers exactly as given in the context.\n\n"
     "Rules: rely ONLY on tool data from this conversation — never list products "
     "or prices from memory, and never say 'prices may change, check the "
     "website'. Never list the same product twice. Only include tool parameters "
@@ -132,6 +147,82 @@ ASK_USER_TOOL = {
         },
     },
 }
+
+
+# Synthetic cart/instruction tools (not part of the MCP). They let the model
+# act on the cart the user is building in the browser. We resolve them against
+# the suggestions/cart the client sends and return `cart_actions` for the UI to
+# apply — nothing is sent to the MCP here.
+CART_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "add_to_cart",
+            "description": (
+                "Add one or more of the CURRENT SUGGESTIONS to the user's cart. "
+                "Use the 1-based suggestion numbers from the context."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "1-based suggestion numbers to add.",
+                    },
+                    "quantities": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Optional quantities, parallel to items (default 1 each).",
+                    },
+                },
+                "required": ["items"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_all_suggestions_to_cart",
+            "description": (
+                "Add EVERY current suggestion to the cart. Use when the user "
+                "wants the whole suggested list (e.g. 'add everything')."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_from_cart",
+            "description": "Remove items from the cart by their 1-based cart numbers, or clear it entirely.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array", "items": {"type": "integer"}},
+                    "clear": {"type": "boolean", "description": "Set true to empty the cart."},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_instruction",
+            "description": (
+                "Save a special instruction for the store/order — gift wrapping, "
+                "combining items into a hamper, a custom build, a delivery note, "
+                "or message-card text."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"instruction": {"type": "string"}},
+                "required": ["instruction"],
+            },
+        },
+    },
+]
+CART_TOOL_NAMES = {t["function"]["name"] for t in CART_TOOLS}
 
 
 # Values a model emits as placeholders for "unset" optional parameters. These
@@ -395,6 +486,23 @@ def _money(v):
     return v, None
 
 
+def _clean_desc(text):
+    """Strip Kapruka's internal tag/category prefix from a description.
+
+    Raw descriptions look like:
+        "specialGifts - Kpc, Electronics, Toasters ELECTRONICS Make 3 mini..."
+    i.e. a tag list, then an ALL-CAPS category token, then the real copy. Cut
+    everything up to and including that leading category token.
+    """
+    if not isinstance(text, str):
+        return text
+    s = text.strip()
+    m = re.match(r"^\s*specialGifts\b.*?\b([A-Z]{4,})\b\s*", s)
+    if m:
+        s = s[m.end():].strip()
+    return s
+
+
 def _looks_like_product(d: dict) -> bool:
     if not isinstance(d, dict):
         return False
@@ -411,7 +519,7 @@ def _normalize_product(d: dict) -> dict:
         "currency": _first(d, CURRENCY_KEYS) or currency_from_price,
         "image": _abs_url(_first(d, IMAGE_KEYS)),
         "url": _abs_url(_first(d, URL_KEYS)),
-        "description": _first(d, DESC_KEYS),
+        "description": _clean_desc(_first(d, DESC_KEYS)),
     }
 
 
@@ -527,9 +635,38 @@ def nim_chat(messages: list, tools: list) -> dict:
 
 
 # === Orchestration ===========================================================
-def _build_messages(conversation: list) -> list:
-    """System prompt + the recent user/assistant turns (capped for latency)."""
+def _context_message(suggestions: list, cart: list, instructions: list) -> str | None:
+    """Describe the browser-side suggestions/cart so the model can act on them."""
+    lines = []
+    if suggestions:
+        lines.append("CURRENT SUGGESTIONS (use these numbers for add_to_cart):")
+        for i, p in enumerate(suggestions, 1):
+            cur = p.get("currency") or "LKR"
+            price = p.get("price")
+            price_txt = f" — {cur} {price}" if price not in (None, "") else ""
+            lines.append(f"{i}. {p.get('name')}{price_txt}")
+    if cart:
+        lines.append("")
+        lines.append("CURRENT CART (use these numbers for remove_from_cart):")
+        for i, p in enumerate(cart, 1):
+            lines.append(f"{i}. {p.get('name')} x{p.get('qty', 1)}")
+    if instructions:
+        lines.append("")
+        lines.append("SAVED INSTRUCTIONS: " + "; ".join(str(x) for x in instructions))
+    if not lines:
+        return None
+    return (
+        "Live cart/selection context (this is NOT catalogue data to recommend; "
+        "use it only to resolve add_to_cart / remove_from_cart / "
+        "add_all_suggestions_to_cart actions):\n" + "\n".join(lines)
+    )
+
+
+def _build_messages(conversation: list, context: str | None = None) -> list:
+    """System prompt + cart context + the recent user/assistant turns."""
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if context:
+        msgs.append({"role": "system", "content": context})
     for turn in conversation[-12:]:
         role = turn.get("role")
         content = str(turn.get("content") or "").strip()
@@ -538,7 +675,62 @@ def _build_messages(conversation: list) -> list:
     return msgs
 
 
-def search(conversation, allow_questions: bool = True) -> dict:
+def _resolve_cart_action(name: str, args: dict, suggestions: list):
+    """Turn a synthetic cart tool call into a concrete action for the UI."""
+    args = args or {}
+    if name == "add_all_suggestions_to_cart":
+        return {"action": "add", "products": [dict(p, qty=1) for p in suggestions]}
+    if name == "add_to_cart":
+        items = args.get("items") or []
+        qtys = args.get("quantities") or []
+        products = []
+        for i, idx in enumerate(items):
+            try:
+                n = int(idx) - 1
+            except (TypeError, ValueError):
+                continue
+            if 0 <= n < len(suggestions):
+                qty = 1
+                if i < len(qtys):
+                    try:
+                        qty = max(1, int(qtys[i]))
+                    except (TypeError, ValueError):
+                        qty = 1
+                products.append(dict(suggestions[n], qty=qty))
+        return {"action": "add", "products": products}
+    if name == "remove_from_cart":
+        if args.get("clear"):
+            return {"action": "clear"}
+        items = []
+        for idx in args.get("items") or []:
+            try:
+                items.append(int(idx))
+            except (TypeError, ValueError):
+                continue
+        return {"action": "remove", "items": items}
+    if name == "add_instruction":
+        text = str(args.get("instruction") or "").strip()
+        return {"action": "instruction", "text": text} if text else None
+    return None
+
+
+def _cart_confirmation(action) -> str:
+    if not action:
+        return "(no cart change)"
+    kind = action.get("action")
+    if kind == "add":
+        n = len(action.get("products") or [])
+        return f"Added {n} item(s) to the cart." if n else "Nothing matched to add."
+    if kind == "clear":
+        return "Cart cleared."
+    if kind == "remove":
+        return f"Removed {len(action.get('items') or [])} item(s) from the cart."
+    if kind == "instruction":
+        return f"Saved instruction: {action.get('text')}"
+    return "Cart updated."
+
+
+def search(conversation, allow_questions: bool = True, context: dict | None = None) -> dict:
     global _TOOLS_CACHE
     # Accept a plain string (single turn) or a full conversation list.
     if isinstance(conversation, str):
@@ -547,21 +739,27 @@ def search(conversation, allow_questions: bool = True) -> dict:
         (t.get("content", "") for t in reversed(conversation) if t.get("role") == "user"), ""
     )
 
+    context = context or {}
+    suggestions = context.get("suggestions") or []
+    cart = context.get("cart") or []
+    instructions = context.get("instructions") or []
+
     mcp = MCPSession()
     mcp.initialize()
     if _TOOLS_CACHE is None:
         _TOOLS_CACHE = mcp.list_tools()
     tools = _TOOLS_CACHE
-    openai_tools = mcp_tools_to_openai(tools)
+    openai_tools = mcp_tools_to_openai(tools) + CART_TOOLS
     # Offer the clarifying-question tool only on the first turn.
     if allow_questions:
         openai_tools = openai_tools + [ASK_USER_TOOL]
 
-    messages = _build_messages(conversation)
+    messages = _build_messages(conversation, _context_message(suggestions, cart, instructions))
     trace = []
     results = []
+    cart_actions = []
     tool_names = [t.get("name") for t in tools]
-    valid_names = set(tool_names) | {"ask_user"}
+    valid_names = set(tool_names) | {"ask_user"} | CART_TOOL_NAMES
 
     def finalize(answer: str) -> dict:
         return {
@@ -570,6 +768,7 @@ def search(conversation, allow_questions: bool = True) -> dict:
             "model": NIM_MODEL,
             "answer": answer,
             "products": extract_products(results),
+            "cart_actions": cart_actions,
             "tools_available": tool_names,
             "tool_calls": trace,
             "results": results,
@@ -620,13 +819,24 @@ def search(conversation, allow_questions: bool = True) -> dict:
                 if questions:
                     return ask(questions)
 
-        # Execute the real tool calls.
+        # Execute the real tool calls (and resolve synthetic cart actions).
         text_outputs = []
+        did_cart = False
         for c in norm:
             name = c["name"]
             if name == "ask_user":
                 if not text_mode:  # structured calls must each get a tool reply
                     messages.append({"role": "tool", "tool_call_id": c.get("id"), "content": "(no questions)"})
+                continue
+            if name in CART_TOOL_NAMES:
+                action = _resolve_cart_action(name, c["arguments"] or {}, suggestions)
+                if action:
+                    cart_actions.append(action)
+                    did_cart = True
+                conf = _cart_confirmation(action)
+                trace.append({"tool": name, "arguments": c["arguments"]})
+                if not text_mode:
+                    messages.append({"role": "tool", "tool_call_id": c.get("id"), "content": conf})
                 continue
             args = sanitize_args(c["arguments"] or {})
             try:
@@ -640,19 +850,23 @@ def search(conversation, allow_questions: bool = True) -> dict:
             else:
                 messages.append({"role": "tool", "tool_call_id": c.get("id"), "content": output})
 
-        if text_mode and text_outputs:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": "Tool results — use ONLY these to recommend products "
-                    "(name, price, link, one-line reason). Do NOT call tools again; "
-                    "reply with your recommendations now.\n\n" + "\n\n".join(text_outputs),
-                }
-            )
+        if text_mode and (text_outputs or did_cart):
+            chunks = []
+            if text_outputs:
+                chunks.append(
+                    "Tool results — use ONLY these to recommend products "
+                    "(name, price, link, one-line reason).\n\n" + "\n\n".join(text_outputs)
+                )
+            if did_cart:
+                chunks.append("Cart/instructions updated as requested — confirm to the user in one short sentence.")
+            chunks.append("Do NOT call tools again; reply to the user now.")
+            messages.append({"role": "user", "content": "\n\n".join(chunks)})
 
-    # Ran out of rounds; if we did gather products, present them anyway.
+    # Ran out of rounds; present whatever we gathered.
     if results:
         return finalize("Here are the best matches I found.")
+    if cart_actions:
+        return finalize("Done — I've updated your cart.")
     return finalize(
         "I couldn't complete the search in time — please try again with a bit more detail."
     )
@@ -668,7 +882,7 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _run(self, conversation, allow_questions: bool = True):
+    def _run(self, conversation, allow_questions: bool = True, context: dict | None = None):
         # conversation is a list of {role, content} turns (or [] if empty).
         has_user = any(
             t.get("role") == "user" and str(t.get("content") or "").strip()
@@ -677,7 +891,7 @@ class handler(BaseHTTPRequestHandler):
         if not has_user:
             return self._respond(400, {"ok": False, "error": "Missing 'query'/'messages'."})
         try:
-            self._respond(200, search(conversation, allow_questions=allow_questions))
+            self._respond(200, search(conversation, allow_questions=allow_questions, context=context))
         except PermissionError as exc:
             self._respond(400, {"ok": False, "error": str(exc)})
         except Exception as exc:
@@ -703,4 +917,13 @@ class handler(BaseHTTPRequestHandler):
             conversation = [{"role": "user", "content": data.get("query", "")}]
         # allow_questions defaults true; the client sets it false when resubmitting
         # with answers so the model proceeds to search instead of asking again.
-        self._run(conversation, allow_questions=bool(data.get("allow_questions", True)))
+        context = {
+            "suggestions": data.get("suggestions") or [],
+            "cart": data.get("cart") or [],
+            "instructions": data.get("instructions") or [],
+        }
+        self._run(
+            conversation,
+            allow_questions=bool(data.get("allow_questions", True)),
+            context=context,
+        )
