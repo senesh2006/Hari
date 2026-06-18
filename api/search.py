@@ -22,6 +22,7 @@ Standard library only — no third-party packages.
 from __future__ import annotations
 
 import ast
+import html as _html
 import json
 import os
 import re
@@ -871,34 +872,40 @@ def _language_message(language: str | None) -> str | None:
 
 
 TRANSLATE_TIMEOUT = float(os.environ.get("TRANSLATE_TIMEOUT", "18"))
+LANGBLY_API_KEY = os.environ.get("LANGBLY_API_KEY")
+LANGBLY_URL = os.environ.get("LANGBLY_URL", "https://api.langbly.com/language/translate/v2")
 
 
 def _translate(text, source, target, timeout=TRANSLATE_TIMEOUT):
-    """Translate short text between en/si/ta using the NIM model.
+    """Translate short text between en/si/ta via the Langbly API.
 
     We run the concierge entirely in English (best reasoning + all features) and
-    translate the user's message in and the reply back out. A focused, single
-    instruction keeps quality high — far better than asking the agentic model to
-    compose Sinhala/Tamil itself. Falls back to the original text on any error.
+    translate the user's message in and the reply back out. Langbly is a Google
+    Translate v2-compatible service — a single fast synchronous call, which keeps
+    latency low. Falls back to the original text on any error or missing key.
     """
     text = (text or "").strip()
-    src = LANG_NAMES.get((source or "").lower(), "English")
-    tgt = LANG_NAMES.get((target or "").lower(), "English")
-    if not text or src == tgt:
+    src = (source or "").lower()
+    tgt = (target or "").lower()
+    if not text or not tgt or src == tgt:
         return text
-    system = (
-        f"You are a professional translator. Translate the user's message from {src} "
-        f"to {tgt}. Reply with ONLY the {tgt} translation — no quotes, no notes, no "
-        "transliteration, no extra commentary. Preserve product names, brand names, "
-        "prices, currency codes, numbers, emojis and URLs exactly as they appear."
+    if not LANGBLY_API_KEY:
+        return text  # no key configured — leave text untouched rather than fail
+    payload = {"q": text, "target": tgt, "format": "text"}
+    if src:
+        payload["source"] = src
+    req = urllib.request.Request(
+        LANGBLY_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={"X-API-Key": LANGBLY_API_KEY, "Content-Type": "application/json"},
     )
     try:
-        completion = nim_chat(
-            [{"role": "system", "content": system}, {"role": "user", "content": text}],
-            [],
-            timeout=timeout,
-        )
-        out = (completion["choices"][0]["message"].get("content") or "").strip()
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        translations = ((data or {}).get("data") or {}).get("translations") or []
+        out = (translations[0].get("translatedText") if translations else "") or ""
+        out = _html.unescape(out).strip()  # v2 can HTML-escape entities like &#39;
         return out or text
     except Exception:
         return text
