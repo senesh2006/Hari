@@ -978,7 +978,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         _TOOLS_CACHE = mcp.list_tools()
     tools = _TOOLS_CACHE
     openai_tools = mcp_tools_to_openai(tools) + CART_TOOLS
-    # Offer the clarifying-question tool only on the first turn.
+    # The model writes fluent clarifying questions in English but produces broken,
+    # often nonsensical text in Sinhala/Tamil. So only offer ask_user in English;
+    # for other languages we skip clarification and go straight to results.
+    lang_is_english = (language or "en").lower() in ("", "en")
+    allow_questions = allow_questions and lang_is_english
     if allow_questions:
         openai_tools = openai_tools + [ASK_USER_TOOL]
 
@@ -987,7 +991,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     results = []
     cart_actions = []
     tool_names = [t.get("name") for t in tools]
-    valid_names = set(tool_names) | {"ask_user"} | CART_TOOL_NAMES
+    valid_names = set(tool_names) | CART_TOOL_NAMES
+    if allow_questions:
+        valid_names = valid_names | {"ask_user"}
 
     def finalize(answer: str) -> dict:
         return {
