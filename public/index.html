@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <style>
     :root {
       --bg-1: #eef4f1; --bg-2: #e3eef9;
@@ -56,7 +57,19 @@
     .badge.bump { transform: scale(1.4); }
     .badge.zero { display: none; }
 
-    main { max-width: 720px; margin: 0 auto; padding: 1.2rem 1.1rem 4rem; }
+    main { max-width: 720px; margin: 0 auto; padding: 1.2rem 1.1rem 7rem; }
+
+    /* Bottom dock: speak button + prompt box, fixed to the bottom */
+    .dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; padding: .7rem 1rem calc(.7rem + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter: saturate(140%) blur(10px); border-top: 1px solid var(--border-2); }
+    .dock-inner { max-width: 640px; margin: 0 auto; display: flex; gap: .5rem; align-items: center; }
+    .dock .searchbar { flex: 1; margin: 0; }
+
+    /* Crowd "thinking" overlay (GSAP canvas) */
+    .thinking { position: fixed; inset: 0; z-index: 55; display: none; }
+    .thinking.on { display: block; }
+    .thinking::before { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg-1) 66%, transparent); backdrop-filter: blur(2px); }
+    #crowdCanvas { position: absolute; left: 0; bottom: 64px; width: 100%; height: 56vh; }
+    .thinking-label { position: absolute; top: 34%; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: .5rem; font-family: Poppins, Inter, sans-serif; font-weight: 600; font-size: 1.05rem; color: var(--text); background: color-mix(in srgb, var(--surface) 80%, transparent); padding: .5rem 1rem; border-radius: 999px; border: 1px solid var(--border-2); box-shadow: var(--shadow); }
 
     /* Voice orb */
     .stage { display: flex; flex-direction: column; align-items: center; padding: 1.2rem 0 .4rem; }
@@ -186,7 +199,6 @@
         <option value="si">සිංහල</option>
         <option value="ta">தமிழ்</option>
       </select>
-      <button id="speaker" type="button" class="iconbtn" title="Read replies aloud" aria-label="Toggle voice replies">🔈</button>
       <button id="cartBtn" type="button" class="iconbtn cartbtn" title="View cart" aria-label="View cart">🛒<span id="cartBadge" class="badge zero">0</span></button>
     </div>
   </div>
@@ -199,14 +211,23 @@
       <p id="status" class="status">Tap the orb to talk, or type your request below.</p>
     </div>
 
-    <form id="searchForm" class="searchbar">
-      <input id="query" type="text" autocomplete="off" placeholder="Who's it for, and what's the occasion?" />
-      <button type="submit" class="send" title="Send" aria-label="Send">➤</button>
-    </form>
-    <p class="hint">For any occasion — birthdays, anniversaries, get-wells, condolences and more.</p>
-
     <div id="feed" class="feed"></div>
   </main>
+
+  <div id="thinking" class="thinking" aria-hidden="true">
+    <canvas id="crowdCanvas"></canvas>
+    <div class="thinking-label"><span class="dots"><span></span><span></span><span></span></span> Thinking…</div>
+  </div>
+
+  <div class="dock">
+    <div class="dock-inner">
+      <button id="speaker" type="button" class="iconbtn" title="Read replies aloud" aria-label="Toggle voice replies">🔈</button>
+      <form id="searchForm" class="searchbar">
+        <input id="query" type="text" autocomplete="off" placeholder="Who's it for, and what's the occasion?" />
+        <button type="submit" class="send" title="Send" aria-label="Send">➤</button>
+      </form>
+    </div>
+  </div>
 
   <div id="scrim" class="scrim"></div>
   <aside id="drawer" class="drawer" aria-label="Cart">
@@ -675,8 +696,104 @@
       return wrap;
     }
 
+    // ========== crowd "thinking" animation (vanilla port of the GSAP CrowdCanvas) ==========
+    const Crowd = (function () {
+      const canvas = $("crowdCanvas");
+      const g = window.gsap;
+      if (!canvas || !g) return { start() {}, stop() {} };
+      const ctx = canvas.getContext("2d");
+      // OpenPeeps sprite sheet (15 cols x 7 rows). We only draw it, never read
+      // pixels back, so cross-origin tainting doesn't matter.
+      const config = { src: "https://s3-us-west-2.amazonaws.com/s.cdpn.io/175711/open-peeps-sheet.png", rows: 15, cols: 7 };
+      const rand = (min, max) => min + Math.random() * (max - min);
+      const randIdx = (a) => rand(0, a.length) | 0;
+      const pull = (a, i) => a.splice(i, 1)[0];
+      const pullItem = (a, item) => pull(a, a.indexOf(item));
+      const pullRandom = (a) => pull(a, randIdx(a));
+      const pickRandom = (a) => a[randIdx(a) | 0];
+
+      const resetPeep = (peep) => {
+        const dir = Math.random() > 0.5 ? 1 : -1;
+        const offsetY = 100 - 250 * g.parseEase("power2.in")(Math.random());
+        const startY = stage.height - peep.height + offsetY;
+        let startX, endX;
+        if (dir === 1) { startX = -peep.width; endX = stage.width; peep.scaleX = 1; }
+        else { startX = stage.width + peep.width; endX = 0; peep.scaleX = -1; }
+        peep.x = startX; peep.y = startY; peep.anchorY = startY;
+        return { startX, startY, endX };
+      };
+      const normalWalk = (peep, props) => {
+        const { startY, endX } = props;
+        const xDur = 10, yDur = 0.25;
+        const tl = g.timeline();
+        tl.timeScale(rand(0.5, 1.5));
+        tl.to(peep, { duration: xDur, x: endX, ease: "none" }, 0);
+        tl.to(peep, { duration: yDur, repeat: xDur / yDur, yoyo: true, y: startY - 10 }, 0);
+        return tl;
+      };
+      const createPeep = (image, rect) => {
+        const peep = { image, rect, width: rect[2], height: rect[3], x: 0, y: 0, anchorY: 0, scaleX: 1, walk: null };
+        peep.render = () => {
+          ctx.save();
+          ctx.translate(peep.x, peep.y);
+          ctx.scale(peep.scaleX, 1);
+          ctx.drawImage(image, rect[0], rect[1], rect[2], rect[3], 0, 0, peep.width, peep.height);
+          ctx.restore();
+        };
+        return peep;
+      };
+
+      const img = document.createElement("img");
+      const stage = { width: 0, height: 0 };
+      const allPeeps = [], availablePeeps = [], crowd = [];
+      let ready = false, running = false;
+
+      const createPeeps = () => {
+        const { rows, cols } = config;
+        const { naturalWidth: w, naturalHeight: h } = img;
+        const rw = w / rows, rh = h / cols;
+        for (let i = 0; i < rows * cols; i++) {
+          allPeeps.push(createPeep(img, [(i % rows) * rw, ((i / rows) | 0) * rh, rw, rh]));
+        }
+      };
+      const addPeep = () => {
+        const peep = pullRandom(availablePeeps);
+        const walk = normalWalk(peep, resetPeep(peep)).eventCallback("onComplete", () => { removePeep(peep); addPeep(); });
+        peep.walk = walk; crowd.push(peep);
+        crowd.sort((a, b) => a.anchorY - b.anchorY);
+        return peep;
+      };
+      const removePeep = (peep) => { pullItem(crowd, peep); availablePeeps.push(peep); };
+      const initCrowd = () => { while (availablePeeps.length) addPeep().walk.progress(Math.random()); };
+      const render = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.scale(devicePixelRatio, devicePixelRatio);
+        crowd.forEach((p) => p.render());
+        ctx.restore();
+      };
+      const resize = () => {
+        stage.width = canvas.clientWidth; stage.height = canvas.clientHeight;
+        canvas.width = stage.width * devicePixelRatio; canvas.height = stage.height * devicePixelRatio;
+        crowd.forEach((p) => p.walk && p.walk.kill());
+        crowd.length = 0; availablePeeps.length = 0; availablePeeps.push(...allPeeps);
+        if (allPeeps.length) initCrowd();
+      };
+      img.onload = () => { createPeeps(); ready = true; if (running) { resize(); g.ticker.add(render); } };
+      img.src = config.src;
+      window.addEventListener("resize", () => { if (ready && running) resize(); });
+      return {
+        start() { if (running) return; running = true; if (ready) { resize(); g.ticker.add(render); } },
+        stop() { if (!running) return; running = false; g.ticker.remove(render); try { ctx.clearRect(0, 0, canvas.width, canvas.height); } catch (_) {} },
+      };
+    })();
+    const thinkingEl = $("thinking");
+    function showThinking() { thinkingEl.classList.add("on"); requestAnimationFrame(() => Crowd.start()); }
+    function hideThinking() { thinkingEl.classList.remove("on"); Crowd.stop(); }
+
     async function callSearch(allowQuestions) {
       setOrb("active"); setStatus("<b>Thinking…</b>");
+      showThinking();
       const typing = addBubble("bot", '<span class="dots"><span></span><span></span><span></span></span>', "typing");
       try {
         const res = await fetch("/api/search", {
@@ -711,6 +828,8 @@
         typing.remove();
         addBubble("bot", "❌ Request failed: " + escapeHtml(String(err)));
         idleStatus();
+      } finally {
+        hideThinking();
       }
     }
 
