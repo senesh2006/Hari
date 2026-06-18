@@ -870,6 +870,40 @@ def _language_message(language: str | None) -> str | None:
     )
 
 
+TRANSLATE_TIMEOUT = float(os.environ.get("TRANSLATE_TIMEOUT", "18"))
+
+
+def _translate(text, source, target, timeout=TRANSLATE_TIMEOUT):
+    """Translate short text between en/si/ta using the NIM model.
+
+    We run the concierge entirely in English (best reasoning + all features) and
+    translate the user's message in and the reply back out. A focused, single
+    instruction keeps quality high — far better than asking the agentic model to
+    compose Sinhala/Tamil itself. Falls back to the original text on any error.
+    """
+    text = (text or "").strip()
+    src = LANG_NAMES.get((source or "").lower(), "English")
+    tgt = LANG_NAMES.get((target or "").lower(), "English")
+    if not text or src == tgt:
+        return text
+    system = (
+        f"You are a professional translator. Translate the user's message from {src} "
+        f"to {tgt}. Reply with ONLY the {tgt} translation — no quotes, no notes, no "
+        "transliteration, no extra commentary. Preserve product names, brand names, "
+        "prices, currency codes, numbers, emojis and URLs exactly as they appear."
+    )
+    try:
+        completion = nim_chat(
+            [{"role": "system", "content": system}, {"role": "user", "content": text}],
+            [],
+            timeout=timeout,
+        )
+        out = (completion["choices"][0]["message"].get("content") or "").strip()
+        return out or text
+    except Exception:
+        return text
+
+
 def _build_messages(conversation: list, context: str | None = None, language: str | None = None) -> list:
     """System prompt + language pref + cart context + the recent turns."""
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -964,7 +998,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "ok": True,
             "query": last_user,
             "model": NIM_MODEL,
-            "answer": _greeting_reply(language),
+            "answer": _greeting_reply("en"),
+            "answer_local": _greeting_reply(language),
+            "user_en": last_user,
             "products": [],
             "cart_actions": [],
             "tools_available": [],
@@ -978,15 +1014,25 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         _TOOLS_CACHE = mcp.list_tools()
     tools = _TOOLS_CACHE
     openai_tools = mcp_tools_to_openai(tools) + CART_TOOLS
-    # The model writes fluent clarifying questions in English but produces broken,
-    # often nonsensical text in Sinhala/Tamil. So only offer ask_user in English;
-    # for other languages we skip clarification and go straight to results.
-    lang_is_english = (language or "en").lower() in ("", "en")
-    allow_questions = allow_questions and lang_is_english
     if allow_questions:
         openai_tools = openai_tools + [ASK_USER_TOOL]
 
-    messages = _build_messages(conversation, _context_message(suggestions, cart, instructions), language)
+    # Run the concierge in English for best quality and full feature support,
+    # then translate the reply back to the user's language. Translate the latest
+    # user message in so the model understands it.
+    target_lang = (language or "en").lower()
+    if target_lang not in ("si", "ta"):
+        target_lang = None
+    conv = [dict(t) for t in conversation]
+    user_en = last_user
+    if target_lang:
+        user_en = _translate(last_user, target_lang, "en")
+        for t in reversed(conv):
+            if t.get("role") == "user":
+                t["content"] = user_en
+                break
+
+    messages = _build_messages(conv, _context_message(suggestions, cart, instructions), None)
     trace = []
     results = []
     cart_actions = []
@@ -996,11 +1042,14 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         valid_names = valid_names | {"ask_user"}
 
     def finalize(answer: str) -> dict:
+        local = _translate(answer, "en", target_lang) if (target_lang and answer) else answer
         return {
             "ok": True,
             "query": last_user,
             "model": NIM_MODEL,
             "answer": answer,
+            "answer_local": local,
+            "user_en": user_en,
             "products": extract_products(results),
             "cart_actions": cart_actions,
             "tools_available": tool_names,
@@ -1009,16 +1058,29 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         }
 
     def ask(questions: list) -> dict:
+        qs = questions[:3]
+        local = qs
+        if target_lang and qs:
+            # Translate the questions in one call, then re-split; if the line
+            # count doesn't survive, fall back to the English questions.
+            joined = _translate("\n".join(qs), "en", target_lang)
+            parts = [p.strip() for p in joined.split("\n") if p.strip()]
+            local = parts if len(parts) == len(qs) else qs
         return {
             "ok": True,
             "needs_input": True,
             "query": last_user,
             "model": NIM_MODEL,
-            "questions": questions[:3],
+            "questions": qs,
+            "questions_local": local,
+            "user_en": user_en,
             "tools_available": tool_names,
         }
 
-    deadline = time.monotonic() + SEARCH_BUDGET
+    # Leave headroom for the outbound translation so the whole call stays within
+    # the serverless limit when we still need to translate the reply.
+    reserve = 12 if target_lang else 0
+    deadline = time.monotonic() + max(20.0, SEARCH_BUDGET - reserve)
     corrections = 0  # times we've nudged the model to stop printing tool JSON
 
     def degrade() -> dict:

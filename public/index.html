@@ -680,6 +680,13 @@
     const feed = $("feed");
     const conversation = [];
     let awaitingAnswers = false;
+    // Replace the most recent user turn with its English translation so the
+    // model (which runs in English) keeps a coherent history across turns.
+    function setLastUserEnglish(en) {
+      for (let i = conversation.length - 1; i >= 0; i--) {
+        if (conversation[i].role === "user") { conversation[i].content = en; break; }
+      }
+    }
 
     feed.addEventListener("click", (e) => {
       const add = e.target.closest("[data-add]"), all = e.target.closest("[data-addall]");
@@ -802,9 +809,13 @@
         });
         const data = await res.json();
         typing.remove();
+        // The backend runs in English; keep the conversation history English so
+        // follow-ups stay coherent, but show/speak the user's own language.
+        if (data.user_en) setLastUserEnglish(data.user_en);
         if (data.ok && data.needs_input) {
           awaitingAnswers = true;
-          const qs = (data.questions || []).map(q => "• " + escapeHtml(q)).join("<br>");
+          const shown = (data.questions_local && data.questions_local.length) ? data.questions_local : (data.questions || []);
+          const qs = shown.map(q => "• " + escapeHtml(q)).join("<br>");
           const text = escapeHtml(uiText("ask")) + "<br>" + qs + "<br><br><span style='color:var(--muted)'>" + escapeHtml(uiText("skip")) + "</span>";
           addBubble("bot", text);
           conversation.push({ role: "assistant", content: "Clarifying questions: " + (data.questions || []).join(" ") });
@@ -813,12 +824,13 @@
         }
         if (data.ok) {
           if (Array.isArray(data.cart_actions) && data.cart_actions.length) await applyCartActions(data.cart_actions);
-          const summary = data.answer ? escapeHtml(data.answer) : "";
+          const display = data.answer_local || data.answer || "";
+          const summary = display ? escapeHtml(display) : "";
           if (Array.isArray(data.products) && data.products.length) lastSuggestions = data.products;
           const cards = renderProducts(data.products);
           const empty = (!cards && !summary && !(data.cart_actions || []).length) ? "I couldn't find matching products — try giving me more detail." : "";
           addBubble("bot", (summary || empty) + cards);
-          if (data.answer) { conversation.push({ role: "assistant", content: data.answer }); speak(data.answer); }
+          if (data.answer) { conversation.push({ role: "assistant", content: data.answer }); speak(display); }
           idleStatus();
         } else {
           addBubble("bot", "⚠️ Something went wrong:<br><pre style='white-space:pre-wrap'>" + escapeHtml(JSON.stringify(data, null, 2)) + "</pre>");
