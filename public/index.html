@@ -767,7 +767,7 @@
         const said = queryInput.value.trim();
         if (said) sendText(said); else idleStatus();
       };
-      orbBtn.addEventListener("click", () => { if (listening) recog.stop(); else { try { recog.start(); } catch (_) {} } });
+      orbBtn.addEventListener("click", () => { if (listening) recog.stop(); else { stopSpeaking(); try { recog.start(); } catch (_) {} } });
     } else {
       orbBtn.addEventListener("click", () => showToast("Voice input isn't supported in this browser — please type instead.", "🎤"));
     }
@@ -793,8 +793,35 @@
           || voicesCache.find(v => (v.lang || "").toLowerCase() === base)
           || null;
     }
-    function speak(text) {
-      if (!ttsOn || !synth || !text) return;
+    let currentAudio = null;
+    function stopSpeaking() {
+      try { if (synth) synth.cancel(); } catch (_) {}
+      if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; }
+    }
+    // Browsers have no Sinhala/Tamil voices, so synthesize those server-side via
+    // CAMB.AI and play the returned MP3. English stays on the instant native voice.
+    async function speakRemote(text) {
+      try {
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: String(text).slice(0, 600), lang: currentLang }),
+        });
+        if (!res.ok) throw new Error("tts " + res.status);
+        const url = URL.createObjectURL(await res.blob());
+        stopSpeaking();
+        const audio = new Audio(url);
+        currentAudio = audio;
+        audio.onplay = () => { if (orbMode !== "listening") { setOrb("active"); setStatus("<b>Speaking…</b>"); } };
+        const done = () => { URL.revokeObjectURL(url); if (currentAudio === audio) currentAudio = null; idleStatus(); };
+        audio.onended = done; audio.onerror = done;
+        await audio.play();
+      } catch (_) {
+        speakLocal(text); // fall back to whatever the browser can manage
+      }
+    }
+    function speakLocal(text) {
+      if (!synth) return;
       try {
         synth.cancel();
         const u = new SpeechSynthesisUtterance(String(text).slice(0, 600));
@@ -802,11 +829,9 @@
         if (v) { u.voice = v; u.lang = v.lang; }
         else {
           u.lang = LANG_CODES[currentLang] || "en-US";
-          // No installed voice for this language — read-aloud will be silent or
-          // wrong, so tell the user once instead of failing quietly.
           if (currentLang !== "en" && !noVoiceWarned[currentLang]) {
             noVoiceWarned[currentLang] = true;
-            showToast("Your device has no " + LANG_NAMES[currentLang] + " voice for read-aloud. Replies still appear as text.", "🔇");
+            showToast("Couldn't load a " + LANG_NAMES[currentLang] + " voice. Replies still appear as text.", "🔇");
           }
         }
         u.onstart = () => { if (orbMode !== "listening") { setOrb("active"); setStatus("<b>Speaking…</b>"); } };
@@ -814,14 +839,19 @@
         synth.speak(u);
       } catch (_) {}
     }
-    if (synth) {
-      speakerBtn.addEventListener("click", () => {
-        ttsOn = !ttsOn; speakerBtn.textContent = ttsOn ? "🔊" : "🔈"; speakerBtn.classList.toggle("on", ttsOn);
-        speakerBtn.title = ttsOn ? "Voice replies on" : "Voice replies off";
-        showToast(ttsOn ? "Voice replies on" : "Voice replies off", "🔊");
-        if (!ttsOn) synth.cancel();
-      });
-    } else { speakerBtn.disabled = true; speakerBtn.title = "Speech output isn't supported in this browser"; }
+    function speak(text) {
+      if (!ttsOn || !text) return;
+      if (currentLang !== "en") return void speakRemote(text);
+      speakLocal(text);
+    }
+    // Speech output works even without a native voice (CAMB.AI handles si/ta),
+    // so the toggle is always available.
+    speakerBtn.addEventListener("click", () => {
+      ttsOn = !ttsOn; speakerBtn.textContent = ttsOn ? "🔊" : "🔈"; speakerBtn.classList.toggle("on", ttsOn);
+      speakerBtn.title = ttsOn ? "Voice replies on" : "Voice replies off";
+      showToast(ttsOn ? "Voice replies on" : "Voice replies off", "🔊");
+      if (!ttsOn) stopSpeaking();
+    });
 
     // Greeting
     addBubble("bot", "Hi there! 🎁 Tell me who you're shopping for and the occasion — a birthday, an anniversary, a get-well basket, condolence flowers, anything at all. Tap the orb to talk to me, and I'll happily add things to your cart.");

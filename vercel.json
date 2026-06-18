@@ -2,6 +2,7 @@
   "functions": {
     "api/search.py": { "maxDuration": 60 },
     "api/tool.py": { "maxDuration": 30 },
-    "api/check.py": { "maxDuration": 30 }
+    "api/check.py": { "maxDuration": 30 },
+    "api/tts.py": { "maxDuration": 30 }
   }
 }
