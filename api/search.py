@@ -785,6 +785,52 @@ def _context_message(suggestions: list, cart: list, instructions: list) -> str |
 
 LANG_NAMES = {"en": "English", "si": "Sinhala", "ta": "Tamil"}
 
+# Single-word greetings / small-talk openers in English, Sinhala and Tamil.
+GREETING_WORDS = {
+    "hi", "hii", "hiya", "hello", "helo", "hey", "heya", "yo", "hai", "sup",
+    "howdy", "greetings", "thanks", "thank", "ayubowan", "kohomada", "halo",
+    "හායි", "හලෝ", "කොහොමද", "ආයුබෝවන්", "ඕව", "හායී",
+    "வணக்கம்", "ஹலோ", "நலமா", "வாங்க",
+}
+GREETING_PHRASES = (
+    "how are you", "how r u", "how are u", "whats up", "what's up",
+    "good morning", "good evening", "good afternoon", "good day", "nice to meet",
+    "කොහොමද", "සුභ උදෑසනක්", "සුබ උදෑසනක්", "ඔයාට කොහොමද",
+    "எப்படி இருக்கிறீர்கள்", "எப்படி இருக்கீங்க", "காலை வணக்கம்",
+)
+
+
+def _is_greeting(text: str) -> bool:
+    """True when a message is just a greeting / small talk, not a gift request."""
+    raw = str(text or "").strip()
+    if not raw:
+        return False
+    # Only strip ASCII punctuation — keep letters and Indic combining marks so
+    # Sinhala/Tamil words survive intact.
+    norm = re.sub(r"[!?.,;:\"'()\[\]\-_/\\…]+", " ", raw.lower())
+    norm = re.sub(r"\s+", " ", norm).strip()
+    if not norm:
+        return False
+    words = norm.split()
+    if len(words) > 5:  # anything longer is almost certainly a real request
+        return False
+    if any(phrase in norm for phrase in GREETING_PHRASES):
+        return True
+    return any(w in GREETING_WORDS for w in words)
+
+
+def _greeting_reply(language: str | None) -> str:
+    lang = (language or "en").lower()
+    if lang == "si":
+        return ("ආයුබෝවන්! 😊 මම ඔබේ තෑගි උපදේශකයා. ඔබ කා සඳහාද තෑග්ගක් සොයන්නේ, "
+                "මොන අවස්ථාවටද? (උපන්දිනයක්, සංවත්සරයක්, සුවය පැතීමක්... ඕනෑම දෙයක්)")
+    if lang == "ta":
+        return ("வணக்கம்! 😊 நான் உங்கள் பரிசு உதவியாளர். யாருக்காக, எந்த "
+                "நிகழ்விற்காக பரிசு தேடுகிறீர்கள்? (பிறந்தநாள், ஆண்டுவிழா, "
+                "நலம் விசாரிப்பு... எதுவாக இருந்தாலும்)")
+    return ("Hi! 😊 I'm your gift concierge. Who are you shopping for, and what's "
+            "the occasion? (A birthday, anniversary, get-well, condolences — anything.)")
+
 
 def _language_message(language: str | None) -> str | None:
     name = LANG_NAMES.get((language or "").lower())
@@ -884,6 +930,22 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     cart = context.get("cart") or []
     instructions = context.get("instructions") or []
     language = context.get("language")
+
+    # Greetings / small talk are not gift requests. Answer them warmly in the
+    # chosen language WITHOUT calling the model — this keeps the reply correct
+    # (no nonsensical clarifying questions) and instant.
+    if _is_greeting(last_user) and not suggestions and not cart:
+        return {
+            "ok": True,
+            "query": last_user,
+            "model": NIM_MODEL,
+            "answer": _greeting_reply(language),
+            "products": [],
+            "cart_actions": [],
+            "tools_available": [],
+            "tool_calls": [],
+            "results": [],
+        }
 
     mcp = MCPSession()
     mcp.initialize()

@@ -776,12 +776,39 @@
     const speakerBtn = $("speaker");
     let ttsOn = false;
     const synth = window.speechSynthesis;
+    let voicesCache = [];
+    const noVoiceWarned = {};
+    function loadVoices() { try { voicesCache = synth.getVoices() || []; } catch (_) {} }
+    if (synth) {
+      loadVoices();
+      synth.addEventListener && synth.addEventListener("voiceschanged", loadVoices);
+    }
+    // Find a voice whose language matches the chosen one (e.g. "si" -> si-LK).
+    function pickVoice(lang) {
+      if (!voicesCache.length) loadVoices();
+      const full = (LANG_CODES[lang] || "en-US").toLowerCase();
+      const base = lang.toLowerCase();
+      return voicesCache.find(v => (v.lang || "").toLowerCase() === full)
+          || voicesCache.find(v => (v.lang || "").toLowerCase().startsWith(base + "-"))
+          || voicesCache.find(v => (v.lang || "").toLowerCase() === base)
+          || null;
+    }
     function speak(text) {
       if (!ttsOn || !synth || !text) return;
       try {
         synth.cancel();
         const u = new SpeechSynthesisUtterance(String(text).slice(0, 600));
-        u.lang = LANG_CODES[currentLang] || "en-US";
+        const v = pickVoice(currentLang);
+        if (v) { u.voice = v; u.lang = v.lang; }
+        else {
+          u.lang = LANG_CODES[currentLang] || "en-US";
+          // No installed voice for this language — read-aloud will be silent or
+          // wrong, so tell the user once instead of failing quietly.
+          if (currentLang !== "en" && !noVoiceWarned[currentLang]) {
+            noVoiceWarned[currentLang] = true;
+            showToast("Your device has no " + LANG_NAMES[currentLang] + " voice for read-aloud. Replies still appear as text.", "🔇");
+          }
+        }
         u.onstart = () => { if (orbMode !== "listening") { setOrb("active"); setStatus("<b>Speaking…</b>"); } };
         u.onend = () => idleStatus();
         synth.speak(u);
