@@ -113,12 +113,17 @@ SYSTEM_PROMPT = (
     "role with a short heading and an emoji; for each pick give the name, price, "
     "link, and a one-line reason it fits. Keep the combined total within the "
     "user's budget and note the rough total.\n\n"
-    "Ask before guessing, but only what is APPROPRIATE and necessary. Budget and "
-    "delivery city are usually safe to ask; ask about the recipient's interests "
-    "ONLY when a personalised gift is suitable — never in a sombre or sensitive "
-    "situation. Call the ask_user tool with 1-3 short, tactful questions BEFORE "
-    "searching, and only when it would materially improve the choice; otherwise "
-    "proceed.\n\n"
+    "Ask before guessing, but only what is APPROPRIATE and necessary. If the "
+    "user has already told you the recipient AND the occasion (e.g. 'a birthday "
+    "cake for my mom'), you have enough — go straight to kapruka_search_products, "
+    "do NOT ask anything first. Budget and delivery city are usually safe to ask; "
+    "ask about the recipient's interests ONLY when a personalised gift is "
+    "suitable — never in a sombre or sensitive situation. NEVER ask the user for "
+    "their OWN name, date of birth, age or home address as a clarifying question "
+    "— those are not needed to suggest gifts (only collected later at checkout). "
+    "When you do ask, call the ask_user tool with 1-3 short, tactful questions "
+    "BEFORE searching, and only when it would materially improve the choice; "
+    "otherwise proceed.\n\n"
     "Follow-ups: this is a conversation — remember earlier details (occasion, "
     "budget, interests, city, date). When the user asks for something new, call "
     "kapruka_search_products for it and recommend from those fresh results; "
@@ -263,6 +268,26 @@ CART_TOOL_NAMES = {t["function"]["name"] for t in CART_TOOLS}
 NULLISH = {"null", "none", "nil", "undefined", "na", "n/a", ""}
 
 
+def _decode_escapes(s):
+    r"""Turn literal \uXXXX sequences into real characters.
+
+    When we salvage an `ask_user` call out of raw text with regex, escaped
+    unicode (e.g. Tamil/Sinhala as "\u0ba8...") is captured verbatim instead of
+    decoded. Convert those back so the questions render — and read aloud —
+    correctly. Anything that isn't a \uXXXX escape is left untouched.
+    """
+    if not isinstance(s, str) or "\\u" not in s:
+        return s
+
+    def repl(m):
+        try:
+            return chr(int(m.group(1), 16))
+        except ValueError:
+            return m.group(0)
+
+    return re.sub(r"\\u([0-9a-fA-F]{4})", repl, s)
+
+
 def _normalize_questions(raw) -> list:
     """Coerce the model's `questions` argument into a clean list of strings.
 
@@ -292,7 +317,7 @@ def _normalize_questions(raw) -> list:
             raw = [c for c in cleaned if c] or [raw]
     if not isinstance(raw, list):
         raw = [raw] if raw else []
-    return [str(q).strip() for q in raw if str(q).strip()][:3]
+    return [_decode_escapes(str(q).strip()) for q in raw if str(q).strip()][:3]
 
 
 def parse_text_tool_calls(content, valid_names) -> list:
