@@ -67,8 +67,9 @@
     /* Crowd "thinking" overlay (GSAP canvas) */
     .thinking { position: fixed; inset: 0; z-index: 55; display: none; }
     .thinking.on { display: block; }
-    .thinking::before { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg-1) 66%, transparent); backdrop-filter: blur(2px); }
-    #crowdCanvas { position: absolute; left: 0; bottom: 64px; width: 100%; height: 56vh; }
+    /* Darker at the top, fading to a light translucent wash lower down */
+    .thinking::before { content: ""; position: absolute; inset: 0; backdrop-filter: blur(2px); background: linear-gradient(to bottom, color-mix(in srgb, #000 42%, transparent) 0%, color-mix(in srgb, var(--bg-1) 48%, transparent) 32%, color-mix(in srgb, var(--bg-1) 22%, transparent) 100%); }
+    #crowdCanvas { position: absolute; left: 0; bottom: 64px; width: 100%; height: 56vh; opacity: .32; }
     .thinking-label { position: absolute; top: 34%; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: .5rem; font-family: Poppins, Inter, sans-serif; font-weight: 600; font-size: 1.05rem; color: var(--text); background: color-mix(in srgb, var(--surface) 80%, transparent); padding: .5rem 1rem; border-radius: 999px; border: 1px solid var(--border-2); box-shadow: var(--shadow); }
 
     /* Voice orb */
