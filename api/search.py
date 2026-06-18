@@ -50,6 +50,8 @@ NIM_BASE_URL = os.environ.get("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvid
 NIM_MODEL = os.environ.get("NVIDIA_NIM_MODEL", "meta/llama-3.3-70b-instruct")
 NIM_API_KEY = os.environ.get("NVIDIA_API_KEY")
 NIM_TIMEOUT = float(os.environ.get("NVIDIA_NIM_TIMEOUT", "60"))
+# Transient upstream errors (5xx) are worth a quick retry before degrading.
+NIM_RETRIES = int(os.environ.get("NVIDIA_NIM_RETRIES", "2"))
 # A full celebration package needs several searches (cake, flowers, card,
 # gift, decorations), so allow a few more rounds.
 MAX_TOOL_ROUNDS = int(os.environ.get("SEARCH_MAX_ROUNDS", "5"))
@@ -756,16 +758,25 @@ def nim_chat(messages: list, tools: list, timeout: float | None = None) -> dict:
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout or NIM_TIMEOUT) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise ValueError(f"NVIDIA NIM HTTP {exc.code}: {detail[:500]}") from exc
-    except (TimeoutError, urllib.error.URLError, OSError) as exc:
-        # socket.timeout (read timed out) and transient network errors land
-        # here; signal a graceful degrade rather than a hard 502.
-        raise NimTimeout(str(exc)) from exc
+    for attempt in range(NIM_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout or NIM_TIMEOUT) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code >= 500:
+                # Transient upstream engine error (e.g. EngineCore 500). Retry a
+                # couple of times; if it persists, degrade gracefully instead of
+                # leaking raw JSON to the user.
+                if attempt < NIM_RETRIES:
+                    time.sleep(0.6)
+                    continue
+                raise NimTimeout(f"NIM HTTP {exc.code}: {detail[:200]}") from exc
+            raise ValueError(f"NVIDIA NIM HTTP {exc.code}: {detail[:500]}") from exc
+        except (TimeoutError, urllib.error.URLError, OSError) as exc:
+            # socket.timeout (read timed out) and transient network errors land
+            # here; signal a graceful degrade rather than a hard 502.
+            raise NimTimeout(str(exc)) from exc
 
 
 # === Orchestration ===========================================================
