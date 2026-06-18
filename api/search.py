@@ -726,9 +726,28 @@ def _context_message(suggestions: list, cart: list, instructions: list) -> str |
     )
 
 
-def _build_messages(conversation: list, context: str | None = None) -> list:
-    """System prompt + cart context + the recent user/assistant turns."""
+LANG_NAMES = {"en": "English", "si": "Sinhala", "ta": "Tamil"}
+
+
+def _language_message(language: str | None) -> str | None:
+    name = LANG_NAMES.get((language or "").lower())
+    if not name or name == "English":
+        return None
+    return (
+        f"IMPORTANT: The user has chosen {name} as their language. Write ALL your "
+        f"replies and any clarifying questions in fluent, natural {name}. You may "
+        "keep product names, prices, currency codes and links exactly as the "
+        "tools return them, but everything else you write must be in "
+        f"{name}."
+    )
+
+
+def _build_messages(conversation: list, context: str | None = None, language: str | None = None) -> list:
+    """System prompt + language pref + cart context + the recent turns."""
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
+    lang_msg = _language_message(language)
+    if lang_msg:
+        msgs.append({"role": "system", "content": lang_msg})
     if context:
         msgs.append({"role": "system", "content": context})
     for turn in conversation[-12:]:
@@ -807,6 +826,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     suggestions = context.get("suggestions") or []
     cart = context.get("cart") or []
     instructions = context.get("instructions") or []
+    language = context.get("language")
 
     mcp = MCPSession()
     mcp.initialize()
@@ -818,7 +838,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if allow_questions:
         openai_tools = openai_tools + [ASK_USER_TOOL]
 
-    messages = _build_messages(conversation, _context_message(suggestions, cart, instructions))
+    messages = _build_messages(conversation, _context_message(suggestions, cart, instructions), language)
     trace = []
     results = []
     cart_actions = []
@@ -1005,6 +1025,7 @@ class handler(BaseHTTPRequestHandler):
             "suggestions": data.get("suggestions") or [],
             "cart": data.get("cart") or [],
             "instructions": data.get("instructions") or [],
+            "language": data.get("language"),
         }
         self._run(
             conversation,

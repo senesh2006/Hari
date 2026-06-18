@@ -150,6 +150,23 @@
     .co-ok { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 12px; padding: .8rem; font-size: .9rem; }
     .co-ok .pay { display: block; text-align: center; margin-top: .6rem; padding: .65rem; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; text-decoration: none; font-weight: 600; }
     .co-bad { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 12px; padding: .7rem; font-size: .88rem; }
+    .langsel { margin-left: auto; font: inherit; font-size: .85rem; padding: .35rem .5rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-3); color: var(--text); cursor: pointer; }
+    .topbar .langsel + .iconbtn { margin-left: 0; }
+    .topbar .cartbtn { margin-left: 0; }
+    .budgetrow { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; }
+    .budgetrow input { width: 120px; text-align: right; font: inherit; font-size: .9rem; padding: .4rem .55rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: inherit; }
+    .budgetrow input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent); }
+    .totrow.over .val { color: var(--bad); }
+    .budgetwarn { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bad) 38%, transparent); color: var(--text); border-radius: 10px; padding: .5rem .65rem; font-size: .82rem; margin-bottom: .6rem; }
+
+    /* Confirm modal */
+    .modal-scrim { position: fixed; inset: 0; background: rgba(8,16,14,.5); display: none; align-items: center; justify-content: center; z-index: 70; padding: 1.2rem; }
+    .modal-scrim.open { display: flex; animation: tin .2s ease both; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); max-width: 360px; width: 100%; padding: 1.2rem; }
+    .modal h4 { margin: 0 0 .5rem; font-size: 1.05rem; }
+    .modal p { margin: 0 0 1rem; color: var(--muted); font-size: .92rem; }
+    .modal .actions { display: flex; gap: .5rem; }
+    .modal .actions button { flex: 1; }
 
     /* Toasts */
     .toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 1.1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 60; align-items: center; }
@@ -164,6 +181,11 @@
   <div class="topbar">
     <div class="inner">
       <div class="brand"><span class="mark">🌴</span> Kapruka Concierge</div>
+      <select id="lang" class="langsel" title="Language" aria-label="Language">
+        <option value="en">English</option>
+        <option value="si">සිංහල</option>
+        <option value="ta">தமிழ்</option>
+      </select>
       <button id="speaker" type="button" class="iconbtn" title="Read replies aloud" aria-label="Toggle voice replies">🔈</button>
       <button id="cartBtn" type="button" class="iconbtn cartbtn" title="View cart" aria-label="View cart">🛒<span id="cartBadge" class="badge zero">0</span></button>
     </div>
@@ -199,7 +221,12 @@
     <div class="foot">
       <!-- Cart summary view -->
       <div id="cartView">
+        <div class="budgetrow">
+          <span class="lbl">Budget (LKR)</span>
+          <input id="budgetInput" type="number" min="0" step="100" placeholder="none set" />
+        </div>
         <div class="totrow"><span class="lbl">Estimated total</span><span id="cartTotal" class="val">LKR 0</span></div>
+        <div id="budgetWarn" class="budgetwarn" style="display:none"></div>
         <label>Notes for the store — hampers, gift-wrap, custom requests</label>
         <div id="instrList" class="instrlist"></div>
         <textarea id="instrInput" rows="2" placeholder="e.g. gift-wrap everything together as one hamper"></textarea>
@@ -232,6 +259,17 @@
       </form>
     </div>
   </aside>
+
+  <div id="modalScrim" class="modal-scrim">
+    <div class="modal" role="alertdialog" aria-modal="true">
+      <h4 id="modalTitle">Over budget</h4>
+      <p id="modalMsg"></p>
+      <div class="actions">
+        <button id="modalCancel" type="button" class="btn-ghost"></button>
+        <button id="modalOk" type="button" class="btn-primary" style="margin-top:0"></button>
+      </div>
+    </div>
+  </div>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
@@ -406,17 +444,76 @@
 
     function cartKey(p) { return (p.url || "").trim().toLowerCase() || String(p.name || "").trim().toLowerCase(); }
     function bumpBadge() { cartBadgeEl.classList.add("bump"); setTimeout(() => cartBadgeEl.classList.remove("bump"), 220); }
+    function cartSubtotal() { return cart.reduce((s, c) => s + priceNum(c) * c.qty, 0); }
 
-    function addToCart(product, qty, quiet) {
+    // ----- budget -----
+    let budget = null; // null = no budget set
+    const budgetInput = $("budgetInput");
+    function setBudget(n, fromUser) {
+      budget = (n && n > 0) ? n : null;
+      if (!fromUser) budgetInput.value = budget != null ? budget : "";
+      renderCart();
+    }
+    budgetInput.addEventListener("input", () => {
+      const v = parseFloat(budgetInput.value);
+      budget = (!isNaN(v) && v > 0) ? v : null;
+      renderCart();
+    });
+    // Pull a budget out of free text, e.g. "budget around 5000", "under Rs 7,500".
+    function parseBudget(text) {
+      const t = String(text || "").toLowerCase();
+      let m = t.match(/budget[^0-9]{0,20}(\d[\d,]{1,})/) ||
+              t.match(/(?:rs\.?|lkr|rupees)\s*(\d[\d,]{1,})/) ||
+              t.match(/(\d[\d,]{1,})\s*(?:lkr|rs\b|rupees)/) ||
+              t.match(/(?:around|under|below|upto|up to|max|maximum|within)\s*(\d[\d,]{2,})/);
+      if (m) { const n = parseFloat(m[1].replace(/,/g, "")); if (!isNaN(n) && n >= 100) return n; }
+      return null;
+    }
+
+    function addToCartRaw(product, qty) {
       if (!product || !product.name) return;
       qty = Math.max(1, qty || 1);
       const key = cartKey(product);
       const existing = cart.find(c => cartKey(c) === key);
       if (existing) existing.qty += qty;
       else cart.push({ id: product.id, name: product.name, price: product.price, currency: product.currency || "LKR", url: product.url, image: product.image, qty });
-      renderCart(); bumpBadge();
-      if (!quiet) showToast(`Added “${product.name}”`, "🛒");
     }
+
+    // Budget-enforced add for one or more products. Asks for confirmation
+    // (hard client-side gate) when the additions would exceed the budget.
+    async function addItems(products, quiet) {
+      products = (products || []).filter(p => p && p.name);
+      if (!products.length) return;
+      const addition = products.reduce((s, p) => s + priceNum(p) * (p.qty || 1), 0);
+      const sub = cartSubtotal();
+      if (budget != null && sub + addition > budget) {
+        const label = products.length === 1 ? `“${products[0].name}”` : `these ${products.length} items`;
+        const ok = await confirmModal(
+          "Over your budget",
+          `Adding ${label} brings your total to ${fmtMoney(sub + addition)} — ${fmtMoney(sub + addition - budget)} over your ${fmtMoney(budget)} budget. Add anyway, or keep within budget?`,
+          "Add anyway", "Keep within budget");
+        if (!ok) { showToast("Skipped to stay within budget", "💸"); return; }
+      }
+      products.forEach(p => addToCartRaw(p, p.qty || 1));
+      renderCart(); bumpBadge();
+      if (!quiet) showToast(products.length === 1 ? `Added “${products[0].name}”` : `Added ${products.length} items`, "🛒");
+    }
+
+    // ----- confirm modal -----
+    const modalScrim = $("modalScrim");
+    let modalResolve = null;
+    function confirmModal(title, msg, okText, cancelText) {
+      $("modalTitle").textContent = title;
+      $("modalMsg").textContent = msg;
+      $("modalOk").textContent = okText || "OK";
+      $("modalCancel").textContent = cancelText || "Cancel";
+      modalScrim.classList.add("open");
+      return new Promise(res => { modalResolve = res; });
+    }
+    function closeModal(val) { modalScrim.classList.remove("open"); if (modalResolve) { modalResolve(val); modalResolve = null; } }
+    $("modalOk").addEventListener("click", () => closeModal(true));
+    $("modalCancel").addEventListener("click", () => closeModal(false));
+    modalScrim.addEventListener("click", (e) => { if (e.target === modalScrim) closeModal(false); });
 
     function renderCart() {
       const count = cart.reduce((n, c) => n + c.qty, 0);
@@ -435,20 +532,25 @@
             <button type="button" class="ci-rm" data-rm="${i}" title="Remove">✕</button></div>`;
         }).join("");
       }
-      const total = cart.reduce((s, c) => s + priceNum(c) * c.qty, 0);
+      const total = cartSubtotal();
       const cur = (cart[0] && cart[0].currency) || "LKR";
       cartTotalEl.textContent = fmtMoney(total, cur);
+      const over = budget != null && total > budget;
+      cartTotalEl.parentElement.classList.toggle("over", over);
+      const warn = $("budgetWarn");
+      if (over) { warn.style.display = ""; warn.textContent = `⚠ ${fmtMoney(total - budget, cur)} over your ${fmtMoney(budget, cur)} budget.`; }
+      else warn.style.display = "none";
       renderInstructions();
     }
     function renderInstructions() {
       instrListEl.innerHTML = instructions.map((tx, i) =>
         `<div class="instr"><span>📝 ${escapeHtml(tx)}</span><button type="button" class="ci-rm" data-rmnote="${i}" title="Remove">✕</button></div>`).join("");
     }
-    function applyCartActions(actions) {
+    async function applyCartActions(actions) {
       if (!Array.isArray(actions)) return;
       for (const a of actions) {
         if (!a) continue;
-        if (a.action === "add" && Array.isArray(a.products)) a.products.forEach(p => addToCart(p, p.qty || 1, true));
+        if (a.action === "add" && Array.isArray(a.products)) await addItems(a.products, true);
         else if (a.action === "clear") { cart.length = 0; showToast("Cart cleared", "🗑️"); }
         else if (a.action === "remove" && Array.isArray(a.items)) {
           a.items.map(n => n - 1).sort((x, y) => y - x).forEach(idx => { if (idx >= 0 && idx < cart.length) cart.splice(idx, 1); });
@@ -560,8 +662,8 @@
 
     feed.addEventListener("click", (e) => {
       const add = e.target.closest("[data-add]"), all = e.target.closest("[data-addall]");
-      if (add) { const list = batches[add.dataset.add]; if (list) addToCart(list[+add.dataset.i]); }
-      else if (all) { const list = batches[all.dataset.addall]; if (list) { list.forEach(p => addToCart(p, 1, true)); showToast(`Added ${list.length} items`, "🛒"); } }
+      if (add) { const list = batches[add.dataset.add]; if (list) addItems([list[+add.dataset.i]]); }
+      else if (all) { const list = batches[all.dataset.addall]; if (list) addItems(list); }
     });
 
     function addBubble(role, html, extraClass) {
@@ -579,7 +681,7 @@
       try {
         const res = await fetch("/api/search", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: conversation, allow_questions: allowQuestions, suggestions: lastSuggestions, cart: cart.map(c => ({ name: c.name, qty: c.qty, price: c.price, currency: c.currency })), instructions }),
+          body: JSON.stringify({ messages: conversation, allow_questions: allowQuestions, suggestions: lastSuggestions, cart: cart.map(c => ({ name: c.name, qty: c.qty, price: c.price, currency: c.currency })), instructions, language: currentLang }),
         });
         const data = await res.json();
         typing.remove();
@@ -593,7 +695,7 @@
           return;
         }
         if (data.ok) {
-          if (Array.isArray(data.cart_actions) && data.cart_actions.length) applyCartActions(data.cart_actions);
+          if (Array.isArray(data.cart_actions) && data.cart_actions.length) await applyCartActions(data.cart_actions);
           const summary = data.answer ? escapeHtml(data.answer) : "";
           if (Array.isArray(data.products) && data.products.length) lastSuggestions = data.products;
           const cards = renderProducts(data.products);
@@ -612,10 +714,23 @@
       }
     }
 
+    // ========== language ==========
+    const LANG_CODES = { en: "en-US", si: "si-LK", ta: "ta-LK" };
+    const LANG_NAMES = { en: "English", si: "Sinhala", ta: "Tamil" };
+    let currentLang = "en";
+    const langSel = $("lang");
+    langSel.addEventListener("change", () => {
+      currentLang = langSel.value;
+      if (recog) { try { recog.lang = LANG_CODES[currentLang] || "en-US"; } catch (_) {} }
+      showToast("Language: " + LANG_NAMES[currentLang], "🌐");
+    });
+
     const form = $("searchForm"), queryInput = $("query");
     function sendText(text) {
       text = (text || "").trim();
       if (!text) return;
+      const b = parseBudget(text);
+      if (b) setBudget(b);
       queryInput.value = "";
       addBubble("user", escapeHtml(text));
       conversation.push({ role: "user", content: text });
@@ -629,7 +744,7 @@
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recog = null, listening = false;
     if (SR) {
-      recog = new SR(); recog.lang = "en-US"; recog.interimResults = true; recog.continuous = false;
+      recog = new SR(); recog.lang = LANG_CODES[currentLang] || "en-US"; recog.interimResults = true; recog.continuous = false;
       let finalText = "";
       recog.onstart = () => { listening = true; finalText = ""; setOrb("listening"); setStatus("<b>Listening…</b> speak now"); startAnalyser(); };
       recog.onerror = (ev) => { setStatus("Mic error: " + escapeHtml(ev.error)); };
@@ -660,7 +775,7 @@
       try {
         synth.cancel();
         const u = new SpeechSynthesisUtterance(String(text).slice(0, 600));
-        u.lang = "en-US";
+        u.lang = LANG_CODES[currentLang] || "en-US";
         u.onstart = () => { if (orbMode !== "listening") { setOrb("active"); setStatus("<b>Speaking…</b>"); } };
         u.onend = () => idleStatus();
         synth.speak(u);
