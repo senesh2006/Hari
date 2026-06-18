@@ -344,6 +344,63 @@ def parse_text_tool_calls(content, valid_names) -> list:
     return calls
 
 
+def looks_like_tool_blob(content) -> bool:
+    """True when the model's 'final' text is really a (mangled) tool call.
+
+    Models sometimes print a function call as JSON/text instead of using the
+    tool_calls field. That JSON must never reach the user — detect it so we can
+    salvage or suppress it.
+    """
+    if not content:
+        return False
+    s = content.strip()
+    if "<|python_tag|>" in s:
+        return True
+    has_name = bool(re.search(r'["\']name["\']\s*:\s*["\'][a-zA-Z_]+["\']', s))
+    looks_jsonish = s.startswith("{") or '"type"' in s or '"parameters"' in s or '"arguments"' in s
+    return has_name and looks_jsonish
+
+
+def salvage_text_tool_calls(content, valid_names) -> list:
+    """Best-effort recovery of a tool call from malformed JSON/text.
+
+    `parse_text_tool_calls` only handles well-formed objects. When the JSON is
+    broken (e.g. an unterminated questions array), fall back to regex so an
+    `ask_user` attempt still becomes real questions instead of leaking JSON.
+    """
+    if not content:
+        return []
+    name_m = re.search(r'["\']name["\']\s*:\s*["\']([a-zA-Z_]+)["\']', content)
+    if not name_m:
+        return []
+    name = name_m.group(1)
+    if name not in valid_names:
+        return []
+    if name == "ask_user":
+        block = re.search(r'questions["\']\s*:\s*\[(.*)', content, re.S)
+        scope = block.group(1) if block else content
+        questions = []
+        for q in re.findall(r'["\']([^"\']{3,}?)["\']', scope):
+            q = q.strip()
+            if q and q.lower() not in ("questions", "ask_user", "function", "parameters", "arguments", "type"):
+                questions.append(q)
+        return [{"name": "ask_user", "arguments": {"questions": questions[:3]}}] if questions else []
+    # Other tools: only salvage if we can actually recover an args object —
+    # otherwise let the caller nudge the model to retry cleanly.
+    am = re.search(r'(?:parameters|arguments)["\']\s*:\s*(\{.*?\})', content, re.S)
+    if am:
+        try:
+            args = json.loads(am.group(1))
+        except json.JSONDecodeError:
+            try:
+                args = ast.literal_eval(am.group(1))
+            except (ValueError, SyntaxError):
+                args = None
+        if isinstance(args, dict) and args:
+            return [{"name": name, "arguments": args}]
+    return []
+
+
 def sanitize_args(obj):
     """Recursively drop placeholder/nullish values from tool arguments."""
     if isinstance(obj, dict):
@@ -869,6 +926,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         }
 
     deadline = time.monotonic() + SEARCH_BUDGET
+    corrections = 0  # times we've nudged the model to stop printing tool JSON
 
     def degrade() -> dict:
         """Hand back whatever we have when the time budget runs out."""
@@ -910,10 +968,25 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             )
             text_mode = False
         else:
-            norm = parse_text_tool_calls(message.get("content"), valid_names)
-            messages.append({"role": "assistant", "content": message.get("content") or ""})
+            content = message.get("content") or ""
+            norm = parse_text_tool_calls(content, valid_names) or salvage_text_tool_calls(content, valid_names)
+            messages.append({"role": "assistant", "content": content})
             if not norm:
-                return finalize(message.get("content", ""))  # genuine final answer
+                if looks_like_tool_blob(content) and corrections < 1:
+                    # The model printed a tool call as text we couldn't use.
+                    # Ask it once to answer properly instead of leaking JSON.
+                    corrections += 1
+                    messages.append({
+                        "role": "user",
+                        "content": "Do not output tool calls or JSON as your message. "
+                        "Either call the tool through the proper function-calling "
+                        "interface, or reply to me directly in plain natural language.",
+                    })
+                    continue
+                if looks_like_tool_blob(content):
+                    # Still leaking — don't show raw JSON; give a clean fallback.
+                    return finalize("Hi! 🎁 Who are you shopping for, and what's the occasion?")
+                return finalize(content)  # genuine final answer
             text_mode = True
 
         # Clarifying questions take priority.

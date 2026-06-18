@@ -688,7 +688,7 @@
         if (data.ok && data.needs_input) {
           awaitingAnswers = true;
           const qs = (data.questions || []).map(q => "• " + escapeHtml(q)).join("<br>");
-          const text = "To pick the best option, could you tell me a bit more?<br>" + qs + "<br><br><span style='color:var(--muted)'>Just reply here, or say “skip”.</span>";
+          const text = escapeHtml(uiText("ask")) + "<br>" + qs + "<br><br><span style='color:var(--muted)'>" + escapeHtml(uiText("skip")) + "</span>";
           addBubble("bot", text);
           conversation.push({ role: "assistant", content: "Clarifying questions: " + (data.questions || []).join(" ") });
           speak(stripHtml(text)); idleStatus();
@@ -717,6 +717,12 @@
     // ========== language ==========
     const LANG_CODES = { en: "en-US", si: "si-LK", ta: "ta-LK" };
     const LANG_NAMES = { en: "English", si: "Sinhala", ta: "Tamil" };
+    const UI_TEXT = {
+      en: { ask: "To pick the best option, could you tell me a bit more?", skip: 'Just reply here, or say "skip".' },
+      si: { ask: "හොඳම තේරීම කරන්න, ටිකක් වැඩිදුර කියන්න පුළුවන්ද?", skip: 'මෙතන පිළිතුරු දෙන්න, නැත්නම් "skip" කියන්න.' },
+      ta: { ask: "சிறந்ததைத் தேர்ந்தெடுக்க, இன்னும் சற்று சொல்ல முடியுமா?", skip: 'இங்கே பதிலளிக்கவும், அல்லது "skip" எனச் சொல்லவும்.' },
+    };
+    function uiText(key) { return (UI_TEXT[currentLang] || UI_TEXT.en)[key]; }
     let currentLang = "en";
     const langSel = $("lang");
     langSel.addEventListener("change", () => {
