@@ -1,14 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
-  },
   build: {
-    outDir: "../public/react",
+    outDir: "dist",
     emptyOutDir: true,
+  },
+  server: {
+    // Local dev: proxy the Python API to the deployed app so /api works.
+    proxy: {
+      "/api": {
+        target: process.env.API_TARGET || "http://localhost:3000",
+        changeOrigin: true,
+      },
+    },
   },
 });
