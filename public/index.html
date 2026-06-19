@@ -76,56 +76,13 @@
     .composer { flex: 0 0 auto; z-index: 40; position: relative; padding: .4rem 1rem calc(1rem + env(safe-area-inset-bottom)); background: linear-gradient(to top, color-mix(in srgb, var(--bg-1) 90%, transparent) 55%, transparent); }
     .composer-inner { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: .7rem; }
 
-    /* Thinking overlay */
-    .thinking { position: fixed; inset: 0; z-index: 55; display: none; }
-    .thinking.on { display: block; }
-    .thinking::before { content: ""; position: absolute; inset: 0; backdrop-filter: blur(2px); background: linear-gradient(to bottom, color-mix(in srgb, #000 42%, transparent) 0%, color-mix(in srgb, var(--bg-1) 48%, transparent) 32%, color-mix(in srgb, var(--bg-1) 22%, transparent) 100%); }
-    .thinking-panel { position: absolute; top: 12%; left: 50%; transform: translateX(-50%); width: min(92vw, 520px); z-index: 2; }
-
-    /* Agent planning timeline (vanilla port of AgentPlanning) */
-    .ap-card { background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; backdrop-filter: blur(8px); }
-    .ap-head { display: flex; align-items: center; justify-content: space-between; padding: .85rem 1rem; cursor: pointer; user-select: none; border-bottom: 1px solid transparent; transition: background .2s; }
-    .ap-head.open { background: color-mix(in srgb, var(--surface-3) 60%, transparent); border-bottom-color: var(--border-2); }
-    .ap-head:hover { background: color-mix(in srgb, var(--surface-3) 50%, transparent); }
-    .ap-head-left { display: flex; align-items: center; gap: .6rem; }
-    .ap-title { font-family: Poppins, Inter, sans-serif; font-size: .95rem; font-weight: 600; color: var(--text); }
-    .ap-chev { color: var(--muted); display: flex; }
-    .ap-body { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .45s ease, opacity .35s ease; }
-    .ap-body.open { grid-template-rows: 1fr; opacity: 1; }
-    .ap-body > div { overflow: hidden; }
-    .ap-steps { padding: 1rem 1rem .35rem; }
-    .ap-step { position: relative; display: flex; gap: .85rem; animation: rise .4s var(--ease-out) both; }
-    .ap-step.pending { opacity: .55; filter: grayscale(.25); }
-    .ap-step:not(:last-child) .ap-step-col::after { content: ""; position: absolute; left: 11px; top: 26px; bottom: -8px; width: 2px; background: var(--border); }
-    .ap-step-col { position: relative; flex: 0 0 24px; }
-    .ap-icon { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); color: var(--muted); box-shadow: 0 0 0 4px color-mix(in srgb, var(--surface) 88%, transparent); }
-    .ap-icon.success { background: color-mix(in srgb, var(--ok) 18%, var(--surface)); color: var(--ok); }
-    .ap-icon.active { background: color-mix(in srgb, #3b82f6 18%, var(--surface)); color: #2563eb; }
-    .ap-icon.error { background: color-mix(in srgb, var(--bad) 18%, var(--surface)); color: var(--bad); }
-    .ap-icon svg { width: 14px; height: 14px; }
-    .ap-spin { animation: ap-spin .8s linear infinite; }
-    @keyframes ap-spin { to { transform: rotate(360deg); } }
-    .ap-main { flex: 1; padding-bottom: 1rem; min-width: 0; }
-    .ap-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .15rem .35rem; border-radius: 8px; }
-    .ap-row.clickable { cursor: pointer; }
-    .ap-row.clickable:hover { background: color-mix(in srgb, var(--surface-3) 70%, transparent); }
-    .ap-step-title { font-size: .88rem; font-weight: 500; color: color-mix(in srgb, var(--text) 85%, transparent); }
-    .ap-step.active .ap-step-title { font-weight: 600; color: var(--text); }
-    .ap-step.error .ap-step-title { color: var(--bad); font-weight: 600; }
-    .ap-meta { display: flex; align-items: center; gap: .45rem; color: var(--muted); font-size: .68rem; font-family: ui-monospace, monospace; }
-    .ap-detail { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .35s ease, opacity .3s ease; }
-    .ap-detail.open { grid-template-rows: 1fr; opacity: 1; margin-top: .35rem; }
-    .ap-detail > div { overflow: hidden; }
-    .ap-detail-inner { font-size: .72rem; color: var(--muted); line-height: 1.45; padding: .25rem 0 .15rem; }
-    .ap-detail-inner .ok { color: var(--ok); display: flex; gap: .35rem; align-items: flex-start; margin-bottom: .35rem; }
-    .ap-detail-inner .ok svg { width: 13px; height: 13px; flex-shrink: 0; margin-top: 2px; }
-    .ap-kv { display: grid; grid-template-columns: 72px 1fr; gap: .2rem .5rem; background: color-mix(in srgb, var(--surface-3) 55%, transparent); border: 1px solid var(--border-2); border-radius: 8px; padding: .5rem .6rem; margin-top: .35rem; }
-    .ap-kv .k { color: var(--faint); }
-    .ap-kv .v { color: var(--text); }
-    .ap-code { background: #0f1412; color: #94a3b8; border: 1px solid var(--border-2); border-radius: 8px; padding: .55rem .65rem; margin-top: .35rem; font-family: ui-monospace, monospace; font-size: .68rem; line-height: 1.5; }
-    .ap-code .hl { color: #93c5fd; }
-    .ap-code .kw { color: #c4b5fd; }
-    .ap-code .pulse { color: #e2e8f0; animation: blink 1.2s infinite both; }
+    /* Claude-style "thinking" — a subtle inline shimmer while waiting, then a real summary line.
+       No fullscreen popup and no scripted fake steps. */
+    .thinking-line { display: inline-flex; align-items: center; gap: .5rem; font-size: .95rem; }
+    .think-label { background: linear-gradient(90deg, var(--muted) 25%, var(--text) 50%, var(--muted) 75%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; animation: shimmer 1.5s linear infinite; }
+    @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    .thought { display: inline-flex; align-items: center; gap: .4rem; color: var(--faint); font-size: .8rem; margin-bottom: .5rem; }
+    .thought .spark { color: var(--primary); }
 
     /* Status line (compact, above the suggestion cards) */
     .status { margin: 0; color: var(--muted); font-size: .82rem; min-height: 1.2em; text-align: center; }
@@ -304,10 +261,6 @@
       <div id="feed" class="feed"></div>
     </div>
   </main>
-
-  <div id="thinking" class="thinking" aria-hidden="true">
-    <div id="agentPlanning" class="thinking-panel"></div>
-  </div>
 
   <footer class="composer">
     <div class="composer-inner">
@@ -803,125 +756,34 @@
       return wrap;
     }
 
-    // ========== agent planning timeline (vanilla port of AgentPlanning) ==========
-    const ICONS = {
-      search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
-      file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
-      brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5a3 3 0 1 0-5.995.125A4 4 0 0 0 6 13h12a4 4 0 0 0-2-7.5 3 3 0 0 0-5.995-.125"/><path d="M8 17v3"/><path d="M16 17v3"/></svg>',
-      check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>',
-      spin: '<svg class="ap-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>',
-      chevDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>',
-      chevRight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>',
-      globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
-      cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>',
-      code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>',
-    };
-    const AgentPlanning = (function () {
-      const root = $("agentPlanning");
-      let steps = [], mainOpen = true, expanded = {}, timers = [];
-      function clearTimers() { timers.forEach(clearTimeout); timers = []; }
-      function statusIcon(s, icon) {
-        if (s === "success") return ICONS.check;
-        if (s === "active") return ICONS.spin;
-        return icon || '<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:block"></span>';
-      }
-      function render() {
-        if (!root) return;
-        const hasActive = steps.some(s => s.status === "active");
-        const allSuccess = steps.length && steps.every(s => s.status === "success");
-        const headIcon = hasActive ? ICONS.spin : allSuccess ? ICONS.check : ICONS.brain;
-        root.innerHTML = `
-          <div class="ap-card">
-            <div class="ap-head ${mainOpen ? "open" : ""}" data-ap-toggle="main">
-              <div class="ap-head-left"><span class="ap-chev">${headIcon}</span><span class="ap-title">Concierge is planning</span></div>
-              <span class="ap-chev">${mainOpen ? ICONS.chevDown : ICONS.chevRight}</span>
-            </div>
-            <div class="ap-body ${mainOpen ? "open" : ""}"><div><div class="ap-steps">
-              ${steps.map((s, i) => `
-                <div class="ap-step ${s.status}" style="animation-delay:${i * 70}ms">
-                  <div class="ap-step-col"><div class="ap-icon ${s.status}">${statusIcon(s.status, s.icon)}</div></div>
-                  <div class="ap-main">
-                    <div class="ap-row ${s.detail ? "clickable" : ""}" data-ap-step="${s.id}">
-                      <span class="ap-step-title">${escapeHtml(s.title)}</span>
-                      <span class="ap-meta">${s.duration ? `<span>${escapeHtml(s.duration)}</span>` : ""}${s.detail ? (expanded[s.id] ? ICONS.chevDown : ICONS.chevRight) : ""}</span>
-                    </div>
-                    ${s.detail ? `<div class="ap-detail ${expanded[s.id] ? "open" : ""}"><div><div class="ap-detail-inner">${s.detail}</div></div></div>` : ""}
-                  </div>
-                </div>`).join("")}
-            </div></div></div>
-          </div>`;
-        root.querySelector("[data-ap-toggle=main]")?.addEventListener("click", () => { mainOpen = !mainOpen; render(); });
-        root.querySelectorAll("[data-ap-step]").forEach(el => {
-          el.addEventListener("click", () => {
-            const id = el.getAttribute("data-ap-step");
-            const step = steps.find(x => x.id === id);
-            if (!step?.detail) return;
-            expanded[id] = !expanded[id];
-            render();
-          });
-        });
-      }
-      function defaultSteps(lang) {
-        const langName = LANG_NAMES[lang] || "English";
-        const translate = lang && lang !== "en";
-        return [
-          { id: "understand", title: translate ? `Understand your request (${langName})` : "Understand your request", status: "active", duration: "...", icon: ICONS.search,
-            detail: translate
-              ? `<div class="ok">${ICONS.check}<span>Translating to English for the concierge</span></div><div class="ap-kv"><span class="k">Language</span><span class="v">${escapeHtml(langName)}</span><span class="k">Pipeline</span><span class="v">Langbly → NIM</span></div>`
-              : `<div class="ok">${ICONS.check}<span>Parsing occasion, recipient and budget from your message</span></div>` },
-          { id: "search", title: "Search Kapruka catalog", status: "pending", icon: ICONS.cart,
-            detail: `<div>Running <span class="hl">kapruka_search_products</span> for cakes, flowers, hampers and more.</div><div class="ap-code"><span class="kw">agent</span> → <span class="hl">MCP tools</span> → product matches</div>` },
-          { id: "rank", title: "Pick the best matches", status: "pending", icon: ICONS.brain,
-            detail: `<div class="ap-code"><span class="kw">rank</span> by occasion fit, budget and delivery<br><span class="pulse">▸ scoring suggestions…</span></div>` },
-          { id: "reply", title: translate ? `Prepare reply in ${langName}` : "Prepare your reply", status: "pending", icon: ICONS.code,
-            detail: translate ? `<div>Translate answer back via Langbly, then synthesize voice via CAMB.AI.</div>` : `<div>Formatting product cards and concierge summary.</div>` },
-        ];
-      }
-      function setStatus(id, status, duration) {
-        const s = steps.find(x => x.id === id);
-        if (!s) return;
-        s.status = status;
-        if (duration) s.duration = duration;
-        render();
-      }
-      function advance(id, nextId) {
-        setStatus(id, "success");
-        if (nextId) setStatus(nextId, "active", "...");
-      }
-      function start(lang) {
-        clearTimers();
-        steps = defaultSteps(lang);
-        expanded = { understand: true };
-        mainOpen = true;
-        render();
-        timers.push(setTimeout(() => advance("understand", "search"), 900));
-        timers.push(setTimeout(() => advance("search", "rank"), 2800));
-        timers.push(setTimeout(() => advance("rank", "reply"), 5200));
-      }
-      function finish() {
-        clearTimers();
-        steps.forEach(s => { s.status = "success"; if (s.duration === "...") s.duration = ""; });
-        render();
-      }
-      function stop() { clearTimers(); if (root) root.innerHTML = ""; steps = []; }
-      return { start, finish, stop, setStatus };
-    })();
+    // ========== thinking indicator (Claude-style: real timing, no scripted fake steps) ==========
+    // Shows a subtle shimmering "Thinking…" as the pending bot bubble — inline, never a popup.
+    function startThinking() {
+      const t0 = performance.now();
+      const wrap = addBubble("bot", '<span class="thinking-line"><span class="think-label">Thinking…</span></span>', "thinking");
+      return { end() { const secs = (performance.now() - t0) / 1000; wrap.remove(); return secs; } };
+    }
+    // An honest one-line summary of what actually happened (real elapsed time + real result count).
+    function thoughtLine(secs, productCount) {
+      const r = Math.round(secs);
+      const s = secs < 1 ? "less than a second" : r + (r === 1 ? " second" : " seconds");
+      const label = productCount > 0
+        ? `Searched Kapruka · ${productCount} ${productCount === 1 ? "match" : "matches"} · ${s}`
+        : `Thought for ${s}`;
+      return `<div class="thought"><span class="spark">✦</span>${escapeHtml(label)}</div>`;
+    }
 
-    const thinkingEl = $("thinking");
-    function showThinking() { thinkingEl.classList.add("on"); AgentPlanning.start(currentLang); }
-    function hideThinking() { AgentPlanning.finish(); setTimeout(() => { thinkingEl.classList.remove("on"); AgentPlanning.stop(); }, 280); }
 
     async function callSearch(allowQuestions) {
       setOrb("active"); setStatus("<b>Thinking…</b>");
-      showThinking();
-      const typing = addBubble("bot", '<span class="dots"><span></span><span></span><span></span></span>', "typing");
+      const think = startThinking();
       try {
         const res = await fetch("/api/search", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messages: conversation, allow_questions: allowQuestions, suggestions: lastSuggestions, cart: cart.map(c => ({ name: c.name, qty: c.qty, price: c.price, currency: c.currency })), instructions, language: currentLang }),
         });
         const data = await res.json();
-        typing.remove();
+        const secs = think.end();
         // The backend runs in English; keep the conversation history English so
         // follow-ups stay coherent, but show/speak the user's own language.
         if (data.user_en) setLastUserEnglish(data.user_en);
@@ -939,10 +801,14 @@
           if (Array.isArray(data.cart_actions) && data.cart_actions.length) await applyCartActions(data.cart_actions);
           const display = data.answer_local || data.answer || "";
           const summary = display ? escapeHtml(display) : "";
-          if (Array.isArray(data.products) && data.products.length) lastSuggestions = data.products;
+          const productCount = Array.isArray(data.products) ? data.products.length : 0;
+          if (productCount) lastSuggestions = data.products;
           const cards = renderProducts(data.products);
           const empty = (!cards && !summary && !(data.cart_actions || []).length) ? "I couldn't find matching products — try giving me more detail." : "";
-          addBubble("bot", (summary || empty) + cards);
+          // Show the real "Searched Kapruka …/Thought for Xs" line only when it adds info — when
+          // products were actually searched, or the reply genuinely took a moment. Greetings stay clean.
+          const thought = (productCount > 0 || secs >= 2) ? thoughtLine(secs, productCount) : "";
+          addBubble("bot", thought + (summary || empty) + cards);
           if (data.answer) { conversation.push({ role: "assistant", content: data.answer }); speak(display); }
           idleStatus();
         } else {
@@ -950,11 +816,9 @@
           idleStatus();
         }
       } catch (err) {
-        typing.remove();
+        think.end();
         addBubble("bot", "❌ Request failed: " + escapeHtml(String(err)));
         idleStatus();
-      } finally {
-        hideThinking();
       }
     }
 
