@@ -10,12 +10,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg-1: #eef4f1; --bg-2: #e4eefb;
-      --surface: #ffffff; --surface-2: #f5f8f7; --surface-3: #eaf0ee;
-      --text: #131c1a; --muted: #5f716d; --faint: #97a6a2;
-      --primary: #0f9d6b; --primary-2: #0a7a52; --accent: #f5912b;
-      --orb-1: #2bd6a0; --orb-2: #0f9d6b; --orb-3: #12a3a3;
-      --border: rgba(20,40,35,.09); --border-2: rgba(20,40,35,.055);
+      --bg-1: #f4f3ee; --bg-2: #efede4;
+      --surface: #ffffff; --surface-2: #faf9f5; --surface-3: #efeee7;
+      --text: #232220; --muted: #6e6a62; --faint: #9b968c;
+      --primary: #d97757; --primary-2: #c15f3c; --accent: #d97757;
+      --orb-1: #f0b48f; --orb-2: #d97757; --orb-3: #b8543a;
+      --border: rgba(60,50,40,.12); --border-2: rgba(60,50,40,.07);
       --ok: #16a34a; --bad: #dc2626;
       --ring: color-mix(in srgb, var(--primary) 22%, transparent);
       --shadow-sm: 0 1px 2px rgba(16,40,33,.06), 0 2px 6px rgba(16,40,33,.05);
@@ -29,12 +29,12 @@
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg-1: #0a100f; --bg-2: #0a141d;
-        --surface: #141d1b; --surface-2: #1a2522; --surface-3: #202d29;
-        --text: #ecf2ef; --muted: #9aaca7; --faint: #6c7d78;
-        --primary: #21c389; --primary-2: #18a874; --accent: #f8a64a;
-        --orb-1: #2bd6a0; --orb-2: #14a978; --orb-3: #12a3a3;
-        --border: rgba(255,255,255,.11); --border-2: rgba(255,255,255,.06);
+        --bg-1: #262624; --bg-2: #2b2a27;
+        --surface: #30302e; --surface-2: #353532; --surface-3: #3b3a37;
+        --text: #f5f3ee; --muted: #b0aaa0; --faint: #827d73;
+        --primary: #e08a6a; --primary-2: #d97757; --accent: #e08a6a;
+        --orb-1: #f0b48f; --orb-2: #d97757; --orb-3: #b8543a;
+        --border: rgba(255,255,255,.12); --border-2: rgba(255,255,255,.07);
         --ring: color-mix(in srgb, var(--primary) 32%, transparent);
         --shadow-sm: 0 1px 2px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.4);
         --shadow: 0 2px 4px rgba(0,0,0,.3), 0 14px 44px rgba(0,0,0,.5);
@@ -49,8 +49,7 @@
       height: 100dvh; overflow: hidden;
       display: flex; flex-direction: column;
       background:
-        radial-gradient(130% 65% at 50% 112%, color-mix(in srgb, var(--orb-2) 22%, transparent), transparent 62%),
-        radial-gradient(900px 520px at 50% -10%, var(--bg-2), transparent 60%),
+        radial-gradient(1000px 600px at 50% -20%, var(--bg-2), transparent 70%),
         var(--bg-1);
     }
     h1, h2, h3 { font-family: Poppins, Inter, sans-serif; letter-spacing: -.01em; }
@@ -76,8 +75,8 @@
 
     /* Bottom composer — the voice orb lives here and is ALWAYS visible (no scroll to reach it) */
     .composer { flex: 0 0 auto; z-index: 40; position: relative; padding: .5rem 1rem calc(1rem + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--surface) 78%, transparent); backdrop-filter: saturate(150%) blur(14px); border-top: 1px solid var(--border-2); box-shadow: 0 -10px 40px -24px rgba(16,40,33,.5); }
-    .composer-inner { max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: .15rem; }
-    @media (max-height: 660px) { .orb { width: 80px; height: 80px; } .status { margin-top: .05rem; } }
+    .composer-inner { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: .15rem; }
+    @media (max-height: 660px) { .orb { width: 72px; height: 72px; } .status { margin-top: .05rem; } }
 
     /* Thinking overlay */
     .thinking { position: fixed; inset: 0; z-index: 55; display: none; }
@@ -131,28 +130,28 @@
     .ap-code .pulse { color: #e2e8f0; animation: blink 1.2s infinite both; }
 
     /* Voice orb — the hero control, pinned in the bottom composer (always reachable) */
-    .orb { width: 104px; height: 104px; cursor: pointer; border: none; background: transparent; padding: 0; border-radius: 50%; outline: none; position: relative; transition: transform .16s var(--ease-out); }
-    .orb::after { content: ""; position: absolute; inset: -16px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--orb-1) 42%, transparent), transparent 76%); filter: blur(10px); z-index: -1; opacity: .85; }
+    .orb { width: 92px; height: 92px; cursor: pointer; border: none; background: transparent; padding: 0; border-radius: 50%; outline: none; position: relative; transition: transform .16s var(--ease-out); }
+    .orb::after { content: ""; position: absolute; inset: -14px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--orb-1) 38%, transparent), transparent 76%); filter: blur(10px); z-index: -1; opacity: .8; }
     .orb canvas { width: 100%; height: 100%; display: block; }
     .orb:active { transform: scale(.95); }
     .orb:focus-visible { box-shadow: 0 0 0 4px var(--ring); }
     .status { margin: .15rem 0 .4rem; color: var(--muted); font-size: .85rem; min-height: 1.3em; text-align: center; }
     .status b { color: var(--text); font-weight: 600; }
 
-    /* Input pill: voice toggle + text + send, sits under the orb */
-    .searchbar { display: flex; gap: .35rem; align-items: center; width: 100%; max-width: 560px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: .3rem .3rem .3rem .35rem; box-shadow: var(--shadow-sm); transition: border-color .18s var(--ease-out), box-shadow .18s var(--ease-out); }
+    /* Claude-style composer box: voice toggle + text + send inside a rounded rectangle */
+    .searchbar { display: flex; gap: .35rem; align-items: center; width: 100%; max-width: 700px; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: .4rem .5rem .4rem .45rem; box-shadow: var(--shadow-sm); transition: border-color .18s var(--ease-out), box-shadow .18s var(--ease-out); }
     .searchbar:focus-within { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); box-shadow: var(--shadow-sm), 0 0 0 4px var(--ring); }
-    .searchbar input { flex: 1; min-width: 0; border: none; background: transparent; color: inherit; font-size: 1rem; padding: .55rem .2rem; }
+    .searchbar input { flex: 1; min-width: 0; border: none; background: transparent; color: inherit; font-size: 1rem; padding: .6rem .25rem; }
     .searchbar input:focus { outline: none; }
     .searchbar .iconbtn { width: 40px; height: 40px; font-size: 1.05rem; background: transparent; border-color: transparent; }
     .searchbar .iconbtn:hover { background: var(--surface-3); }
-    .send { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 50%; border: none; cursor: pointer; font-size: 1.02rem; color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary-2)); box-shadow: 0 6px 16px rgba(15,157,107,.28); transition: transform .14s var(--ease-out), filter .14s var(--ease-out); }
+    .send { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 50%; border: none; cursor: pointer; font-size: 1rem; color: #fff; background: var(--primary); box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 32%, transparent); transition: transform .14s var(--ease-out), filter .14s var(--ease-out); }
     .send:active { transform: scale(.94); }
 
     /* Quick-prompt suggestion chips — float in the scroll area above the composer */
-    .chips { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin: 1.1rem auto .2rem; max-width: 560px; transition: opacity .25s var(--ease-out); }
+    .chips { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin: 1.1rem auto .2rem; max-width: 600px; transition: opacity .25s var(--ease-out); }
     .chips.hide { display: none; }
-    .chip { background: color-mix(in srgb, var(--surface) 72%, transparent); border: 1px solid var(--border); color: var(--text); border-radius: 999px; padding: .5rem .95rem; font: inherit; font-size: .85rem; cursor: pointer; box-shadow: var(--shadow-sm); backdrop-filter: blur(4px); transition: transform .15s var(--ease-out), border-color .15s var(--ease-out), background .15s var(--ease-out); }
+    .chip { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 12px; padding: .5rem .9rem; font: inherit; font-size: .85rem; cursor: pointer; box-shadow: var(--shadow-sm); transition: transform .15s var(--ease-out), border-color .15s var(--ease-out), background .15s var(--ease-out); }
     .chip:active { transform: scale(.96); }
     @media (hover: hover) and (pointer: fine) {
       .orb:hover { transform: scale(1.04); }
@@ -160,13 +159,15 @@
       .chip:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--primary) 50%, var(--border)); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); }
     }
 
-    /* Conversation feed */
-    .feed { display: flex; flex-direction: column; gap: .85rem; }
-    .msg { max-width: 88%; }
-    .msg.user { align-self: flex-end; }
-    .msg .bubble { padding: .72rem 1rem; border-radius: 20px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; font-size: .95rem; animation: rise .28s var(--ease-out) both; }
-    .msg.bot .bubble { background: var(--surface); border: 1px solid var(--border-2); border-bottom-left-radius: 6px; box-shadow: var(--shadow-sm); }
-    .msg.user .bubble { color: #fff; border-bottom-right-radius: 6px; background: linear-gradient(135deg, var(--orb-2), var(--orb-3)); box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 28%, transparent); }
+    /* Conversation feed — Claude-style: assistant text is plain with an avatar, user text in a soft bubble */
+    .feed { display: flex; flex-direction: column; gap: 1.4rem; }
+    .msg { max-width: 100%; }
+    .msg.bot { display: flex; gap: .7rem; align-items: flex-start; }
+    .msg.bot::before { content: "🌴"; flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: .9rem; color: #fff; background: linear-gradient(135deg, var(--primary), var(--orb-3)); box-shadow: 0 2px 6px color-mix(in srgb, var(--primary) 35%, transparent); margin-top: .1rem; }
+    .msg.user { align-self: flex-end; max-width: 82%; }
+    .msg .bubble { line-height: 1.62; white-space: pre-wrap; word-wrap: break-word; font-size: .96rem; animation: rise .28s var(--ease-out) both; min-width: 0; }
+    .msg.bot .bubble { flex: 1; background: transparent; border: none; box-shadow: none; padding: .15rem 0; border-radius: 0; color: var(--text); }
+    .msg.user .bubble { padding: .65rem .95rem; border-radius: 18px; border-bottom-right-radius: 6px; background: var(--surface-3); color: var(--text); border: 1px solid var(--border-2); }
     @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     .typing .bubble { color: var(--muted); }
     .dots span { display: inline-block; width: 6px; height: 6px; margin: 0 1px; border-radius: 50%; background: currentColor; opacity: .4; animation: blink 1.2s infinite both; }
@@ -229,8 +230,8 @@
     .instr span { flex: 1; }
     .row { display: flex; gap: .5rem; margin-top: .6rem; }
     .row .btn-soft { flex: 1; text-align: center; }
-    .btn-primary { width: 100%; margin-top: .6rem; padding: .75rem; border: none; border-radius: 13px; cursor: pointer; font: inherit; font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary-2)); box-shadow: 0 6px 16px rgba(15,157,107,.28); transition: filter .15s ease, transform .14s var(--ease-out), box-shadow .15s var(--ease-out); }
-    .btn-primary:hover { filter: brightness(1.06); box-shadow: 0 8px 22px rgba(15,157,107,.34); }
+    .btn-primary { width: 100%; margin-top: .6rem; padding: .75rem; border: none; border-radius: 13px; cursor: pointer; font: inherit; font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary-2)); box-shadow: 0 6px 16px color-mix(in srgb, var(--primary) 30%, transparent); transition: filter .15s ease, transform .14s var(--ease-out), box-shadow .15s var(--ease-out); }
+    .btn-primary:hover { filter: brightness(1.06); box-shadow: 0 8px 22px color-mix(in srgb, var(--primary) 38%, transparent); }
     .btn-primary:active { transform: scale(.985); }
     .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 12px; padding: .7rem; cursor: pointer; font: inherit; }
     .formgrid { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem .6rem; }
@@ -442,11 +443,11 @@
       }
       ctx.closePath();
       const g = ctx.createRadialGradient(cx - base * 0.35, cy - base * 0.4, base * 0.2, cx, cy, base * 1.5);
-      g.addColorStop(0, cssVar("--orb-1") || "#2bd6a0");
-      g.addColorStop(0.55, cssVar("--orb-2") || "#0f9d6b");
-      g.addColorStop(1, cssVar("--orb-3") || "#12a3a3");
+      g.addColorStop(0, cssVar("--orb-1") || "#f0b48f");
+      g.addColorStop(0.55, cssVar("--orb-2") || "#d97757");
+      g.addColorStop(1, cssVar("--orb-3") || "#b8543a");
       ctx.fillStyle = g;
-      ctx.shadowColor = "rgba(15,157,107,.45)";
+      ctx.shadowColor = "rgba(217,119,87,.45)";
       ctx.shadowBlur = 38;
       ctx.fill();
       ctx.shadowBlur = 0;
@@ -475,8 +476,8 @@
         v *= (1 - mirror * 0.45);
         const bh = Math.max(bw, v * maxBar);
         const g = ctx.createLinearGradient(0, cy - bh / 2, 0, cy + bh / 2);
-        g.addColorStop(0, cssVar("--orb-1") || "#2bd6a0");
-        g.addColorStop(1, cssVar("--orb-3") || "#12a3a3");
+        g.addColorStop(0, cssVar("--orb-1") || "#f0b48f");
+        g.addColorStop(1, cssVar("--orb-3") || "#b8543a");
         ctx.fillStyle = g;
         const y = cy - bh / 2;
         const rr = bw / 2;
