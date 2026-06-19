@@ -652,9 +652,35 @@
     });
     $("addInstr").addEventListener("click", () => { const el = $("instrInput"); const tx = el.value.trim(); if (!tx) return; instructions.push(tx); el.value = ""; renderInstructions(); showToast("Note saved", "📝"); });
     $("clearCart").addEventListener("click", () => { if (!cart.length) return; cart.length = 0; renderCart(); showToast("Cart cleared", "🗑️"); });
-    // ---- manual checkout (calls kapruka_create_order directly) ----
+    // ---- manual checkout (discovers the real order tool, then places the order) ----
     const cartView = $("cartView"), checkoutForm = $("checkoutForm");
     function idFromUrl(u) { const m = String(u || "").match(/\/kid\/([^/?#]+)/); return m ? m[1] : null; }
+
+    // Discover the order-creation tool from the live MCP catalogue (don't hard-code the name),
+    // and learn whether its schema wants the fields wrapped in a `params` object. Cached.
+    let _orderTool; // undefined = not loaded; null = none found
+    async function loadOrderTool() {
+      if (_orderTool !== undefined) return _orderTool;
+      _orderTool = null;
+      try {
+        const res = await fetch("/api/tool");
+        const data = await res.json();
+        const tools = (data && data.tools) || [];
+        const score = (t) => {
+          const n = (t.name || "").toLowerCase();
+          if (/(cancel|get|list|status|track|fetch|view|read|search|history)/.test(n)) return -1;
+          let s = 0;
+          if (/order/.test(n)) s += 2;
+          if (/checkout/.test(n)) s += 3;
+          if (/(create|place|new|submit|add)/.test(n)) s += 2;
+          if (t.writes) s += 1;
+          return s;
+        };
+        const best = tools.map(t => [score(t), t]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0])[0];
+        if (best) _orderTool = best[1];
+      } catch (_) { /* fall back to the well-known name below */ }
+      return _orderTool;
+    }
 
     function showCheckout() {
       if (!cart.length) { showToast("Your cart is empty", "🛒"); return; }
@@ -699,13 +725,20 @@
       btn.disabled = true; btn.textContent = "Placing order…";
       $("checkoutResult").innerHTML = "";
       try {
+        // Use the discovered tool name; choose arg shape from its schema (wrap in `params`
+        // only when the schema asks for it), defaulting to the wrapped shape when unknown.
+        const tool = await loadOrderTool();
+        const name = (tool && tool.name) || "kapruka_create_order";
+        const props = (tool && tool.inputSchema && tool.inputSchema.properties) || null;
+        const args = props ? (props.params ? { params } : params) : { params };
         const res = await fetch("/api/tool", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "kapruka_create_order", arguments: { params } }),
+          body: JSON.stringify({ name, arguments: args }),
         });
         const data = await res.json();
-        let order = null;
-        try { order = JSON.parse(data.output); } catch (_) {}
+        // Prefer the backend's normalized checkout (handles any field naming); fall back to raw.
+        let order = (data.checkout && data.checkout.checkout_url) ? data.checkout : null;
+        if (!order) { try { order = JSON.parse(data.output); } catch (_) {} }
         if (data.ok && order && order.checkout_url) {
           const s = order.summary || {};
           const tot = s.grand_total != null ? fmtMoney(s.grand_total, s.currency) : "";

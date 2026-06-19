@@ -285,6 +285,126 @@ def extract_products(output: str) -> list:
     return unique
 
 
+# === Checkout normalization =================================================
+# An order/checkout tool can name its fields many ways; the only thing the UI
+# truly needs to close the loop is a pay link. Deep-search the result for it,
+# plus a reference and totals, so checkout works regardless of the exact schema.
+_CHECKOUT_HINTS = ("checkout", "payment", "pay", "invoice", "gateway", "redirect")
+_REF_KEYS = {
+    "order_ref", "orderref", "order_id", "orderid", "order_number", "ordernumber",
+    "order_no", "orderno", "reference", "ref", "invoice_no", "invoice_id", "invoice_number",
+}
+_TOTAL_KEYS = {
+    "grand_total", "grandtotal", "total", "total_amount", "totalamount", "amount",
+    "amount_due", "amountdue", "payable", "net_total", "nettotal", "order_total", "ordertotal",
+}
+_FEE_KEYS = {
+    "delivery_fee", "deliveryfee", "shipping", "shipping_fee", "shippingfee",
+    "delivery_charge", "deliverycharge", "delivery", "courier_fee", "courierfee",
+}
+_EXPIRES_KEYS = {
+    "expires_at", "expiresat", "expires", "expiry", "expire_at", "valid_until", "validuntil",
+}
+_CURRENCY_KEYS = {"currency", "currency_code", "currencycode"}
+
+
+def _is_http(v):
+    return isinstance(v, str) and v.strip().lower().startswith(("http://", "https://"))
+
+
+def _norm_key(k):
+    return re.sub(r"[^a-z0-9]+", "_", str(k).lower()).strip("_")
+
+
+def _best_pay_url(obj):
+    """Pick the most checkout-like absolute URL anywhere in the result."""
+    best = None  # (score, url)
+
+    def walk(o):
+        nonlocal best
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if _is_http(v):
+                    kl = _norm_key(k)
+                    vl = v.lower()
+                    score = 1
+                    if any(h in kl for h in _CHECKOUT_HINTS):
+                        score += 3
+                    elif kl in ("url", "link", "href", "redirect"):
+                        score += 2
+                    if any(h in vl for h in _CHECKOUT_HINTS):
+                        score += 2
+                    if best is None or score > best[0]:
+                        best = (score, v.strip())
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(obj)
+    return best[1] if best else None
+
+
+def _find_scalar(obj, keys, want_number=False):
+    """First scalar whose (normalized) key is in `keys`, searched depth-first."""
+    result = [None]
+
+    def walk(o):
+        if result[0] is not None:
+            return
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if not isinstance(v, (dict, list)) and _norm_key(k) in keys:
+                    if want_number:
+                        try:
+                            result[0] = float(re.sub(r"[^0-9.]", "", str(v)))
+                            return
+                        except (TypeError, ValueError):
+                            pass
+                    elif v not in (None, ""):
+                        result[0] = v
+                        return
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(obj)
+    return result[0]
+
+
+def extract_checkout(output: str) -> dict:
+    data = _coerce_json(output)
+    if not isinstance(data, (dict, list)):
+        # Some tools answer in prose ("…visit https://…/checkout to pay"); grab the link.
+        m = re.search(r"https?://[^\s\"'<>]+", output or "")
+        return {"checkout_url": m.group(0).rstrip(".,);")} if m else {}
+    url = _best_pay_url(data)
+    if not url:
+        return {}
+    out = {"checkout_url": url}
+    ref = _find_scalar(data, _REF_KEYS)
+    if ref is not None:
+        out["order_ref"] = str(ref)
+    total = _find_scalar(data, _TOTAL_KEYS, want_number=True)
+    fee = _find_scalar(data, _FEE_KEYS, want_number=True)
+    currency = _find_scalar(data, _CURRENCY_KEYS)
+    summary = {}
+    if total is not None:
+        summary["grand_total"] = total
+    if fee is not None:
+        summary["delivery_fee"] = fee
+    if currency:
+        summary["currency"] = currency
+    if summary:
+        out["summary"] = summary
+    expires = _find_scalar(data, _EXPIRES_KEYS)
+    if expires is not None:
+        out["expires_at"] = expires
+    return out
+
+
 # === Operations ==============================================================
 def list_tools_payload() -> dict:
     global _TOOLS_CACHE
@@ -317,6 +437,7 @@ def invoke_tool(name: str, arguments: dict) -> dict:
         "arguments": arguments,
         "output": output,
         "products": extract_products(output),
+        "checkout": extract_checkout(output),
     }
 
 
