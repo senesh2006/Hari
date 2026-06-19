@@ -42,22 +42,25 @@
       }
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
+    html, body { margin: 0; padding: 0; height: 100%; }
     body {
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      color: var(--text); line-height: 1.55; min-height: 100vh;
+      color: var(--text); line-height: 1.55;
+      height: 100dvh; overflow: hidden;
+      display: flex; flex-direction: column;
       background:
-        radial-gradient(900px 500px at 50% -8%, var(--bg-2), transparent 60%),
-        linear-gradient(180deg, var(--bg-1), var(--bg-1));
+        radial-gradient(130% 65% at 50% 112%, color-mix(in srgb, var(--orb-2) 22%, transparent), transparent 62%),
+        radial-gradient(900px 520px at 50% -10%, var(--bg-2), transparent 60%),
+        var(--bg-1);
     }
     h1, h2, h3 { font-family: Poppins, Inter, sans-serif; letter-spacing: -.01em; }
     a { color: var(--primary-2); }
 
-    /* Top bar */
-    .topbar { position: sticky; top: 0; z-index: 30; backdrop-filter: saturate(140%) blur(10px); background: color-mix(in srgb, var(--surface) 80%, transparent); border-bottom: 1px solid var(--border-2); }
-    .topbar .inner { max-width: 720px; margin: 0 auto; padding: .65rem 1.1rem; display: flex; align-items: center; gap: .6rem; }
-    .brand { display: flex; align-items: center; gap: .55rem; font-family: Poppins; font-weight: 700; font-size: 1rem; }
-    .brand .mark { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font-size: 1rem; color: #fff; background: linear-gradient(135deg, var(--primary), var(--orb-3)); }
+    /* App bar (top) — flex-none header, the page itself never scrolls */
+    .topbar { flex: 0 0 auto; z-index: 30; backdrop-filter: saturate(140%) blur(12px); background: color-mix(in srgb, var(--surface) 70%, transparent); border-bottom: 1px solid var(--border-2); }
+    .topbar .inner { max-width: 760px; margin: 0 auto; padding: .7rem 1.1rem; display: flex; align-items: center; gap: .6rem; }
+    .brand { display: flex; align-items: center; gap: .6rem; font-family: Poppins; font-weight: 700; font-size: 1.02rem; letter-spacing: -.01em; }
+    .brand .mark { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; font-size: 1.05rem; color: #fff; background: linear-gradient(135deg, var(--primary), var(--orb-3)); box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 40%, transparent); }
     .iconbtn { width: 42px; height: 42px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center; font-size: 1.1rem; background: var(--surface-3); color: var(--text); border: 1px solid var(--border-2); cursor: pointer; transition: background .15s ease, transform .14s var(--ease-out); }
     .iconbtn:hover { background: color-mix(in srgb, var(--primary) 12%, var(--surface-3)); }
     .iconbtn:active { transform: scale(.92); }
@@ -67,12 +70,14 @@
     .badge.bump { transform: scale(1.4); }
     .badge.zero { display: none; }
 
-    main { max-width: 720px; margin: 0 auto; padding: 1.2rem 1.1rem 7rem; }
+    /* Conversation scroller — the ONLY scrolling region */
+    main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scroll-behavior: smooth; }
+    .thread { max-width: 760px; margin: 0 auto; padding: 1.4rem 1.1rem 1.8rem; display: flex; flex-direction: column; }
 
-    /* Bottom dock: speak button + prompt box, fixed to the bottom */
-    .dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; padding: .7rem 1rem calc(.7rem + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter: saturate(140%) blur(10px); border-top: 1px solid var(--border-2); }
-    .dock-inner { max-width: 640px; margin: 0 auto; display: flex; gap: .5rem; align-items: center; }
-    .dock .searchbar { flex: 1; margin: 0; }
+    /* Bottom composer — the voice orb lives here and is ALWAYS visible (no scroll to reach it) */
+    .composer { flex: 0 0 auto; z-index: 40; position: relative; padding: .5rem 1rem calc(1rem + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--surface) 78%, transparent); backdrop-filter: saturate(150%) blur(14px); border-top: 1px solid var(--border-2); box-shadow: 0 -10px 40px -24px rgba(16,40,33,.5); }
+    .composer-inner { max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: .15rem; }
+    @media (max-height: 660px) { .orb { width: 80px; height: 80px; } .status { margin-top: .05rem; } }
 
     /* Thinking overlay */
     .thinking { position: fixed; inset: 0; z-index: 55; display: none; }
@@ -125,40 +130,43 @@
     .ap-code .kw { color: #c4b5fd; }
     .ap-code .pulse { color: #e2e8f0; animation: blink 1.2s infinite both; }
 
-    /* Voice orb */
-    .stage { display: flex; flex-direction: column; align-items: center; padding: 1.2rem 0 .4rem; }
-    .orb { width: 230px; height: 230px; cursor: pointer; border: none; background: transparent; padding: 0; border-radius: 50%; outline: none; }
+    /* Voice orb — the hero control, pinned in the bottom composer (always reachable) */
+    .orb { width: 104px; height: 104px; cursor: pointer; border: none; background: transparent; padding: 0; border-radius: 50%; outline: none; position: relative; transition: transform .16s var(--ease-out); }
+    .orb::after { content: ""; position: absolute; inset: -16px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--orb-1) 42%, transparent), transparent 76%); filter: blur(10px); z-index: -1; opacity: .85; }
     .orb canvas { width: 100%; height: 100%; display: block; }
-    .orb:focus-visible { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 35%, transparent); }
-    .status { margin: .5rem 0 0; color: var(--muted); font-size: .95rem; min-height: 1.4em; text-align: center; }
+    .orb:active { transform: scale(.95); }
+    .orb:focus-visible { box-shadow: 0 0 0 4px var(--ring); }
+    .status { margin: .15rem 0 .4rem; color: var(--muted); font-size: .85rem; min-height: 1.3em; text-align: center; }
     .status b { color: var(--text); font-weight: 600; }
 
-    /* Search bar */
-    .searchbar { display: flex; gap: .5rem; align-items: center; margin: 1.1rem auto 0; max-width: 600px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: .3rem .3rem .3rem 1.15rem; box-shadow: var(--shadow-sm); transition: border-color .18s var(--ease-out), box-shadow .18s var(--ease-out); }
+    /* Input pill: voice toggle + text + send, sits under the orb */
+    .searchbar { display: flex; gap: .35rem; align-items: center; width: 100%; max-width: 560px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: .3rem .3rem .3rem .35rem; box-shadow: var(--shadow-sm); transition: border-color .18s var(--ease-out), box-shadow .18s var(--ease-out); }
     .searchbar:focus-within { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); box-shadow: var(--shadow-sm), 0 0 0 4px var(--ring); }
-    .searchbar input { flex: 1; min-width: 0; border: none; background: transparent; color: inherit; font-size: 1rem; padding: .6rem 0; }
+    .searchbar input { flex: 1; min-width: 0; border: none; background: transparent; color: inherit; font-size: 1rem; padding: .55rem .2rem; }
     .searchbar input:focus { outline: none; }
-    .send { width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer; font-size: 1.05rem; color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary-2)); box-shadow: 0 6px 16px rgba(15,157,107,.28); transition: transform .14s var(--ease-out), filter .14s var(--ease-out); }
+    .searchbar .iconbtn { width: 40px; height: 40px; font-size: 1.05rem; background: transparent; border-color: transparent; }
+    .searchbar .iconbtn:hover { background: var(--surface-3); }
+    .send { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 50%; border: none; cursor: pointer; font-size: 1.02rem; color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary-2)); box-shadow: 0 6px 16px rgba(15,157,107,.28); transition: transform .14s var(--ease-out), filter .14s var(--ease-out); }
     .send:active { transform: scale(.94); }
-    .hint { text-align: center; color: var(--faint); font-size: .8rem; margin: .6rem 0 0; }
 
-    /* Quick-prompt suggestion chips */
-    .chips { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin: 1rem auto .2rem; max-width: 560px; transition: opacity .25s var(--ease-out); }
+    /* Quick-prompt suggestion chips — float in the scroll area above the composer */
+    .chips { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin: 1.1rem auto .2rem; max-width: 560px; transition: opacity .25s var(--ease-out); }
     .chips.hide { display: none; }
-    .chip { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 999px; padding: .5rem .95rem; font: inherit; font-size: .85rem; cursor: pointer; box-shadow: var(--shadow-sm); transition: transform .15s var(--ease-out), border-color .15s var(--ease-out), background .15s var(--ease-out); }
+    .chip { background: color-mix(in srgb, var(--surface) 72%, transparent); border: 1px solid var(--border); color: var(--text); border-radius: 999px; padding: .5rem .95rem; font: inherit; font-size: .85rem; cursor: pointer; box-shadow: var(--shadow-sm); backdrop-filter: blur(4px); transition: transform .15s var(--ease-out), border-color .15s var(--ease-out), background .15s var(--ease-out); }
     .chip:active { transform: scale(.96); }
     @media (hover: hover) and (pointer: fine) {
+      .orb:hover { transform: scale(1.04); }
       .send:hover { filter: brightness(1.06); transform: scale(1.05); }
-      .chip:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--primary) 50%, var(--border)); background: color-mix(in srgb, var(--primary) 8%, var(--surface)); }
+      .chip:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--primary) 50%, var(--border)); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); }
     }
 
     /* Conversation feed */
-    .feed { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.8rem; }
-    .msg { max-width: 92%; }
+    .feed { display: flex; flex-direction: column; gap: .85rem; }
+    .msg { max-width: 88%; }
     .msg.user { align-self: flex-end; }
-    .msg .bubble { padding: .7rem .95rem; border-radius: 16px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; font-size: .95rem; animation: rise .28s var(--ease-out) both; }
-    .msg.bot .bubble { background: var(--surface); border: 1px solid var(--border-2); border-bottom-left-radius: 5px; box-shadow: var(--shadow); }
-    .msg.user .bubble { color: #fff; border-bottom-right-radius: 5px; background: linear-gradient(135deg, var(--orb-2), var(--orb-3)); }
+    .msg .bubble { padding: .72rem 1rem; border-radius: 20px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; font-size: .95rem; animation: rise .28s var(--ease-out) both; }
+    .msg.bot .bubble { background: var(--surface); border: 1px solid var(--border-2); border-bottom-left-radius: 6px; box-shadow: var(--shadow-sm); }
+    .msg.user .bubble { color: #fff; border-bottom-right-radius: 6px; background: linear-gradient(135deg, var(--orb-2), var(--orb-3)); box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 28%, transparent); }
     @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     .typing .bubble { color: var(--muted); }
     .dots span { display: inline-block; width: 6px; height: 6px; margin: 0 1px; border-radius: 50%; background: currentColor; opacity: .4; animation: blink 1.2s infinite both; }
@@ -283,36 +291,34 @@
   </div>
 
   <main>
-    <div class="stage">
-      <button id="orb" class="orb" type="button" aria-label="Tap to talk to the concierge">
-        <canvas id="orbCanvas" width="230" height="230"></canvas>
-      </button>
-      <p id="status" class="status">Tap the orb to talk, or type your request below.</p>
+    <div class="thread">
+      <div id="feed" class="feed"></div>
+      <div id="chips" class="chips">
+        <button type="button" class="chip" data-prompt="Birthday gift for mom under Rs 5000">🎂 Birthday gift for mom</button>
+        <button type="button" class="chip" data-prompt="Anniversary flowers delivered to Colombo">💐 Anniversary flowers</button>
+        <button type="button" class="chip" data-prompt="Get-well hamper for a friend">🧺 Get-well hamper</button>
+        <button type="button" class="chip" data-prompt="Chocolates and a card under Rs 3000">🍫 Chocolates under Rs 3000</button>
+      </div>
     </div>
-
-    <div id="chips" class="chips">
-      <button type="button" class="chip" data-prompt="Birthday gift for mom under Rs 5000">🎂 Birthday gift for mom</button>
-      <button type="button" class="chip" data-prompt="Anniversary flowers delivered to Colombo">💐 Anniversary flowers</button>
-      <button type="button" class="chip" data-prompt="Get-well hamper for a friend">🧺 Get-well hamper</button>
-      <button type="button" class="chip" data-prompt="Chocolates and a card under Rs 3000">🍫 Chocolates under Rs 3000</button>
-    </div>
-
-    <div id="feed" class="feed"></div>
   </main>
 
   <div id="thinking" class="thinking" aria-hidden="true">
     <div id="agentPlanning" class="thinking-panel"></div>
   </div>
 
-  <div class="dock">
-    <div class="dock-inner">
-      <button id="speaker" type="button" class="iconbtn" title="Read replies aloud" aria-label="Toggle voice replies">🔈</button>
+  <footer class="composer">
+    <div class="composer-inner">
+      <button id="orb" class="orb" type="button" aria-label="Tap to talk to the concierge">
+        <canvas id="orbCanvas" width="230" height="230"></canvas>
+      </button>
+      <p id="status" class="status">Tap to talk, or type your request below</p>
       <form id="searchForm" class="searchbar">
+        <button id="speaker" type="button" class="iconbtn" title="Read replies aloud" aria-label="Toggle voice replies">🔈</button>
         <input id="query" type="text" autocomplete="off" placeholder="Who's it for, and what's the occasion?" />
         <button type="submit" class="send" title="Send" aria-label="Send">➤</button>
       </form>
     </div>
-  </div>
+  </footer>
 
   <div id="scrim" class="scrim"></div>
   <aside id="drawer" class="drawer" aria-label="Cart">
@@ -516,7 +522,7 @@
 
     // ---------- status ----------
     const statusEl = $("status");
-    const DEFAULT_STATUS = "Tap the orb to talk, or type your request below.";
+    const DEFAULT_STATUS = "Tap to talk, or type your request below";
     function setStatus(html) { statusEl.innerHTML = html; }
     function idleStatus() { if (orbMode !== "listening") { setOrb("idle"); setStatus(DEFAULT_STATUS); } }
 
