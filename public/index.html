@@ -9,40 +9,27 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
   <style>
+    /* Deep-blue "glass" assistant theme (dark by design, regardless of system preference) */
     :root {
-      --bg-1: #f4f3ee; --bg-2: #efede4;
-      --surface: #ffffff; --surface-2: #faf9f5; --surface-3: #efeee7;
-      --text: #232220; --muted: #6e6a62; --faint: #9b968c;
-      --primary: #c9682f; --primary-2: #9d4d1e; --accent: #c9682f;
-      --orb-1: #e3a06a; --orb-2: #c9682f; --orb-3: #9f4f23;
-      --border: rgba(60,50,40,.12); --border-2: rgba(60,50,40,.07);
-      --ok: #16a34a; --bad: #dc2626;
-      --ring: color-mix(in srgb, var(--primary) 22%, transparent);
-      --shadow-sm: 0 1px 2px rgba(16,40,33,.06), 0 2px 6px rgba(16,40,33,.05);
-      --shadow: 0 2px 4px rgba(16,40,33,.05), 0 14px 40px rgba(16,40,33,.10);
-      --shadow-lg: 0 8px 16px rgba(16,40,33,.08), 0 24px 60px rgba(16,40,33,.16);
+      --bg-1: #0b1626; --bg-2: #1c4a86;
+      --surface: #14233b; --surface-2: #1a2c47; --surface-3: #213553;
+      --text: #f1f5fb; --muted: #aab6cc; --faint: #7e8aa3;
+      --primary: #3b82f6; --primary-2: #2f6fe0; --accent: #3b82f6;
+      --orb-1: #9cc4ff; --orb-2: #4f93ff; --orb-3: #2f6fe0;
+      --border: rgba(160,190,240,.14); --border-2: rgba(160,190,240,.08);
+      --ok: #34d399; --bad: #f0556b;
+      --ring: color-mix(in srgb, var(--primary) 35%, transparent);
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.4);
+      --shadow: 0 2px 4px rgba(0,0,0,.35), 0 16px 44px rgba(0,0,0,.5);
+      --shadow-lg: 0 12px 28px rgba(0,0,0,.5), 0 30px 70px rgba(0,0,0,.6);
       --radius: 20px;
       /* Strong custom easings (Emil Kowalski) — built-in curves lack punch */
       --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
       --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
       --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-      /* Secondary accent system: desaturated fills + borders for chips, inactive/secondary controls */
-      --accent-soft: color-mix(in srgb, var(--primary) 13%, var(--surface));
-      --accent-border: color-mix(in srgb, var(--primary) 32%, var(--border));
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-1: #171411; --bg-2: #1d1812;
-        --surface: #221d17; --surface-2: #29231b; --surface-3: #322a20;
-        --text: #f6f1e9; --muted: #b6ada0; --faint: #9c9384;
-        --primary: #d77f47; --primary-2: #b35e2a; --accent: #d77f47;
-        --orb-1: #ecb083; --orb-2: #d77f47; --orb-3: #a85a2b;
-        --border: rgba(245,235,225,.11); --border-2: rgba(245,235,225,.06);
-        --ring: color-mix(in srgb, var(--primary) 32%, transparent);
-        --shadow-sm: 0 1px 2px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.4);
-        --shadow: 0 2px 4px rgba(0,0,0,.3), 0 14px 44px rgba(0,0,0,.5);
-        --shadow-lg: 0 10px 24px rgba(0,0,0,.45), 0 30px 70px rgba(0,0,0,.6);
-      }
+      /* Secondary accent system: desaturated fills + borders for cards, inactive/secondary controls */
+      --accent-soft: color-mix(in srgb, var(--primary) 14%, var(--surface));
+      --accent-border: color-mix(in srgb, var(--primary) 34%, var(--border));
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; }
@@ -52,22 +39,29 @@
       height: 100dvh; overflow: hidden;
       display: flex; flex-direction: column;
       background:
-        radial-gradient(1000px 600px at 50% -20%, var(--bg-2), transparent 70%),
-        var(--bg-1);
+        radial-gradient(72% 52% at 50% 40%, rgba(86,148,224,.55), rgba(24,64,120,.28) 46%, transparent 72%),
+        linear-gradient(122deg, transparent 30%, rgba(160,196,255,.08) 45%, transparent 55%),
+        linear-gradient(122deg, transparent 60%, rgba(160,196,255,.05) 70%, transparent 78%),
+        linear-gradient(160deg, #0d1c33 0%, #0a1322 58%, #070e1b 100%);
+      background-attachment: fixed;
     }
     h1, h2, h3 { font-family: Poppins, Inter, sans-serif; letter-spacing: -.01em; }
     a { color: var(--primary); }
 
-    /* App bar (top) — flex-none header, the page itself never scrolls */
-    .topbar { flex: 0 0 auto; z-index: 30; backdrop-filter: saturate(140%) blur(12px); background: color-mix(in srgb, var(--surface) 70%, transparent); border-bottom: 1px solid var(--border-2); }
-    .topbar .inner { max-width: 760px; margin: 0 auto; padding: .7rem 1.1rem; display: flex; align-items: center; gap: .6rem; }
-    .brand { display: flex; align-items: center; gap: .6rem; font-family: Poppins; font-weight: 700; font-size: 1.02rem; letter-spacing: -.01em; }
-    .brand .mark { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; font-size: 1.05rem; color: #fff; background: linear-gradient(135deg, var(--primary), var(--orb-3)); box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 40%, transparent); }
-    .iconbtn { width: 42px; height: 42px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center; font-size: 1.1rem; background: var(--surface-3); color: var(--text); border: 1px solid var(--border-2); cursor: pointer; transition: background .15s ease, transform .14s var(--ease-out); }
-    .iconbtn:hover { background: color-mix(in srgb, var(--primary) 12%, var(--surface-3)); }
+    /* App bar (top) — greeting + actions; the page itself never scrolls */
+    .topbar { flex: 0 0 auto; z-index: 30; }
+    .topbar .inner { max-width: 760px; margin: 0 auto; padding: 1.15rem 1.2rem .6rem; display: flex; align-items: center; gap: .6rem; }
+    .greet { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+    .avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 1.15rem; color: #fff; background: linear-gradient(135deg, #2f6fe0, #1b3f78); box-shadow: 0 2px 10px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.12); flex: 0 0 auto; }
+    .greet-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+    .greet-sub { color: var(--muted); font-size: .8rem; }
+    .greet-title { font-family: Poppins, Inter, sans-serif; font-weight: 600; font-size: 1.12rem; color: var(--text); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .top-actions { margin-left: auto; display: flex; align-items: center; gap: .45rem; }
+    .iconbtn { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center; font-size: 1.05rem; background: color-mix(in srgb, var(--surface-3) 70%, transparent); color: var(--text); border: 1px solid var(--border-2); cursor: pointer; backdrop-filter: blur(8px); transition: background .15s ease, transform .14s var(--ease-out); }
+    .iconbtn:hover { background: color-mix(in srgb, var(--primary) 16%, var(--surface-3)); }
     .iconbtn:active { transform: scale(.92); }
     .iconbtn.on { background: var(--primary); color: #fff; border-color: transparent; }
-    .cartbtn { position: relative; margin-left: auto; }
+    .cartbtn { position: relative; }
     .badge { position: absolute; top: -5px; right: -5px; min-width: 1.25rem; height: 1.25rem; padding: 0 .32rem; border-radius: 999px; background: var(--primary-2); color: #fff; font-size: .7rem; font-weight: 700; line-height: 1; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg-1), 0 2px 6px color-mix(in srgb, var(--primary) 40%, transparent); transition: transform .2s var(--ease-out); }
     .badge.bump { transform: scale(1.35); }
     .badge.zero { display: none; }
@@ -78,10 +72,9 @@
        yet collapses to 0 once content overflows — so long threads scroll from the top, no clipping. */
     .thread { width: 100%; max-width: 760px; margin: auto auto 0; padding: 1.4rem 1.1rem 1rem; display: flex; flex-direction: column; }
 
-    /* Bottom composer — the voice orb lives here and is ALWAYS visible (no scroll to reach it) */
-    .composer { flex: 0 0 auto; z-index: 40; position: relative; padding: .5rem 1rem calc(1rem + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--surface) 78%, transparent); backdrop-filter: saturate(150%) blur(14px); border-top: 1px solid var(--border-2); box-shadow: 0 -10px 40px -24px rgba(16,40,33,.5); }
-    .composer-inner { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: .15rem; }
-    @media (max-height: 660px) { .orb { width: 92px; height: 92px; } .status { margin: .15rem 0 .35rem; } }
+    /* Bottom composer — suggestion cards + input pill. Fades into the page so it reads as one flow. */
+    .composer { flex: 0 0 auto; z-index: 40; position: relative; padding: .4rem 1rem calc(1rem + env(safe-area-inset-bottom)); background: linear-gradient(to top, color-mix(in srgb, var(--bg-1) 90%, transparent) 55%, transparent); }
+    .composer-inner { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: .7rem; }
 
     /* Thinking overlay */
     .thinking { position: fixed; inset: 0; z-index: 55; display: none; }
@@ -134,38 +127,35 @@
     .ap-code .kw { color: #c4b5fd; }
     .ap-code .pulse { color: #e2e8f0; animation: blink 1.2s infinite both; }
 
-    /* Voice orb — the hero control, pinned in the bottom composer (always reachable) */
-    .orb { width: 124px; height: 124px; cursor: pointer; border: none; background: transparent; padding: 0; border-radius: 50%; outline: none; position: relative; transition: transform .16s var(--ease-out); }
-    .orb::after { content: ""; position: absolute; inset: -18px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--orb-2) 44%, transparent), transparent 78%); filter: blur(12px); z-index: -1; animation: orbBreathe 4.8s var(--ease-in-out) infinite; }
-    @keyframes orbBreathe { 0%, 100% { transform: scale(1); opacity: .6; } 50% { transform: scale(1.14); opacity: .92; } }
-    .orb canvas { width: 100%; height: 100%; display: block; }
-    .orb:active { transform: scale(.95); }
-    .orb:focus-visible { box-shadow: 0 0 0 4px var(--ring); }
-    .status { margin: .35rem 0 .5rem; color: var(--muted); font-size: .85rem; min-height: 1.3em; text-align: center; }
+    /* Status line (compact, above the suggestion cards) */
+    .status { margin: 0; color: var(--muted); font-size: .82rem; min-height: 1.2em; text-align: center; }
     .status b { color: var(--text); font-weight: 600; }
 
-    /* Claude-style composer box: voice toggle + text + send inside a rounded rectangle */
-    .searchbar { display: flex; gap: .35rem; align-items: center; width: 100%; max-width: 700px; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: .4rem .5rem .4rem .45rem; box-shadow: var(--shadow-sm); transition: border-color .18s var(--ease-out), box-shadow .18s var(--ease-out); }
-    .searchbar:focus-within { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); box-shadow: var(--shadow-sm), 0 0 0 4px var(--ring); }
-    .searchbar input { flex: 1; min-width: 0; border: none; background: transparent; color: inherit; font-size: 1rem; padding: .6rem .25rem; }
-    .searchbar input:focus { outline: none; }
-    .searchbar .iconbtn { width: 40px; height: 40px; font-size: 1.05rem; background: transparent; border-color: transparent; }
-    .searchbar .iconbtn:hover { background: var(--surface-3); }
-    .send { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 50%; border: none; cursor: pointer; font-size: 1rem; color: #fff; background: var(--primary-2); box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 32%, transparent); transition: transform .14s var(--ease-out), filter .14s var(--ease-out); }
-    .send:active { transform: scale(.94); }
+    /* Suggestion cards — dark-glass tiles in a horizontal scroller. One .card class → identical styling. */
+    .cards { display: flex; gap: .6rem; overflow-x: auto; padding: .1rem; scrollbar-width: none; -webkit-overflow-scrolling: touch; transition: opacity .25s var(--ease-out); }
+    .cards::-webkit-scrollbar { display: none; }
+    .cards.hide { display: none; }
+    .scard { flex: 0 0 auto; width: 150px; min-height: 80px; display: flex; flex-direction: column; justify-content: space-between; gap: .45rem; text-align: left; padding: .7rem .8rem; border-radius: 16px; cursor: pointer; font: inherit; color: var(--text); background: color-mix(in srgb, var(--surface) 55%, transparent); border: 1px solid var(--border-2); box-shadow: var(--shadow-sm); backdrop-filter: blur(12px); outline: none; transition: transform .16s var(--ease-out), border-color .16s var(--ease-out), background .16s var(--ease-out); }
+    .scard-ic { font-size: 1.2rem; line-height: 1; }
+    .scard-tx { font-size: .82rem; line-height: 1.3; }
+    .scard:active { transform: scale(.97); }
+    .scard:focus { outline: none; }
+    .scard:focus-visible { border-color: color-mix(in srgb, var(--primary) 60%, var(--border)); box-shadow: 0 0 0 3px var(--ring); }
 
-    /* Quick-prompt suggestion chips — every chip renders from this one class; states are explicit so
-       no chip can ever look different at rest (a stray browser focus ring used to highlight one). */
-    .chips { display: flex; flex-wrap: wrap; gap: .55rem; justify-content: center; margin: 1.1rem auto .2rem; max-width: 600px; transition: opacity .25s var(--ease-out); }
-    .chips.hide { display: none; }
-    .chip { background: var(--accent-soft); border: 1px solid var(--accent-border); color: var(--text); border-radius: 12px; padding: .55rem .95rem; font: inherit; font-size: .85rem; cursor: pointer; box-shadow: var(--shadow-sm); outline: none; transition: transform .15s var(--ease-out), border-color .15s var(--ease-out), background .15s var(--ease-out); }
-    .chip:active { transform: scale(.96); }
-    .chip:focus { outline: none; }
-    .chip:focus-visible { border-color: color-mix(in srgb, var(--primary) 60%, var(--border)); box-shadow: 0 0 0 3px var(--ring); }
+    /* Input pill + single blue voice/send button (the orb canvas lives inside the button) */
+    .searchbar { display: flex; gap: .4rem; align-items: center; width: 100%; background: color-mix(in srgb, var(--surface) 62%, transparent); border: 1px solid var(--border); border-radius: 30px; padding: .3rem .3rem .3rem 1.15rem; box-shadow: var(--shadow); backdrop-filter: blur(14px); transition: border-color .18s var(--ease-out), box-shadow .18s var(--ease-out); }
+    .searchbar:focus-within { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); box-shadow: var(--shadow), 0 0 0 4px var(--ring); }
+    .searchbar input { flex: 1; min-width: 0; border: none; background: transparent; color: inherit; font-size: 1rem; padding: .7rem 0; }
+    .searchbar input::placeholder { color: var(--faint); }
+    .searchbar input:focus { outline: none; }
+    .orb { width: 48px; height: 48px; flex: 0 0 auto; cursor: pointer; border: none; padding: 0; border-radius: 50%; outline: none; position: relative; overflow: hidden; background: radial-gradient(circle at 50% 35%, #4f93ff, #2f6fe0 72%, #1f56c0); transition: transform .14s var(--ease-out), filter .14s var(--ease-out); animation: orbGlow 4.8s var(--ease-in-out) infinite; }
+    @keyframes orbGlow { 0%, 100% { box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 45%, transparent), inset 0 0 0 1px rgba(255,255,255,.2); } 50% { box-shadow: 0 6px 24px color-mix(in srgb, var(--primary) 78%, transparent), inset 0 0 0 1px rgba(255,255,255,.2); } }
+    .orb canvas { width: 100%; height: 100%; display: block; }
+    .orb:active { transform: scale(.92); }
+    .orb:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
     @media (hover: hover) and (pointer: fine) {
-      .orb:hover { transform: scale(1.03); }
-      .send:hover { filter: brightness(1.06); transform: scale(1.05); }
-      .chip:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); background: color-mix(in srgb, var(--primary) 20%, var(--surface)); }
+      .orb:hover { filter: brightness(1.08); transform: scale(1.05); }
+      .scard:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--surface) 78%, transparent); }
     }
 
     /* Conversation feed — Claude-style: assistant text is plain with an avatar, user text in a soft bubble */
@@ -252,9 +242,8 @@
     .co-ok { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 12px; padding: .8rem; font-size: .9rem; }
     .co-ok .pay { display: block; text-align: center; margin-top: .6rem; padding: .65rem; border-radius: 12px; background: var(--primary-2); color: #fff; text-decoration: none; font-weight: 600; }
     .co-bad { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 12px; padding: .7rem; font-size: .88rem; }
-    .langsel { margin-left: auto; font: inherit; font-size: .85rem; padding: .35rem .5rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-3); color: var(--text); cursor: pointer; }
-    .topbar .langsel + .iconbtn { margin-left: 0; }
-    .topbar .cartbtn { margin-left: 0; }
+    .langsel { font: inherit; font-size: .82rem; padding: .4rem .55rem; border-radius: 999px; border: 1px solid var(--border-2); background: color-mix(in srgb, var(--surface-3) 70%, transparent); color: var(--text); cursor: pointer; backdrop-filter: blur(8px); }
+    .langsel option { background: var(--surface); color: var(--text); }
     .budgetrow { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; }
     .budgetrow input { width: 120px; text-align: right; font: inherit; font-size: .9rem; padding: .4rem .55rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: inherit; }
     .budgetrow input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent); }
@@ -281,35 +270,38 @@
     /* Reduced motion: keep gentle opacity fades, drop positional movement (Emil's a11y guidance) */
     @media (prefers-reduced-motion: reduce) {
       .grid .card, .msg .bubble, .ap-step { animation: fadeOnly .2s ease both !important; }
-      .card:hover, .chip:hover, .send:hover, .card:hover img { transform: none !important; }
-      .orb::after { animation: none !important; opacity: .7 !important; }
+      .scard:hover, .card:hover, .orb:hover, .card:hover img { transform: none !important; }
+      .orb { animation: none !important; }
       .drawer { transition-duration: .2s; }
     }
     @keyframes fadeOnly { from { opacity: 0; } to { opacity: 1; } }
   </style>
 </head>
 <body>
-  <div class="topbar">
+  <header class="topbar">
     <div class="inner">
-      <div class="brand"><span class="mark">🌴</span> Kapruka Concierge</div>
-      <select id="lang" class="langsel" title="Language" aria-label="Language">
-        <option value="en">English</option>
-        <option value="si">සිංහල</option>
-        <option value="ta">தமிழ்</option>
-      </select>
-      <button id="cartBtn" type="button" class="iconbtn cartbtn" title="View cart" aria-label="View cart">🛒<span id="cartBadge" class="badge zero">0</span></button>
+      <div class="greet">
+        <span class="avatar">🌴</span>
+        <div class="greet-text">
+          <span id="greetSub" class="greet-sub">Hello</span>
+          <span class="greet-title">What can I find for you?</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <select id="lang" class="langsel" title="Language" aria-label="Language">
+          <option value="en">English</option>
+          <option value="si">සිංහල</option>
+          <option value="ta">தமிழ்</option>
+        </select>
+        <button id="speaker" type="button" class="iconbtn" title="Read replies aloud" aria-label="Toggle voice replies">🔈</button>
+        <button id="cartBtn" type="button" class="iconbtn cartbtn" title="View cart" aria-label="View cart">🛒<span id="cartBadge" class="badge zero">0</span></button>
+      </div>
     </div>
-  </div>
+  </header>
 
   <main>
     <div class="thread">
       <div id="feed" class="feed"></div>
-      <div id="chips" class="chips">
-        <button type="button" class="chip" data-prompt="Birthday gift for mom under Rs 5000">🎂 Birthday gift for mom</button>
-        <button type="button" class="chip" data-prompt="Anniversary flowers delivered to Colombo">💐 Anniversary flowers</button>
-        <button type="button" class="chip" data-prompt="Get-well hamper for a friend">🧺 Get-well hamper</button>
-        <button type="button" class="chip" data-prompt="Chocolates and a card under Rs 3000">🍫 Chocolates under Rs 3000</button>
-      </div>
     </div>
   </main>
 
@@ -319,14 +311,18 @@
 
   <footer class="composer">
     <div class="composer-inner">
-      <button id="orb" class="orb" type="button" aria-label="Tap to talk to the concierge">
-        <canvas id="orbCanvas" width="230" height="230"></canvas>
-      </button>
-      <p id="status" class="status">Tap to talk, or type your request below</p>
+      <p id="status" class="status">Tap the button to talk, or type below</p>
+      <div id="chips" class="cards">
+        <button type="button" class="scard" data-prompt="Birthday gift for mom under Rs 5000"><span class="scard-ic">🎂</span><span class="scard-tx">Birthday gift for mom</span></button>
+        <button type="button" class="scard" data-prompt="Anniversary flowers delivered to Colombo"><span class="scard-ic">💐</span><span class="scard-tx">Anniversary flowers</span></button>
+        <button type="button" class="scard" data-prompt="Get-well hamper for a friend"><span class="scard-ic">🧺</span><span class="scard-tx">Get-well hamper</span></button>
+        <button type="button" class="scard" data-prompt="Chocolates and a card under Rs 3000"><span class="scard-ic">🍫</span><span class="scard-tx">Chocolates under Rs 3000</span></button>
+      </div>
       <form id="searchForm" class="searchbar">
-        <button id="speaker" type="button" class="iconbtn" title="Read replies aloud" aria-label="Toggle voice replies">🔈</button>
-        <input id="query" type="text" autocomplete="off" placeholder="Who's it for, and what's the occasion?" />
-        <button type="submit" class="send" title="Send" aria-label="Send">➤</button>
+        <input id="query" type="text" autocomplete="off" placeholder="Tap here to start with Kapruka…" />
+        <button id="orb" class="orb" type="button" aria-label="Tap to talk, or send your message">
+          <canvas id="orbCanvas" width="230" height="230"></canvas>
+        </button>
       </form>
     </div>
   </footer>
@@ -453,11 +449,11 @@
       }
       ctx.closePath();
       const g = ctx.createRadialGradient(cx - base * 0.35, cy - base * 0.4, base * 0.2, cx, cy, base * 1.5);
-      g.addColorStop(0, cssVar("--orb-1") || "#e3a06a");
-      g.addColorStop(0.55, cssVar("--orb-2") || "#c9682f");
-      g.addColorStop(1, cssVar("--orb-3") || "#9f4f23");
+      g.addColorStop(0, cssVar("--orb-1") || "#9cc4ff");
+      g.addColorStop(0.55, cssVar("--orb-2") || "#4f93ff");
+      g.addColorStop(1, cssVar("--orb-3") || "#2f6fe0");
       ctx.fillStyle = g;
-      ctx.shadowColor = "rgba(217,119,87,.45)";
+      ctx.shadowColor = "rgba(79,147,255,.55)";
       ctx.shadowBlur = 38;
       ctx.fill();
       ctx.shadowBlur = 0;
@@ -486,8 +482,8 @@
         v *= (1 - mirror * 0.45);
         const bh = Math.max(bw, v * maxBar);
         const g = ctx.createLinearGradient(0, cy - bh / 2, 0, cy + bh / 2);
-        g.addColorStop(0, cssVar("--orb-1") || "#e3a06a");
-        g.addColorStop(1, cssVar("--orb-3") || "#9f4f23");
+        g.addColorStop(0, cssVar("--orb-1") || "#9cc4ff");
+        g.addColorStop(1, cssVar("--orb-3") || "#2f6fe0");
         ctx.fillStyle = g;
         const y = cy - bh / 2;
         const rr = bw / 2;
@@ -508,8 +504,9 @@
       const w = canvas.clientWidth || 230, h = canvas.clientHeight || 230;
       const cx = w / 2, cy = h / 2;
       ctx.clearRect(0, 0, w, h);
-      if (orbMode === "listening") drawBars(w, h, cx, cy);
-      else drawBlob(w, h, cx, cy, orbMode === "active");
+      // The orb now lives in a small (48px) button, where the wide bar visualizer would clip;
+      // always draw the centered blob, energised while listening or active.
+      drawBlob(w, h, cx, cy, orbMode === "listening" || orbMode === "active");
       requestAnimationFrame(loop);
     }
     sizeCanvas(); loop();
@@ -1022,9 +1019,19 @@
         const said = queryInput.value.trim();
         if (said) sendText(said); else idleStatus();
       };
-      orbBtn.addEventListener("click", () => { if (listening) recog.stop(); else { stopSpeaking(); try { recog.start(); } catch (_) {} } });
+      // Single blue button: send typed text if any, otherwise toggle voice.
+      orbBtn.addEventListener("click", () => {
+        if (listening) { recog.stop(); return; }
+        const typed = queryInput.value.trim();
+        if (typed) { sendText(typed); return; }
+        stopSpeaking(); try { recog.start(); } catch (_) {}
+      });
     } else {
-      orbBtn.addEventListener("click", () => showToast("Voice input isn't supported in this browser — please type instead.", "🎤"));
+      orbBtn.addEventListener("click", () => {
+        const typed = queryInput.value.trim();
+        if (typed) { sendText(typed); return; }
+        showToast("Voice input isn't supported in this browser — please type instead.", "🎤");
+      });
     }
 
     // ========== voice: text-to-speech (orb pulses while speaking) ==========
@@ -1108,8 +1115,16 @@
       if (!ttsOn) stopSpeaking();
     });
 
+    // Time-based greeting in the header
+    (function setGreeting() {
+      const h = new Date().getHours();
+      const sub = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+      const el = $("greetSub");
+      if (el) el.textContent = sub;
+    })();
+
     // Greeting
-    addBubble("bot", "Hi there! 🎁 Tell me who you're shopping for and the occasion — a birthday, an anniversary, a get-well basket, condolence flowers, anything at all. Tap the orb to talk to me, and I'll happily add things to your cart.");
+    addBubble("bot", "Hi there! 🎁 Tell me who you're shopping for and the occasion — a birthday, an anniversary, a get-well basket, condolence flowers, anything at all. Tap the blue button to talk to me, and I'll happily add things to your cart.");
   </script>
 </body>
 </html>
