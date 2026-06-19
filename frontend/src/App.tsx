@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import LiquidGlass from "liquid-glass-react";
 import Background from "./components/Background";
 import Orb, { type OrbMode } from "./components/Orb";
 import { search, loadOrderTool, invokeTool, ttsBlob, type Checkout } from "./lib/api";
@@ -398,12 +397,10 @@ export default function App() {
           {!started && (
             <div className="cards">
               {CHIPS.map((c) => (
-                <LiquidGlass key={c.prompt} cornerRadius={16} blurAmount={0.4} displacementScale={36} elasticity={0.18} padding="0px" mode="standard" onClick={() => sendText(c.prompt)}>
-                  <div className="scard scard-lg">
-                    <span className="scard-ic">{c.ic}</span>
-                    <span className="scard-tx">{c.tx}</span>
-                  </div>
-                </LiquidGlass>
+                <button key={c.prompt} type="button" className="scard" onClick={() => sendText(c.prompt)}>
+                  <span className="scard-ic">{c.ic}</span>
+                  <span className="scard-tx">{c.tx}</span>
+                </button>
               ))}
             </div>
           )}

@@ -109,7 +109,7 @@
     .status b { color: var(--text); font-weight: 600; }
 
     /* Suggestion cards — dark-glass tiles in a horizontal scroller. One .card class → identical styling. */
-    .cards { display: flex; gap: .6rem; overflow-x: auto; padding: .1rem; scrollbar-width: none; -webkit-overflow-scrolling: touch; transition: opacity .25s var(--ease-out); }
+    .cards { display: flex; flex-wrap: wrap; justify-content: center; gap: .6rem; padding: .1rem; transition: opacity .25s var(--ease-out); }
     .cards::-webkit-scrollbar { display: none; }
     .cards.hide { display: none; }
     .scard { flex: 0 0 auto; width: 150px; min-height: 80px; display: flex; flex-direction: column; justify-content: space-between; gap: .45rem; text-align: left; padding: .7rem .8rem; border-radius: 16px; cursor: pointer; font: inherit; color: var(--text); background: color-mix(in srgb, var(--surface) 55%, transparent); border: 1px solid var(--border-2); box-shadow: var(--shadow-sm); backdrop-filter: blur(12px); outline: none; transition: transform .16s var(--ease-out), border-color .16s var(--ease-out), background .16s var(--ease-out); }
