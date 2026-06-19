@@ -3,3 +3,6 @@ __pycache__/
 .vercel/
 .env
 .env.local
+node_modules/
+frontend/dist/
+public/react/
