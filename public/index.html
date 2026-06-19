@@ -8,7 +8,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <style>
     :root {
       --bg-1: #eef4f1; --bg-2: #e3eef9;
@@ -64,12 +63,10 @@
     .dock-inner { max-width: 640px; margin: 0 auto; display: flex; gap: .5rem; align-items: center; }
     .dock .searchbar { flex: 1; margin: 0; }
 
-    /* Crowd "thinking" overlay (GSAP canvas) */
+    /* Thinking overlay */
     .thinking { position: fixed; inset: 0; z-index: 55; display: none; }
     .thinking.on { display: block; }
-    /* Darker at the top, fading to a light translucent wash lower down */
     .thinking::before { content: ""; position: absolute; inset: 0; backdrop-filter: blur(2px); background: linear-gradient(to bottom, color-mix(in srgb, #000 42%, transparent) 0%, color-mix(in srgb, var(--bg-1) 48%, transparent) 32%, color-mix(in srgb, var(--bg-1) 22%, transparent) 100%); }
-    #crowdCanvas { position: absolute; left: 0; bottom: 64px; width: 100%; height: 56vh; opacity: .32; z-index: 0; pointer-events: none; }
     .thinking-panel { position: absolute; top: 12%; left: 50%; transform: translateX(-50%); width: min(92vw, 520px); z-index: 2; }
 
     /* Agent planning timeline (vanilla port of AgentPlanning) */
@@ -108,6 +105,7 @@
     .ap-detail > div { overflow: hidden; }
     .ap-detail-inner { font-size: .72rem; color: var(--muted); line-height: 1.45; padding: .25rem 0 .15rem; }
     .ap-detail-inner .ok { color: var(--ok); display: flex; gap: .35rem; align-items: flex-start; margin-bottom: .35rem; }
+    .ap-detail-inner .ok svg { width: 13px; height: 13px; flex-shrink: 0; margin-top: 2px; }
     .ap-kv { display: grid; grid-template-columns: 72px 1fr; gap: .2rem .5rem; background: color-mix(in srgb, var(--surface-3) 55%, transparent); border: 1px solid var(--border-2); border-radius: 8px; padding: .5rem .6rem; margin-top: .35rem; }
     .ap-kv .k { color: var(--faint); }
     .ap-kv .v { color: var(--text); }
@@ -260,7 +258,6 @@
   </main>
 
   <div id="thinking" class="thinking" aria-hidden="true">
-    <canvas id="crowdCanvas"></canvas>
     <div id="agentPlanning" class="thinking-panel"></div>
   </div>
 
@@ -852,100 +849,9 @@
       return { start, finish, stop, setStatus };
     })();
 
-    // ========== crowd "thinking" animation (vanilla port of the GSAP CrowdCanvas) ==========
-    const Crowd = (function () {
-      const canvas = $("crowdCanvas");
-      const g = window.gsap;
-      if (!canvas || !g) return { start() {}, stop() {} };
-      const ctx = canvas.getContext("2d");
-      // OpenPeeps sprite sheet (15 cols x 7 rows). We only draw it, never read
-      // pixels back, so cross-origin tainting doesn't matter.
-      const config = { src: "https://s3-us-west-2.amazonaws.com/s.cdpn.io/175711/open-peeps-sheet.png", rows: 15, cols: 7 };
-      const rand = (min, max) => min + Math.random() * (max - min);
-      const randIdx = (a) => rand(0, a.length) | 0;
-      const pull = (a, i) => a.splice(i, 1)[0];
-      const pullItem = (a, item) => pull(a, a.indexOf(item));
-      const pullRandom = (a) => pull(a, randIdx(a));
-      const pickRandom = (a) => a[randIdx(a) | 0];
-
-      const resetPeep = (peep) => {
-        const dir = Math.random() > 0.5 ? 1 : -1;
-        const offsetY = 100 - 250 * g.parseEase("power2.in")(Math.random());
-        const startY = stage.height - peep.height + offsetY;
-        let startX, endX;
-        if (dir === 1) { startX = -peep.width; endX = stage.width; peep.scaleX = 1; }
-        else { startX = stage.width + peep.width; endX = 0; peep.scaleX = -1; }
-        peep.x = startX; peep.y = startY; peep.anchorY = startY;
-        return { startX, startY, endX };
-      };
-      const normalWalk = (peep, props) => {
-        const { startY, endX } = props;
-        const xDur = 10, yDur = 0.25;
-        const tl = g.timeline();
-        tl.timeScale(rand(0.5, 1.5));
-        tl.to(peep, { duration: xDur, x: endX, ease: "none" }, 0);
-        tl.to(peep, { duration: yDur, repeat: xDur / yDur, yoyo: true, y: startY - 10 }, 0);
-        return tl;
-      };
-      const createPeep = (image, rect) => {
-        const peep = { image, rect, width: rect[2], height: rect[3], x: 0, y: 0, anchorY: 0, scaleX: 1, walk: null };
-        peep.render = () => {
-          ctx.save();
-          ctx.translate(peep.x, peep.y);
-          ctx.scale(peep.scaleX, 1);
-          ctx.drawImage(image, rect[0], rect[1], rect[2], rect[3], 0, 0, peep.width, peep.height);
-          ctx.restore();
-        };
-        return peep;
-      };
-
-      const img = document.createElement("img");
-      const stage = { width: 0, height: 0 };
-      const allPeeps = [], availablePeeps = [], crowd = [];
-      let ready = false, running = false;
-
-      const createPeeps = () => {
-        const { rows, cols } = config;
-        const { naturalWidth: w, naturalHeight: h } = img;
-        const rw = w / rows, rh = h / cols;
-        for (let i = 0; i < rows * cols; i++) {
-          allPeeps.push(createPeep(img, [(i % rows) * rw, ((i / rows) | 0) * rh, rw, rh]));
-        }
-      };
-      const addPeep = () => {
-        const peep = pullRandom(availablePeeps);
-        const walk = normalWalk(peep, resetPeep(peep)).eventCallback("onComplete", () => { removePeep(peep); addPeep(); });
-        peep.walk = walk; crowd.push(peep);
-        crowd.sort((a, b) => a.anchorY - b.anchorY);
-        return peep;
-      };
-      const removePeep = (peep) => { pullItem(crowd, peep); availablePeeps.push(peep); };
-      const initCrowd = () => { while (availablePeeps.length) addPeep().walk.progress(Math.random()); };
-      const render = () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-        ctx.scale(devicePixelRatio, devicePixelRatio);
-        crowd.forEach((p) => p.render());
-        ctx.restore();
-      };
-      const resize = () => {
-        stage.width = canvas.clientWidth; stage.height = canvas.clientHeight;
-        canvas.width = stage.width * devicePixelRatio; canvas.height = stage.height * devicePixelRatio;
-        crowd.forEach((p) => p.walk && p.walk.kill());
-        crowd.length = 0; availablePeeps.length = 0; availablePeeps.push(...allPeeps);
-        if (allPeeps.length) initCrowd();
-      };
-      img.onload = () => { createPeeps(); ready = true; if (running) { resize(); g.ticker.add(render); } };
-      img.src = config.src;
-      window.addEventListener("resize", () => { if (ready && running) resize(); });
-      return {
-        start() { if (running) return; running = true; if (ready) { resize(); g.ticker.add(render); } },
-        stop() { if (!running) return; running = false; g.ticker.remove(render); try { ctx.clearRect(0, 0, canvas.width, canvas.height); } catch (_) {} },
-      };
-    })();
     const thinkingEl = $("thinking");
-    function showThinking() { thinkingEl.classList.add("on"); AgentPlanning.start(currentLang); requestAnimationFrame(() => Crowd.start()); }
-    function hideThinking() { AgentPlanning.finish(); setTimeout(() => { thinkingEl.classList.remove("on"); Crowd.stop(); AgentPlanning.stop(); }, 280); }
+    function showThinking() { thinkingEl.classList.add("on"); AgentPlanning.start(currentLang); }
+    function hideThinking() { AgentPlanning.finish(); setTimeout(() => { thinkingEl.classList.remove("on"); AgentPlanning.stop(); }, 280); }
 
     async function callSearch(allowQuestions) {
       setOrb("active"); setStatus("<b>Thinking…</b>");
