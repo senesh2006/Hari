@@ -503,7 +503,9 @@ UI PRESENTATION
 much better than a courier 😊. Shall I add a note card too?"
 
 WHEN TO ASK vs SEARCH (critical)
-- DEFAULT TO SEARCH when occasion + recipient are clear, or when the user already said what they like.
+- DEFAULT TO SEARCH when occasion + recipient + enough detail are clear.
+- For vague ideas or opinions ("thinking about a dress", "what do you think"): ask ONE warm question first — \
+who it's for, occasion, size/style/colour — then search. Do NOT dump random products on a half-formed idea.
 - For apology / angry partner / make-up gifts ("gf is mad at me"): empathize briefly, then ask ONE warm question \
 about what she's into — hobbies, favourite things, flowers vs food vs something sentimental. Not everyone wants chocolate and roses.
 - Do NOT ask budget as the first question when someone is emotional — use profile budget or sensible mid-range picks later.
@@ -582,6 +584,25 @@ REPAIR_FOLLOWUP_NUDGE = (
     "Do NOT default to chocolate hampers or roses unless they asked for that. "
     "Try distinct ideas: spa hamper, books, personalized gift, her favourite food, flowers. "
     "Reply: 1–2 warm sentences max, NO product names."
+)
+
+_BRAINSTORM_RE = re.compile(
+    r"\b(what do you think|what do u think|was thinking|thinking about|"
+    r"good idea|would that work|should i get|do you reckon|your opinion|"
+    r"what about|how about)\b",
+    re.I,
+)
+_VAGUE_PRODUCT_RE = re.compile(
+    r"\b(dress|dresses|saree|sari|jewell?ery|jewelry|watch|perfume|handbag|purse|"
+    r"shoes|clothing|clothes|outfit|shirt|skirt|suit|handbag)\b",
+    re.I,
+)
+_SEARCH_READY_RE = re.compile(
+    r"\b(birthday|anniversary|wedding|valentine|party|formal|casual|evening|"
+    r"size\s*\d|size\s*(xs|s|m|l|xl|xxl)|\b(xs|s|m|l|xl|xxl)\b|"
+    r"red|blue|black|white|pink|green|gold|silver|silk|cotton|"
+    r"for my|for her|for him|for\s+(mom|dad|wife|husband|gf|bf|friend|sister|brother))\b",
+    re.I,
 )
 
 _RECIPIENT_RE = re.compile(
@@ -707,6 +728,101 @@ def _has_taste_context(text: str, profile: dict | None = None) -> bool:
     return False
 
 
+def _has_search_ready_context(text: str) -> bool:
+    if detect_occasion(text):
+        return True
+    if _SEARCH_READY_RE.search(text or ""):
+        return True
+    if _message_has_taste_hints(text):
+        return True
+    low = (text or "").lower()
+    if _RECIPIENT_RE.search(low) and re.search(
+        r"\b(gift|birthday|anniversary|flowers|cake|hamper|bouquet|present|dress|saree|watch)\b",
+        low,
+        re.I,
+    ):
+        return True
+    return False
+
+
+def _clarification_context_in_conversation(conversation: list | None) -> bool:
+    for turn in reversed(conversation or []):
+        if turn.get("role") != "assistant":
+            continue
+        content = str(turn.get("content") or "").lower()
+        if any(
+            phrase in content
+            for phrase in (
+                "who's the dress for",
+                "who is it for",
+                "who are we shopping for",
+                "good question — happy to help",
+            )
+        ):
+            return True
+    return False
+
+
+def _is_clarification_follow_up(conversation: list | None, last_user: str) -> bool:
+    if not _clarification_context_in_conversation(conversation):
+        return False
+    low = (last_user or "").strip().lower()
+    if low in _SKIP_REPLIES:
+        return True
+    if _has_search_ready_context(last_user):
+        return True
+    if len(low) > 12:
+        return True
+    return False
+
+
+def _needs_clarification_question(
+    text: str,
+    conversation: list | None = None,
+) -> bool:
+    """Ask before searching when the user has a vague product idea or wants an opinion."""
+    low = (text or "").lower().strip()
+    if not low or low in _SKIP_REPLIES:
+        return False
+    if _is_clarification_follow_up(conversation, text):
+        return False
+    if _is_repair_situation(text):
+        return False
+    if _has_search_ready_context(text):
+        return False
+    has_brainstorm = bool(_BRAINSTORM_RE.search(text))
+    has_vague_product = bool(_VAGUE_PRODUCT_RE.search(text))
+    if has_brainstorm and (has_vague_product or not _RECIPIENT_RE.search(low)):
+        return True
+    if has_vague_product and not _RECIPIENT_RE.search(low):
+        return True
+    if re.search(r"\b(gift|something|ideas?|suggest)\b", low) and not _RECIPIENT_RE.search(low):
+        if not detect_occasion(text):
+            return True
+    return False
+
+
+def _clarification_ask(text: str) -> tuple[str, str]:
+    low = (text or "").lower()
+    intro = "Good question — happy to help you figure that out 😊"
+    if re.search(r"\b(dress|dresses|saree|sari|outfit|clothing|clothes)\b", low):
+        question = (
+            "Who's the dress for, and what's the vibe — casual, party, or formal? "
+            "Any size or colour in mind?"
+        )
+    elif re.search(r"\b(watch|jewell?ery|jewelry|perfume|handbag|purse|shoes)\b", low):
+        question = (
+            "Who is it for, and do you know their style or size? "
+            "That'll help me pick something they'll actually love."
+        )
+    else:
+        question = (
+            "Who are we shopping for, and what's the occasion? "
+            "That way I won't throw random options at you."
+        )
+    return intro, question
+
+
 def _needs_taste_question(
     text: str,
     profile: dict | None = None,
@@ -724,9 +840,12 @@ def _should_search_first(
     text: str,
     profile: dict | None = None,
     recipients: list | None = None,
+    conversation: list | None = None,
 ) -> bool:
     """True when ask_user would be wrong — search immediately instead."""
     if _needs_taste_question(text, profile, recipients):
+        return False
+    if _needs_clarification_question(text, conversation):
         return False
     low = (text or "").lower().strip()
     if not low:
@@ -738,7 +857,14 @@ def _should_search_first(
             return _message_has_taste_hints(text)
         return True
 
-    if _has_taste_context(text, profile):
+    if _has_search_ready_context(text):
+        return True
+
+    if _message_has_taste_hints(text):
+        return True
+
+    facts = (profile or {}).get("session_facts") or {}
+    if isinstance(facts, dict) and facts.get("constraints"):
         return True
 
     if _EMOTIONAL_URGENCY_RE.search(low) and not _RECIPIENT_RE.search(low):
@@ -1940,8 +2066,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     access_token = context.get("access_token")
     profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
 
-    search_first = _should_search_first(user_en, profile, recipients)
+    search_first = _should_search_first(user_en, profile, recipients, conv)
     taste_question = _needs_taste_question(user_en, profile, recipients)
+    clarify_question = _needs_clarification_question(user_en, conv)
     repair_interests = _recipient_interests_for_repair(user_en, recipients)
     if search_first:
         allow_questions = False
@@ -2030,6 +2157,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
 
     if taste_question:
         return ask([_repair_taste_question(user_en)], intro=_repair_ask_intro(user_en))
+
+    if clarify_question:
+        intro, question = _clarification_ask(user_en)
+        return ask([question], intro=intro)
 
     reserve = 12 if target_lang else 0
     deadline = time.monotonic() + max(20.0, SEARCH_BUDGET - reserve)
