@@ -180,6 +180,23 @@ async function saveOrderHistory(client, userId, order) {
   return data;
 }
 
+async function uploadCustomImage(client, userId, file) {
+  if (!client || !userId || !file) return null;
+  const ext = (String(file.name || "").split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await client.storage.from("custom-uploads").upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type || "image/jpeg",
+  });
+  if (error) {
+    console.warn("Custom image upload failed", error.message);
+    return null;
+  }
+  const { data } = client.storage.from("custom-uploads").getPublicUrl(path);
+  return data?.publicUrl || null;
+}
+
 function daysUntil(dateStr) {
   if (!dateStr) return null;
   const today = new Date();
@@ -223,6 +240,7 @@ window.KaprukaSupabase = {
   addWishlistItem,
   removeWishlistItem,
   saveOrderHistory,
+  uploadCustomImage,
   upcomingOccasions,
   daysUntil,
 };

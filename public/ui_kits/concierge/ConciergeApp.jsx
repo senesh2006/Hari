@@ -50,6 +50,8 @@ const normProduct = (p) => {
     description: p.description || "",
     image: p.image || "",
     url: p.url || "",
+    customizable: !!p.customizable,
+    customization_type: p.customization_type || null,
   };
 };
 const cartKey = (p) => (p.url || "").trim().toLowerCase() || String(p.name || "").trim().toLowerCase();
@@ -723,6 +725,19 @@ function App({
     setTimeout(() => setBump(false), 260);
   };
 
+  const setItemCustom = (name, patch) =>
+    setCart((prev) => prev.map((c) => (c.name === name ? { ...c, customization: { ...(c.customization || {}), ...patch } } : c)));
+
+  const onUploadCustomPhoto = async (item, file) => {
+    if (!file) return;
+    if (isGuest || !supabase || !session?.user?.id) { toast("Sign in to attach a photo", "log-in"); return; }
+    if (file.size > 8 * 1024 * 1024) { toast("Photo too large (max 8MB)", "x"); return; }
+    toast("Uploading photo…", "upload");
+    const url = await window.KaprukaSupabase.uploadCustomImage(supabase, session.user.id, file);
+    if (url) { setItemCustom(item.name, { image_url: url }); toast("Photo attached", "check"); }
+    else toast("Upload failed — try again", "x");
+  };
+
   const addItems = async (products, quiet) => {
     products = (products || []).filter((p) => p?.name);
     if (!products.length) return;
@@ -778,6 +793,13 @@ function App({
           return next;
         });
         toast("Note saved", "file-text");
+      } else if (a.action === "customization" && a.product_name) {
+        const patch = {};
+        if (a.text) patch.text = a.text;
+        if (a.wants_photo) patch.wants_photo = true;
+        setItemCustom(a.product_name, patch);
+        setCartOpen(true);
+        toast("Customisation noted", "edit-3");
       }
     }
   };
@@ -913,13 +935,24 @@ function App({
     if (!cart.length) { toast("Your cart is empty", "shopping-cart"); return; }
     const f = checkoutFormRef.current;
     const items = [];
+    const customNotes = [];
     for (const c of cart) {
       const pid = c.id || idFromUrl(c.url);
       if (!pid) {
         setCheckoutResult(`Couldn't find a product ID for "${c.name}". Remove it and re-add from suggestions.`);
         return;
       }
-      items.push({ product_id: pid, quantity: c.qty });
+      const item = { product_id: pid, quantity: c.qty };
+      const cu = c.customization || {};
+      if (cu.text || cu.image_url) {
+        item.customization = {};
+        if (cu.text) item.customization.text = cu.text;
+        if (cu.image_url) item.customization.image_url = cu.image_url;
+        customNotes.push(
+          `Personalisation for ${c.name}: ${[cu.text && `text="${cu.text}"`, cu.image_url && `photo=${cu.image_url}`].filter(Boolean).join(", ")}`
+        );
+      }
+      items.push(item);
     }
     const city = (checkoutCity || f.city?.value || "").trim();
     if (!city) {
@@ -934,7 +967,8 @@ function App({
       currency: cart[0]?.currency || "LKR",
       response_format: "json",
     };
-    if (f.instructions.value.trim()) params.delivery.instructions = f.instructions.value.trim();
+    const instrParts = [f.instructions.value.trim(), ...customNotes].filter(Boolean);
+    if (instrParts.length) params.delivery.instructions = instrParts.join(" | ");
     if (f.gift_message.value.trim()) params.gift_message = f.gift_message.value.trim();
 
     setPlacing(true);
@@ -1172,7 +1206,12 @@ function App({
                 {m.products && (
                   <div className="grid" style={{ marginLeft: "2.4rem" }}>
                     {m.products.map((p, i) => (
-                      <div className="k-rise" key={p.name + i} style={{ animationDelay: `${Math.min(i, 8) * 70}ms` }}>
+                      <div className="k-rise" key={p.name + i} style={{ position: "relative", animationDelay: `${Math.min(i, 8) * 70}ms` }}>
+                        {p.customizable && (
+                          <span style={{ position: "absolute", top: ".4rem", left: ".4rem", zIndex: 2, display: "inline-flex", alignItems: "center", gap: ".25rem", fontSize: ".68rem", fontWeight: 600, padding: ".2rem .45rem", borderRadius: ".5rem", background: "var(--accent, #e08aa0)", color: "#1a1a1f" }}>
+                            <Icon name="sparkles" size={11} /> {p.customization_type === "photo" ? "Add your photo" : "Personalise"}
+                          </span>
+                        )}
                         <ProductCard
                           {...p}
                           favorite={!!fav[p.name]}
@@ -1237,18 +1276,45 @@ function App({
                   Your cart is empty.<br />Add items from the suggestions, or just ask me to.
                 </div>
               ) : cart.map((c) => (
-                <div className="citem" key={c.name}>
-                  {c.image ? <img className="ci-img" src={c.image} alt="" /> : <div className="ci-noimg"><Icon name="gift" size={20} /></div>}
-                  <div className="ci-main">
-                    <div className="ci-name">{c.name}</div>
-                    <div className="ci-price">{fmtMoney(priceNum(c) * c.qty, c.currency)}</div>
+                <div key={c.name}>
+                  <div className="citem">
+                    {c.image ? <img className="ci-img" src={c.image} alt="" /> : <div className="ci-noimg"><Icon name="gift" size={20} /></div>}
+                    <div className="ci-main">
+                      <div className="ci-name">{c.name}</div>
+                      <div className="ci-price">{fmtMoney(priceNum(c) * c.qty, c.currency)}</div>
+                    </div>
+                    <div className="qty">
+                      <button type="button" aria-label="Decrease" onClick={() => setQty(c.name, -1)}><Icon name="minus" size={14} /></button>
+                      <span>{c.qty}</span>
+                      <button type="button" aria-label="Increase" onClick={() => setQty(c.name, 1)}><Icon name="plus" size={14} /></button>
+                    </div>
+                    <button type="button" className="ci-rm" title="Remove" onClick={() => setQty(c.name, -c.qty)}><Icon name="trash-2" size={16} /></button>
                   </div>
-                  <div className="qty">
-                    <button type="button" aria-label="Decrease" onClick={() => setQty(c.name, -1)}><Icon name="minus" size={14} /></button>
-                    <span>{c.qty}</span>
-                    <button type="button" aria-label="Increase" onClick={() => setQty(c.name, 1)}><Icon name="plus" size={14} /></button>
-                  </div>
-                  <button type="button" className="ci-rm" title="Remove" onClick={() => setQty(c.name, -c.qty)}><Icon name="trash-2" size={16} /></button>
+                  {c.customizable && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: ".5rem", alignItems: "center", margin: ".1rem 0 .6rem", paddingLeft: ".2rem" }}>
+                      <span style={{ fontSize: ".72rem", opacity: .7, display: "inline-flex", alignItems: "center", gap: ".3rem" }}>
+                        <Icon name="sparkles" size={13} /> Personalise
+                      </span>
+                      <input
+                        style={{ flex: "1 1 8rem", minWidth: "8rem", fontSize: ".82rem", padding: ".35rem .5rem", borderRadius: ".5rem", border: "1px solid var(--border, #3a3a46)", background: "var(--surface, #1c1c24)", color: "inherit" }}
+                        placeholder={c.customization_type === "photo" ? "Note for the print (optional)" : "Name / message to print"}
+                        value={c.customization?.text || ""}
+                        maxLength={120}
+                        onChange={(e) => setItemCustom(c.name, { text: e.target.value })}
+                      />
+                      {c.customization_type === "photo" && (
+                        isGuest ? (
+                          <span style={{ fontSize: ".72rem", opacity: .7 }}>Sign in to attach a photo</span>
+                        ) : (
+                          <label style={{ fontSize: ".76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: ".3rem", padding: ".35rem .55rem", borderRadius: ".5rem", border: "1px solid var(--border, #3a3a46)" }}>
+                            <Icon name={c.customization?.image_url ? "check" : "image"} size={14} />
+                            {c.customization?.image_url ? "Photo attached" : "Attach photo"}
+                            <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onUploadCustomPhoto(c, e.target.files?.[0])} />
+                          </label>
+                        )
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </React.Fragment>
