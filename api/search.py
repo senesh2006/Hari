@@ -160,7 +160,11 @@ SYSTEM_PROMPT = (
     "website'. Never list the same product twice. Only include tool parameters "
     "you actually need — never pass the string 'null' or placeholder values; "
     "omit them. If a search returns nothing, try a different concrete idea "
-    "rather than repeating it."
+    "rather than repeating it.\n\n"
+    "When a USER PROFILE is provided in context, bias kapruka_search_products "
+    "queries and your suggestions toward that person's gifting personality, "
+    "style, typical budget, and default city — without ignoring their current "
+    "request."
 )
 
 # A synthetic tool (not part of the MCP) that lets the model pause and ask the
@@ -886,6 +890,159 @@ TRANSLATE_TIMEOUT = float(os.environ.get("TRANSLATE_TIMEOUT", "18"))
 LANGBLY_API_KEY = os.environ.get("LANGBLY_API_KEY")
 LANGBLY_URL = os.environ.get("LANGBLY_URL", "https://api.langbly.com/language/translate/v2")
 
+# --- Supabase (user profiles) ------------------------------------------------
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+
+PERSONALITY_LABELS = {
+    "thoughtful_planner": "Thoughtful Planner",
+    "last_minute_hero": "Last-Minute Hero",
+    "practical_gifter": "Practical Gifter",
+    "big_spender": "Big Spender",
+    "sentimental_soul": "Sentimental Soul",
+    "creative_maker": "Creative Maker",
+}
+
+BUDGET_BAND_LABELS = {
+    "under_2000": "under LKR 2,000",
+    "2000_5000": "LKR 2,000–5,000",
+    "5000_10000": "LKR 5,000–10,000",
+    "over_10000": "LKR 10,000+",
+}
+
+SHOPPING_STYLE_LABELS = {
+    "weeks_ahead": "plans weeks ahead",
+    "few_days": "shops a few days before",
+    "last_minute": "last-minute shopper",
+}
+
+RECIPIENT_LABELS = {
+    "family": "family",
+    "partner": "partner",
+    "colleagues": "colleagues",
+    "kids": "kids",
+    "mixed": "mixed recipients",
+}
+
+
+def _supabase_request(
+    path: str,
+    token: str | None = None,
+    method: str = "GET",
+    body: dict | None = None,
+    timeout: float = 10,
+):
+    """Minimal Supabase REST helper (stdlib only)."""
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        return None
+    url = f"{SUPABASE_URL}{path}"
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {token or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    if method == "GET":
+        req = urllib.request.Request(url, headers=headers, method="GET")
+    else:
+        data = json.dumps(body or {}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else None
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
+        raise ValueError(f"Supabase HTTP {exc.code}: {detail[:300]}") from exc
+    except (TimeoutError, urllib.error.URLError, OSError):
+        return None
+
+
+def _verify_supabase_user(token: str | None) -> dict | None:
+    """Validate JWT and return the auth user object, or None."""
+    if not token or not SUPABASE_URL:
+        return None
+    data = _supabase_request("/auth/v1/user", token=token)
+    return data if isinstance(data, dict) and data.get("id") else None
+
+
+def _load_profile(token: str | None) -> dict | None:
+    """Load the signed-in user's profile row via RLS."""
+    user = _verify_supabase_user(token)
+    if not user:
+        return None
+    uid = user.get("id")
+    if not uid:
+        return None
+    rows = _supabase_request(
+        f"/rest/v1/profiles?id=eq.{uid}&select=*",
+        token=token,
+    )
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return None
+
+
+def _profile_message(profile: dict | None) -> str | None:
+    """Compact profile block for the model."""
+    if not profile:
+        return None
+    lines = [
+        "USER PROFILE (use to personalize searches and tone; do not recite verbatim):"
+    ]
+    personality = profile.get("gifting_personality")
+    if personality:
+        label = PERSONALITY_LABELS.get(personality, personality.replace("_", " "))
+        lines.append(f"- Gifting personality: {label}")
+    scores = profile.get("personality_scores") or {}
+    if isinstance(scores, dict) and scores:
+        top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
+        traits = ", ".join(f"{k.replace('_', ' ')} ({v})" for k, v in top if v)
+        if traits:
+            lines.append(f"- Trait scores: {traits}")
+    budget = profile.get("default_budget")
+    if budget is not None:
+        try:
+            lines.append(f"- Typical budget: LKR {float(budget):,.0f}")
+        except (TypeError, ValueError):
+            pass
+    quiz = profile.get("quiz_answers") or {}
+    if isinstance(quiz, dict):
+        band = quiz.get("budget_band")
+        if band:
+            lines.append(f"- Budget band: {BUDGET_BAND_LABELS.get(band, band)}")
+        shop = quiz.get("shopping_style")
+        if shop:
+            lines.append(f"- Shops: {SHOPPING_STYLE_LABELS.get(shop, shop)}")
+        recip = quiz.get("recipient_focus")
+        if recip:
+            lines.append(f"- Usually buys for: {RECIPIENT_LABELS.get(recip, recip)}")
+    prefs = profile.get("preferences") or {}
+    if isinstance(prefs, dict):
+        styles = prefs.get("styles")
+        if styles:
+            if isinstance(styles, list):
+                lines.append(f"- Style: {', '.join(styles)}")
+            else:
+                lines.append(f"- Style: {styles}")
+        avoid = prefs.get("avoid_list")
+        if avoid and isinstance(avoid, list):
+            lines.append(f"- Avoid: {', '.join(avoid)}")
+    city = profile.get("default_city")
+    if city:
+        lines.append(f"- Default delivery city: {city}")
+    lang = profile.get("default_language")
+    if lang and lang != "en":
+        lines.append(f"- Preferred language: {LANG_NAMES.get(lang, lang)}")
+    saved = profile.get("saved_instructions") or []
+    if saved:
+        lines.append(f"- Saved notes: {'; '.join(str(x) for x in saved)}")
+    if len(lines) <= 1:
+        return None
+    return "\n".join(lines)
+
 
 def _translate(text, source, target, timeout=TRANSLATE_TIMEOUT):
     """Translate short text between en/si/ta via the Langbly API.
@@ -922,14 +1079,21 @@ def _translate(text, source, target, timeout=TRANSLATE_TIMEOUT):
         return text
 
 
-def _build_messages(conversation: list, context: str | None = None, language: str | None = None) -> list:
-    """System prompt + language pref + cart context + the recent turns."""
+def _build_messages(
+    conversation: list,
+    cart_context: str | None = None,
+    language: str | None = None,
+    profile_context: str | None = None,
+) -> list:
+    """System prompt + language pref + user profile + cart context + recent turns."""
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
     lang_msg = _language_message(language)
     if lang_msg:
         msgs.append({"role": "system", "content": lang_msg})
-    if context:
-        msgs.append({"role": "system", "content": context})
+    if profile_context:
+        msgs.append({"role": "system", "content": profile_context})
+    if cart_context:
+        msgs.append({"role": "system", "content": cart_context})
     for turn in conversation[-12:]:
         role = turn.get("role")
         content = str(turn.get("content") or "").strip()
@@ -1050,7 +1214,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 t["content"] = user_en
                 break
 
-    messages = _build_messages(conv, _context_message(suggestions, cart, instructions), None)
+    access_token = context.get("access_token")
+    profile = _load_profile(access_token) if access_token else None
+    profile_msg = _profile_message(profile)
+    cart_msg = _context_message(suggestions, cart, instructions)
+    messages = _build_messages(conv, cart_msg, None, profile_msg)
     trace = []
     results = []
     cart_actions = []
@@ -1272,6 +1440,7 @@ class handler(BaseHTTPRequestHandler):
             "cart": data.get("cart") or [],
             "instructions": data.get("instructions") or [],
             "language": data.get("language"),
+            "access_token": data.get("access_token"),
         }
         self._run(
             conversation,

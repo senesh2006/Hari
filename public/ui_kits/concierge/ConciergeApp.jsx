@@ -67,7 +67,16 @@ const greetSub = () => {
   return "Good evening";
 };
 
-function App() {
+function App({
+  session,
+  profile,
+  isGuest,
+  supabase,
+  onProfileUpdate,
+  onSignOut,
+  onRequestSignIn,
+  accessToken,
+}) {
   const [messages, setMessages] = useState([{ id: nid(), role: "bot", text: GREETING }]);
   const [conversation, setConversation] = useState([]);
   const [query, setQuery] = useState("");
@@ -88,11 +97,58 @@ function App() {
   const [checkoutResult, setCheckoutResult] = useState("");
   const [placing, setPlacing] = useState(false);
   const [modal, setModal] = useState(null);
+  const [profileHydrated, setProfileHydrated] = useState(false);
 
   const feedRef = useRef(null);
   const checkoutFormRef = useRef(null);
   const recogRef = useRef(null);
   const currentAudioRef = useRef(null);
+  const guestPromptedRef = useRef(false);
+  const persistTimerRef = useRef(null);
+
+  const defaultCity = profile?.default_city || "";
+  const displayName =
+    profile?.display_name ||
+    session?.user?.user_metadata?.full_name ||
+    (isGuest ? "Guest" : session?.user?.email?.split("@")[0]) ||
+    "Guest";
+
+  const persistProfile = useCallback(
+    (patch) => {
+      if (!supabase || !session?.user?.id || isGuest) return;
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = setTimeout(async () => {
+        try {
+          const updated = await window.KaprukaSupabase.updateProfile(
+            supabase,
+            session.user.id,
+            patch
+          );
+          if (updated) onProfileUpdate(updated);
+        } catch (_) {}
+      }, 600);
+    },
+    [supabase, session, isGuest, onProfileUpdate]
+  );
+
+  useEffect(() => {
+    if (!profile || profileHydrated) return;
+    if (profile.default_budget != null) setBudget(Number(profile.default_budget));
+    if (Array.isArray(profile.saved_instructions) && profile.saved_instructions.length) {
+      setInstructions(profile.saved_instructions);
+    }
+    if (profile.default_language) setCurrentLang(profile.default_language);
+    setProfileHydrated(true);
+  }, [profile, profileHydrated]);
+
+  useEffect(() => {
+    if (!profileHydrated || isGuest) return;
+    persistProfile({
+      default_budget: budget,
+      saved_instructions: instructions,
+      default_language: currentLang,
+    });
+  }, [budget, instructions, currentLang, profileHydrated, isGuest, persistProfile]);
 
   const started = messages.some((m) => m.role === "user");
   const cartCount = cart.reduce((n, c) => n + c.qty, 0);
@@ -225,7 +281,11 @@ function App() {
         });
         toast("Removed from cart", "shopping-cart");
       } else if (a.action === "instruction" && a.text) {
-        setInstructions((prev) => [...prev, a.text]);
+        setInstructions((prev) => {
+          const next = [...prev, a.text];
+          if (!isGuest) persistProfile({ saved_instructions: next });
+          return next;
+        });
         toast("Note saved", "file-text");
       }
     }
@@ -245,7 +305,14 @@ function App() {
     text = (text || "").trim();
     if (!text) return;
     const b = parseBudget(text);
-    if (b) setBudget(b);
+    if (b) {
+      setBudget(b);
+      if (!isGuest) persistProfile({ default_budget: b });
+    }
+    if (isGuest && !guestPromptedRef.current) {
+      guestPromptedRef.current = true;
+      toast("Sign in to remember your gifting style across visits", "heart");
+    }
     setQuery("");
     setListening(false);
     setMessages((m) => [...m, { id: nid(), role: "user", text }]);
@@ -271,6 +338,7 @@ function App() {
           cart: cart.map((c) => ({ name: c.name, qty: c.qty, price: c.rawPrice ?? c.price, currency: c.currency })),
           instructions,
           language: currentLang,
+          access_token: accessToken || undefined,
         }),
       });
       const data = await res.json();
@@ -406,6 +474,18 @@ function App() {
             </div>
           </div>
           <div className="top-actions">
+            <button
+              type="button"
+              className={"account-chip" + (isGuest ? " guest" : "")}
+              title={isGuest ? "Sign in for personalized picks" : displayName}
+              onClick={() => { if (isGuest) onRequestSignIn(); }}
+            >
+              <Icon name={isGuest ? "heart" : "sparkles"} size={14} />
+              <span className="name">{isGuest ? "Sign in" : displayName}</span>
+            </button>
+            {!isGuest && session && (
+              <IconButton icon="x" title="Sign out" onClick={onSignOut} />
+            )}
             <select
               className="langsel"
               value={currentLang}
@@ -547,7 +627,7 @@ function App() {
               <div className="full"><label>Recipient name *</label><input name="rname" required placeholder="Who receives the gift" /></div>
               <div className="full"><label>Recipient phone *</label><input name="rphone" required placeholder="07X XXX XXXX" /></div>
               <div className="full"><label>Delivery address *</label><input name="address" required /></div>
-              <div><label>City *</label><input name="city" required placeholder="Negombo" /></div>
+              <div><label>City *</label><input name="city" required placeholder="Negombo" defaultValue={defaultCity} /></div>
               <div><label>Delivery date *</label><input name="date" type="date" required /></div>
               <div className="full"><label>Address type</label>
                 <select name="location_type"><option value="house">House</option><option value="apartment">Apartment</option><option value="office">Office</option><option value="other">Other</option></select>
@@ -583,7 +663,15 @@ function App() {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   const v = e.target.value.trim();
-                  if (v) { setInstructions((p) => [...p, v]); e.target.value = ""; toast("Note saved", "file-text"); }
+                  if (v) {
+                    setInstructions((p) => {
+                      const next = [...p, v];
+                      if (!isGuest) persistProfile({ saved_instructions: next });
+                      return next;
+                    });
+                    e.target.value = "";
+                    toast("Note saved", "file-text");
+                  }
                 }
               }} />
               <div className="row">
@@ -627,4 +715,133 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+function ConciergeShell() {
+  const [booting, setBooting] = useState(true);
+  const [supabase, setSupabase] = useState(null);
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [isGuest, setIsGuest] = useState(false);
+  const [showGate, setShowGate] = useState(false);
+  const [gateMode, setGateMode] = useState("welcome");
+
+  const loadProfileForSession = async (client, sess) => {
+    const p = await window.KaprukaSupabase.ensureProfile(client, sess);
+    setProfile(p);
+    return p;
+  };
+
+  useEffect(() => {
+    let sub;
+    (async () => {
+      const client = await window.KaprukaSupabase.getSupabaseClient();
+      setSupabase(client);
+      const guestFlag = localStorage.getItem("kapruka_guest") === "1";
+
+      if (client) {
+        const { data: { session: sess } } = await client.auth.getSession();
+        setSession(sess);
+        if (sess) {
+          localStorage.removeItem("kapruka_guest");
+          setIsGuest(false);
+          await loadProfileForSession(client, sess);
+        } else if (!guestFlag) {
+          setShowGate(true);
+        } else {
+          setIsGuest(true);
+        }
+
+        sub = client.auth.onAuthStateChange(async (_event, sess) => {
+          setSession(sess);
+          if (sess) {
+            localStorage.removeItem("kapruka_guest");
+            setIsGuest(false);
+            setShowGate(false);
+            await loadProfileForSession(client, sess);
+          } else {
+            setProfile(null);
+          }
+        });
+      } else if (!guestFlag) {
+        setShowGate(true);
+      } else {
+        setIsGuest(true);
+      }
+      setBooting(false);
+    })();
+
+    return () => {
+      if (sub?.subscription) sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  const continueAsGuest = () => {
+    localStorage.setItem("kapruka_guest", "1");
+    setIsGuest(true);
+    setShowGate(false);
+  };
+
+  const handleAuthed = async (sess) => {
+    setSession(sess);
+    setIsGuest(false);
+    localStorage.removeItem("kapruka_guest");
+    setShowGate(false);
+    if (supabase && sess) await loadProfileForSession(supabase, sess);
+  };
+
+  const handleSignOut = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setSession(null);
+    setProfile(null);
+    setIsGuest(false);
+    localStorage.removeItem("kapruka_guest");
+    setShowGate(true);
+    setGateMode("welcome");
+  };
+
+  const requestSignIn = () => {
+    setGateMode("login");
+    setShowGate(true);
+  };
+
+  if (booting) {
+    return <div className="boot-screen">Loading Kapruka…</div>;
+  }
+
+  if (showGate) {
+    return (
+      <AuthGate
+        supabase={supabase}
+        initialMode={gateMode}
+        onGuest={continueAsGuest}
+        onAuthed={handleAuthed}
+      />
+    );
+  }
+
+  if (session && profile && !profile.onboarding_completed) {
+    return (
+      <OnboardingWizard
+        supabase={supabase}
+        session={session}
+        onComplete={(updated) => {
+          setProfile(updated);
+        }}
+      />
+    );
+  }
+
+  return (
+    <App
+      session={session}
+      profile={profile}
+      isGuest={isGuest}
+      supabase={supabase}
+      onProfileUpdate={setProfile}
+      onSignOut={handleSignOut}
+      onRequestSignIn={requestSignIn}
+      accessToken={session?.access_token}
+    />
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<ConciergeShell />);
