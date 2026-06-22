@@ -732,44 +732,55 @@ function ConciergeShell() {
 
   useEffect(() => {
     let sub;
+    let alive = true;
     (async () => {
-      const client = await window.KaprukaSupabase.getSupabaseClient();
-      setSupabase(client);
-      const guestFlag = localStorage.getItem("kapruka_guest") === "1";
+      try {
+        const client = await window.KaprukaSupabase.getSupabaseClient();
+        if (!alive) return;
+        setSupabase(client);
+        const guestFlag = localStorage.getItem("kapruka_guest") === "1";
 
-      if (client) {
-        const { data: { session: sess } } = await client.auth.getSession();
-        setSession(sess);
-        if (sess) {
-          localStorage.removeItem("kapruka_guest");
-          setIsGuest(false);
-          await loadProfileForSession(client, sess);
+        if (client) {
+          const { data: { session: sess } } = await client.auth.getSession();
+          if (!alive) return;
+          setSession(sess);
+          if (sess) {
+            localStorage.removeItem("kapruka_guest");
+            setIsGuest(false);
+            await loadProfileForSession(client, sess);
+          } else if (!guestFlag) {
+            setShowGate(true);
+          } else {
+            setIsGuest(true);
+          }
+
+          sub = client.auth.onAuthStateChange(async (_event, sess) => {
+            setSession(sess);
+            if (sess) {
+              localStorage.removeItem("kapruka_guest");
+              setIsGuest(false);
+              setShowGate(false);
+              await loadProfileForSession(client, sess);
+            } else {
+              setProfile(null);
+            }
+          });
         } else if (!guestFlag) {
           setShowGate(true);
         } else {
           setIsGuest(true);
         }
-
-        sub = client.auth.onAuthStateChange(async (_event, sess) => {
-          setSession(sess);
-          if (sess) {
-            localStorage.removeItem("kapruka_guest");
-            setIsGuest(false);
-            setShowGate(false);
-            await loadProfileForSession(client, sess);
-          } else {
-            setProfile(null);
-          }
-        });
-      } else if (!guestFlag) {
-        setShowGate(true);
-      } else {
-        setIsGuest(true);
+      } catch (err) {
+        console.warn("Boot failed", err);
+        if (!localStorage.getItem("kapruka_guest")) setShowGate(true);
+        else setIsGuest(true);
+      } finally {
+        if (alive) setBooting(false);
       }
-      setBooting(false);
     })();
 
     return () => {
+      alive = false;
       if (sub?.subscription) sub.subscription.unsubscribe();
     };
   }, []);
@@ -808,8 +819,16 @@ function ConciergeShell() {
   }
 
   if (showGate) {
+    const Gate = window.AuthGate;
+    if (!Gate) {
+      return (
+        <div className="boot-screen">
+          Auth UI failed to load. <button type="button" className="auth-ghost" onClick={continueAsGuest}>Continue as guest</button>
+        </div>
+      );
+    }
     return (
-      <AuthGate
+      <Gate
         supabase={supabase}
         initialMode={gateMode}
         onGuest={continueAsGuest}
@@ -819,8 +838,12 @@ function ConciergeShell() {
   }
 
   if (session && profile && !profile.onboarding_completed) {
+    const Wizard = window.OnboardingWizard;
+    if (!Wizard) {
+      return <div className="boot-screen">Onboarding failed to load. Refresh the page.</div>;
+    }
     return (
-      <OnboardingWizard
+      <Wizard
         supabase={supabase}
         session={session}
         onComplete={(updated) => {
@@ -844,4 +867,26 @@ function ConciergeShell() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<ConciergeShell />);
+function mountConcierge() {
+  ReactDOM.createRoot(document.getElementById("root")).render(<ConciergeShell />);
+}
+
+function waitForAuthModules() {
+  if (window.AuthGate && window.OnboardingWizard) {
+    mountConcierge();
+    return;
+  }
+  let attempts = 0;
+  const timer = setInterval(() => {
+    if (window.AuthGate && window.OnboardingWizard) {
+      clearInterval(timer);
+      mountConcierge();
+    } else if (attempts++ > 80) {
+      clearInterval(timer);
+      console.warn("Auth modules slow or missing; mounting with fallbacks");
+      mountConcierge();
+    }
+  }, 50);
+}
+
+waitForAuthModules();

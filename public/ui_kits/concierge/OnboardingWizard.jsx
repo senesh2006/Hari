@@ -2,7 +2,10 @@
 
 const { useState } = React;
 const { Button, Icon } = window.KaprukaDesignSystem_d6db4e;
-const { computePersonality, PERSONALITY_LABELS } = window.KaprukaPersonality;
+const { computePersonality, PERSONALITY_LABELS } = window.KaprukaPersonality || {
+  computePersonality: () => ({}),
+  PERSONALITY_LABELS: {},
+};
 
 const STEPS = [
   {

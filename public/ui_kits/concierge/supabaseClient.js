@@ -12,6 +12,7 @@ async function getSupabaseClient() {
       console.warn("Supabase JS not loaded");
       return null;
     }
+    const { createClient } = window.supabase;
     try {
       const res = await fetch("/api/config");
       const cfg = await res.json();
@@ -19,7 +20,7 @@ async function getSupabaseClient() {
         console.warn("Supabase not configured");
         return null;
       }
-      _client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+      _client = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
       return _client;
     } catch (err) {
       console.warn("Failed to init Supabase", err);
