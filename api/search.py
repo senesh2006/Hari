@@ -971,6 +971,7 @@ def _supabase_request(
     body: dict | None = None,
     timeout: float = 10,
 ):
+    """Supabase REST call. Returns parsed JSON or None on any failure."""
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
         return None
     url = f"{SUPABASE_URL}{path}"
@@ -989,17 +990,20 @@ def _supabase_request(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8")
             return json.loads(raw) if raw else None
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise ValueError(f"Supabase HTTP {exc.code}: {detail[:300]}") from exc
-    except (TimeoutError, urllib.error.URLError, OSError):
+    except urllib.error.HTTPError:
+        # Invalid/expired token, missing table, RLS denial — search must still work.
+        return None
+    except (TimeoutError, urllib.error.URLError, OSError, json.JSONDecodeError):
         return None
 
 
 def _verify_supabase_user(token: str | None) -> dict | None:
     if not token or not SUPABASE_URL:
         return None
-    data = _supabase_request("/auth/v1/user", token=token)
+    try:
+        data = _supabase_request("/auth/v1/user", token=token)
+    except Exception:
+        return None
     return data if isinstance(data, dict) and data.get("id") else None
 
 
@@ -1068,23 +1072,26 @@ def _persist_session_facts(
 
 
 def _load_user_context(access_token: str | None) -> tuple[dict | None, str | None, list, list, list]:
-    """Return (profile, uid, recipients, wishlist, orders)."""
+    """Return (profile, uid, recipients, wishlist, orders). Never raises."""
     if not access_token:
         return None, None, [], [], []
-    profile = _load_profile(access_token)
-    if not profile:
+    try:
+        profile = _load_profile(access_token)
+        if not profile:
+            return None, None, [], [], []
+        auth_user = _verify_supabase_user(access_token)
+        uid = auth_user.get("id") if auth_user else None
+        if not uid:
+            return profile, None, [], [], []
+        return (
+            profile,
+            uid,
+            _load_recipients(access_token, uid),
+            _load_wishlist(access_token, uid),
+            _load_order_history(access_token, uid),
+        )
+    except Exception:
         return None, None, [], [], []
-    auth_user = _verify_supabase_user(access_token)
-    uid = auth_user.get("id") if auth_user else None
-    if not uid:
-        return profile, None, [], [], []
-    return (
-        profile,
-        uid,
-        _load_recipients(access_token, uid),
-        _load_wishlist(access_token, uid),
-        _load_order_history(access_token, uid),
-    )
 
 
 # =============================================================================
@@ -1302,7 +1309,16 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         }
 
     mcp = MCPSession()
-    mcp.initialize()
+    try:
+        mcp.initialize()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "query": last_user,
+            "model": NIM_MODEL,
+            "error": f"Could not reach Kapruka search service: {exc}",
+        }
+
     if _TOOLS_CACHE is None:
         _TOOLS_CACHE = mcp.list_tools()
     tools = _TOOLS_CACHE

@@ -807,7 +807,15 @@ function App({
           access_token: accessToken || undefined,
         }),
       });
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (_) {
+        throw new Error(`Server error (${res.status})`);
+      }
+      if (!res.ok) {
+        throw new Error(data?.error || `Server error (${res.status})`);
+      }
       setMessages((m) => m.filter((x) => x.id !== tid));
 
       if (data.user_en) setLastUserEnglish(data.user_en);
