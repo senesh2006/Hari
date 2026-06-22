@@ -24,16 +24,28 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler
 
-from personalization import (
-    extract_session_facts,
-    order_history_message,
-    playbook_message,
-    profile_message,
-    recipients_message,
-    session_facts_message,
-    upcoming_occasions_message,
-    wishlist_message,
-)
+try:
+    from .personalization import (
+        extract_session_facts,
+        order_history_message,
+        playbook_message,
+        profile_message,
+        recipients_message,
+        session_facts_message,
+        upcoming_occasions_message,
+        wishlist_message,
+    )
+except ImportError:
+    from personalization import (
+        extract_session_facts,
+        order_history_message,
+        playbook_message,
+        profile_message,
+        recipients_message,
+        session_facts_message,
+        upcoming_occasions_message,
+        wishlist_message,
+    )
 
 # =============================================================================
 # Configuration
