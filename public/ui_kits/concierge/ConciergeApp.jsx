@@ -138,6 +138,7 @@ function App({
   const [currentLang, setCurrentLang] = useState("en");
   const [ttsOn, setTtsOn] = useState(false);
   const [assemblyAi, setAssemblyAi] = useState(false);
+  const [assemblyVoice, setAssemblyVoice] = useState("ivy");
   const [budget, setBudget] = useState(null);
   const [instructions, setInstructions] = useState([]);
   const [lastSuggestions, setLastSuggestions] = useState([]);
@@ -214,7 +215,10 @@ function App({
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
-      .then((c) => setAssemblyAi(Boolean(c.assemblyAiEnabled)))
+      .then((c) => {
+        setAssemblyAi(Boolean(c.assemblyAiEnabled));
+        if (c.assemblyVoice) setAssemblyVoice(c.assemblyVoice);
+      })
       .catch(() => {});
   }, []);
 
@@ -268,11 +272,20 @@ function App({
   const speak = useCallback(async (text) => {
     if (!ttsOn || !text) return;
     stopSpeaking();
+    const snippet = String(text).slice(0, 500);
+    if (assemblyAi && currentLang === "en" && window.KaprukaAssemblySpeak) {
+      try {
+        await window.KaprukaAssemblySpeak.assemblySpeak(snippet, { voice: assemblyVoice });
+        return;
+      } catch (err) {
+        console.warn("Assembly speak failed, falling back", err);
+      }
+    }
     try {
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: String(text).slice(0, 600), lang: currentLang }),
+        body: JSON.stringify({ text: snippet, lang: currentLang }),
       });
       if (!res.ok) throw new Error("tts");
       const url = URL.createObjectURL(await res.blob());
@@ -284,10 +297,10 @@ function App({
     } catch (_) {}
     const synth = window.speechSynthesis;
     if (!synth) return;
-    const u = new SpeechSynthesisUtterance(String(text).slice(0, 600));
+    const u = new SpeechSynthesisUtterance(snippet);
     u.lang = LANG_CODES[currentLang] || "en-US";
     synth.speak(u);
-  }, [ttsOn, currentLang]);
+  }, [ttsOn, currentLang, assemblyAi, assemblyVoice]);
 
   const confirmModal = (title, msg, okText, cancelText) =>
     new Promise((res) => setModal({ title, msg, okText, cancelText, resolve: res }));

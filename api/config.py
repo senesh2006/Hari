@@ -1,6 +1,6 @@
 """Public runtime config for the static frontend (no secrets beyond Supabase anon key).
 
-GET /api/config -> { supabaseUrl, supabaseAnonKey, assemblyAiEnabled }
+GET /api/config -> { supabaseUrl, supabaseAnonKey, assemblyAiEnabled, assemblyVoice }
 """
 
 from __future__ import annotations
@@ -26,5 +26,6 @@ class handler(BaseHTTPRequestHandler):
                 "supabaseUrl": os.environ.get("SUPABASE_URL", "").rstrip("/"),
                 "supabaseAnonKey": os.environ.get("SUPABASE_ANON_KEY", ""),
                 "assemblyAiEnabled": bool(os.environ.get("ASSEMBLYAI_API_KEY")),
+                "assemblyVoice": os.environ.get("ASSEMBLYAI_VOICE", "ivy"),
             },
         )
