@@ -835,9 +835,8 @@ def _clarification_ask(text: str) -> tuple[str, str]:
     if re.search(r"\b(dress|dresses|saree|sari|outfit|clothing|clothes|skirt|shirt|suit)\b", low):
         if has_recipient:
             question = (
-                "Love that 😊 So I don't pick blind — what's her style usually, "
-                "and is this for something casual, a party, or more formal? "
-                "Any colours, a size, or even her age range that'd help?"
+                "What's her style usually — casual, party, or more formal? "
+                "And any colours, a size, or even her age range that'd help me pick?"
             )
         else:
             question = (
@@ -847,8 +846,8 @@ def _clarification_ask(text: str) -> tuple[str, str]:
     elif re.search(r"\b(watch|jewell?ery|jewelry|perfume|handbag|purse|shoes)\b", low):
         if has_recipient:
             question = (
-                "Nice 😊 What's their taste like — classic, trendy, or minimal? "
-                "Any colours, brands, or a size I should keep in mind?"
+                "What's their taste like — classic, trendy, or minimal? "
+                "And any colours, brands, or a size I should keep in mind?"
             )
         else:
             question = (

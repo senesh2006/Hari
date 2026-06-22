@@ -848,7 +848,7 @@ function App({
       if (data.ok && data.needs_input) {
         setAwaitingAnswers(true);
         const shown = (data.questions_local && data.questions_local.length) ? data.questions_local : (data.questions || []);
-        const qs = shown.map((q) => `• ${q}`).join("\n");
+        const qs = shown.length > 1 ? shown.map((q) => `• ${q}`).join("\n") : (shown[0] || "");
         const intro = (data.answer_local || data.answer || "").trim();
         const prefix = uiText("ask");
         const body = intro
