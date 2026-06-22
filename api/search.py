@@ -1055,37 +1055,153 @@ def _extract_session_memory(conversation: list | None, current_text: str | None 
         if g and 1 <= int(g) <= 99:
             mem["age"] = g
             break
-    tastes = sorted({t.lower() for t in _TASTE_HINTS_RE.findall(low)})
+    # _TASTE_HINTS_RE doubles as a verb detector; keep only real interest nouns.
+    tastes = sorted({t.lower() for t in _TASTE_HINTS_RE.findall(low)} - _TASTE_VERB_WORDS)
     if tastes:
         mem["taste"] = tastes[:5]
     return mem
+
+
+_TASTE_VERB_WORDS = frozenset(
+    {"likes", "loves", "enjoys", "into", "favourite", "favorite", "fan of", "prefers"}
+)
 
 
 def _session_has_specifics(mem: dict) -> bool:
     return bool(mem.get("color") or mem.get("style") or mem.get("age") or mem.get("taste"))
 
 
-def conversation_memory_message(conversation: list | None, current_text: str | None = None) -> str | None:
+_PRODUCT_NOUN_RE = re.compile(
+    r"\b(dresses|dress|saree|sari|outfit|skirt|shirt|suit|sneakers|sneaker|sandals|shoes|shoe|"
+    r"watches|watch|jewellery|jewelry|necklace|earrings|bracelet|ring|perfume|cologne|"
+    r"handbag|purse|wallet|bouquet|flowers|cake|chocolates|chocolate|hamper|book|mug|candle|plant|toy)\b",
+    re.I,
+)
+# Canonical, nicely-pluralised display label for each product noun.
+_ITEM_DISPLAY = {
+    "dress": "dresses", "dresses": "dresses", "saree": "sarees", "sari": "sarees",
+    "outfit": "outfits", "skirt": "skirts", "shirt": "shirts", "suit": "suits",
+    "sneaker": "sneakers", "sneakers": "sneakers", "sandals": "sandals",
+    "shoe": "shoes", "shoes": "shoes", "watch": "watches", "watches": "watches",
+    "jewellery": "jewellery", "jewelry": "jewellery", "necklace": "necklaces",
+    "earrings": "earrings", "bracelet": "bracelets", "ring": "rings",
+    "perfume": "perfume", "cologne": "cologne", "handbag": "handbags",
+    "purse": "purses", "wallet": "wallets", "bouquet": "bouquets", "flowers": "flowers",
+    "cake": "cake", "chocolate": "chocolates", "chocolates": "chocolates",
+    "hamper": "hampers", "book": "books", "mug": "mugs", "candle": "candles",
+    "plant": "plants", "toy": "toys",
+}
+_REC_LABEL = {
+    "gf": "their girlfriend", "girlfriend": "their girlfriend",
+    "bf": "their boyfriend", "boyfriend": "their boyfriend",
+    "wife": "their wife", "husband": "their husband", "hubby": "their husband",
+    "mom": "their mum", "mother": "their mum", "mum": "their mum",
+    "dad": "their dad", "father": "their dad",
+    "sister": "their sister", "brother": "their brother",
+    "friend": "their friend", "partner": "their partner",
+    "grandma": "their grandmother", "grandpa": "their grandfather",
+    "boss": "their boss", "colleague": "their colleague", "baby": "their little one",
+}
+
+
+def _recipient_label(recipient: str | None) -> str:
+    r = (recipient or "").lower()
+    if r in _REC_LABEL:
+        return _REC_LABEL[r]
+    if r in {"her", "him", "babe"}:
+        return "the recipient"
+    return f"their {r}" if r else "the recipient"
+
+
+def _recipient_pronoun(recipient: str | None) -> tuple[str, str]:
+    """Returns (subject, object) pronouns for natural-language briefs."""
+    r = (recipient or "").lower()
+    if r in {"gf", "girlfriend", "wife", "mom", "mother", "mum", "sister", "grandma", "her"}:
+        return ("she", "her")
+    if r in {"bf", "boyfriend", "husband", "hubby", "dad", "father", "brother", "grandpa", "him"}:
+        return ("he", "him")
+    return ("they", "them")
+
+
+def _items_discussed(conversation: list | None, current_text: str | None = None) -> list[str]:
+    texts: list[str] = []
+    for turn in conversation or []:
+        if turn.get("role") == "user":
+            texts.append(str(turn.get("content") or ""))
+    if current_text:
+        texts.append(current_text)
+    found: list[str] = []
+    for t in texts:
+        for w in _PRODUCT_NOUN_RE.findall(t):
+            disp = _ITEM_DISPLAY.get(w.lower())
+            if disp and disp not in found:
+                found.append(disp)
+    return found[:6]
+
+
+def conversation_memory_message(
+    conversation: list | None,
+    current_text: str | None = None,
+    profile: dict | None = None,
+) -> str | None:
+    """A detailed, natural-language brief of what we've learned in THIS chat, so
+    the model understands the recipient, their preferences, and the factors that
+    should shape every pick — instead of a terse fact list it might ignore."""
     mem = _extract_session_memory(conversation, current_text)
-    bits = []
-    if mem.get("recipient"):
-        bits.append(f"recipient: {mem['recipient']}")
-    if mem.get("age"):
-        bits.append(f"age ~{mem['age']}")
-    if mem.get("color"):
-        bits.append(f"colour: {', '.join(mem['color'])}")
-    if mem.get("style"):
-        bits.append(f"style: {', '.join(mem['style'])}")
-    if mem.get("taste"):
-        bits.append(f"likes: {', '.join(mem['taste'])}")
-    if not bits:
+    if not mem.get("recipient") and not _session_has_specifics(mem):
         return None
-    return (
-        "CONVERSATION MEMORY (already shared earlier in THIS chat — reuse it, do NOT ask again):\n- "
-        + "; ".join(bits)
-        + "\nWhen they add another item (\"also a watch\", \"a shoe too\"), apply this same recipient "
-        "and tastes and search straight away — never re-ask who it's for or what they like."
+
+    subj, obj = _recipient_pronoun(mem.get("recipient"))
+    sentences: list[str] = []
+
+    # Who we're shopping for.
+    if mem.get("recipient"):
+        age = f", who is around {mem['age']} years old" if mem.get("age") else ""
+        sentences.append(f"You are helping the user pick a gift for {_recipient_label(mem.get('recipient'))}{age}.")
+    elif mem.get("age"):
+        sentences.append(f"The person we're shopping for is around {mem['age']} years old.")
+
+    # Their preferences.
+    prefs: list[str] = []
+    if mem.get("style"):
+        prefs.append(f"leans {', '.join(mem['style'])} in style")
+    if mem.get("color"):
+        prefs.append(f"likes {', '.join(mem['color'])}")
+    if mem.get("taste"):
+        prefs.append(f"is into {', '.join(mem['taste'])}")
+    if prefs:
+        sentences.append(f"{subj.capitalize()} {'; '.join(prefs)}.")
+
+    # Factors that shape the picks.
+    occ = None
+    for turn in conversation or []:
+        if turn.get("role") == "user":
+            occ = detect_occasion(str(turn.get("content") or "")) or occ
+            if occ:
+                break
+    if not occ and current_text:
+        occ = detect_occasion(current_text)
+    if occ:
+        sentences.append(f"This gift is for {occ.replace('_', ' ')}.")
+    budget = (profile or {}).get("default_budget")
+    if budget:
+        try:
+            sentences.append(f"Their usual budget is around LKR {float(budget):,.0f}, so stay near that unless they say otherwise.")
+        except (TypeError, ValueError):
+            pass
+
+    items = _items_discussed(conversation, current_text)
+    if items:
+        sentences.append(f"So far in this chat you've already looked at {', '.join(items)} for {obj}.")
+
+    # How to use the brief.
+    sentences.append(
+        f"Treat this as the active brief: carry the same recipient, age, colour and style into every new item "
+        f"they add (\"also a watch\", \"a shoe too\"), weigh these preferences when choosing, and only ask about "
+        f"something genuinely new such as budget or size. Never re-ask who it's for or what {subj} likes — you already know."
     )
+
+    return "GIFT BRIEF (what we've learned in this conversation — keep applying it):\n" + " ".join(sentences)
 
 
 def _needs_clarification_question(
@@ -2420,7 +2536,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
 
     extra_ctx = [
         playbook_message(user_en, conv),
-        conversation_memory_message(conv, user_en),
+        conversation_memory_message(conv, user_en, profile),
         session_facts_message(profile),
         recipients_message(recipients),
         wishlist_message(wishlist),
