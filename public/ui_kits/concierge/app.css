@@ -1,0 +1,30 @@
+/* Concierge app extras — checkout form, budget, confirm modal */
+
+.budgetrow { display: flex; align-items: center; justify-content: space-between; margin-bottom: .7rem; }
+.budgetrow input { width: 120px; text-align: right; font: inherit; font-size: .9rem; padding: .45rem .55rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-3); color: inherit; }
+.budgetrow input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+.totrow.over .val { color: var(--bad); }
+.budgetwarn { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bad) 38%, transparent); border-radius: 12px; padding: .5rem .65rem; font-size: .82rem; margin-bottom: .65rem; }
+.instrlist { display: flex; flex-direction: column; gap: .35rem; margin: .5rem 0; }
+.instr { font-size: .8rem; background: color-mix(in srgb, var(--c-butter) 14%, var(--surface-2)); border: 1px solid color-mix(in srgb, var(--c-butter) 30%, transparent); border-radius: 10px; padding: .35rem .55rem; display: flex; gap: .4rem; align-items: center; }
+.instr span { flex: 1; }
+.instr textarea, .drawer textarea { width: 100%; font-family: inherit; font-size: .9rem; padding: .55rem .7rem; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-3); color: inherit; resize: vertical; box-sizing: border-box; }
+.drawer label { display: block; font-size: .8rem; color: var(--muted); margin: 0 0 .35rem; font-weight: 600; }
+.row { display: flex; gap: .5rem; margin-top: .6rem; }
+.formgrid { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem .6rem; }
+.formgrid .full { grid-column: 1 / -1; }
+.formgrid input, .formgrid select, .formgrid textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: .9rem; padding: .5rem .6rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-3); color: inherit; }
+.formgrid input:focus, .formgrid select:focus, .formgrid textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+.co-ok { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 12px; padding: .8rem; font-size: .9rem; margin-top: .6rem; }
+.co-ok .pay { display: block; text-align: center; margin-top: .6rem; padding: .65rem; border-radius: 10px; background: var(--primary-soft); color: var(--on-primary); text-decoration: none; font-weight: 700; }
+.co-bad { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 12px; padding: .7rem; font-size: .88rem; margin-top: .6rem; }
+.btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 12px; padding: .7rem; cursor: pointer; font: inherit; width: 100%; margin-top: .5rem; }
+.btn-ghost:hover { background: var(--surface-3); }
+.iconbtn.on { color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, var(--surface-3)); }
+
+.modal-scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 55%, rgba(0,0,0,.45)); display: none; align-items: center; justify-content: center; z-index: 70; padding: 1.2rem; backdrop-filter: blur(2px); }
+.modal-scrim.open { display: flex; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.2rem; max-width: 400px; width: 100%; box-shadow: var(--shadow-lg); }
+.modal h4 { margin: 0 0 .5rem; font-family: var(--font-display); font-weight: 800; }
+.modal p { margin: 0 0 1rem; color: var(--muted); font-size: .92rem; line-height: 1.5; }
+.modal .actions { display: flex; gap: .5rem; }

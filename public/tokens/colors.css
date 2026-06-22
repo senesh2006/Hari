@@ -1,0 +1,80 @@
+/* Kapruka — Color system  (v2: friendly soft pastel, light + dark)
+   Dark is the DEFAULT theme (:root). Add data-theme="light" on <html> for light.
+   Accent hues stay constant across themes; only surfaces/text/borders/shadow
+   and a couple of "ink" accents flip. A warm, gift-shop palette — soft coral
+   lead with pastel occasion accents (mint, lilac, butter, sky, blush). */
+
+:root {
+  /* ===== Accent hues — shared by both themes ===== */
+  --c-coral:  #ff8a72;   /* brand warm */
+  --c-mint:   #5fc9b5;
+  --c-lilac:  #a48fe0;
+  --c-butter: #e6b24d;
+  --c-sky:    #6bb0ee;
+  --c-blush:  #ee8fb0;
+
+  /* Semantic status (soft, friendly) */
+  --ok:  #54b978;
+  --bad: #ec6a6a;
+
+  /* ===== DARK theme (default) ===== */
+  --bg:        #221c28;   /* warm plum-charcoal canvas */
+  --bg-soft:   #2a2331;
+  --surface:   #2f2836;   /* cards, drawers */
+  --surface-2: #392f42;   /* inset fields */
+  --surface-3: #453a50;   /* chips, pills, hover */
+
+  --text:  #f4eff3;
+  --muted: #beb2c6;
+  --faint: #8c8096;
+
+  --border:   rgba(255,255,255,.10);
+  --border-2: rgba(255,255,255,.055);
+
+  /* Coral primary — pastel fill with deep warm ink (friendly + accessible) */
+  --primary:        #ff9e8a;   /* brand hue: icon tints, accents */
+  --primary-soft:   #f7a593;   /* button fill */
+  --primary-strong: #ffb39f;   /* hover fill (lighter on dark) */
+  --on-primary:     #3a1c14;   /* text on coral */
+  --ink-accent:     #ffb39f;   /* links / price text on dark */
+
+  /* Effects helpers (consumed in effects.css) */
+  --shadow-color: rgba(0,0,0,.45);
+  --ring:         color-mix(in srgb, var(--primary) 40%, transparent);
+  --glow-1: rgba(255,150,120,.16);   /* warm coral bg glow */
+  --glow-2: rgba(160,143,224,.14);   /* lilac bg glow */
+  --paper-opacity: 0.05; /* @kind other */
+  --paper-blend:   soft-light; /* @kind other */
+
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg:        #fbf5ef;   /* warm linen */
+  --bg-soft:   #f6ece2;
+  --surface:   #ffffff;
+  --surface-2: #fbf3eb;
+  --surface-3: #f4e9de;
+
+  --text:  #322a30;
+  --muted: #6e6068;
+  --faint: #9c8d96;
+
+  --border:   rgba(80,50,45,.12);
+  --border-2: rgba(80,50,45,.06);
+
+  --primary:        #e85c42;
+  --primary-soft:   #ffb6a2;
+  --primary-strong: #ff9e86;
+  --on-primary:     #48190e;
+  --ink-accent:     #d2563c;
+
+  --shadow-color: rgba(150,110,90,.20);
+  --ring:         color-mix(in srgb, var(--primary) 32%, transparent);
+  --glow-1: rgba(255,180,150,.50);
+  --glow-2: rgba(190,170,235,.40);
+  --paper-opacity: 0.55; /* @kind other */
+  --paper-blend:   multiply; /* @kind other */
+
+  color-scheme: light;
+}

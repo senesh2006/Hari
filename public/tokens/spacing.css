@@ -1,0 +1,26 @@
+/* Kapruka — Spacing, radii & layout tokens  (v2: rounder, softer) */
+:root {
+  /* Spacing scale (rem) */
+  --space-1: 0.25rem;
+  --space-2: 0.45rem;
+  --space-3: 0.6rem;
+  --space-4: 0.8rem;
+  --space-5: 1rem;
+  --space-6: 1.3rem;
+  --space-7: 1.7rem;
+  --space-8: 2.2rem;
+
+  /* Corner radii — generous & pillowy */
+  --radius-sm:   12px;  /* @kind radius */
+  --radius-md:   16px;  /* @kind radius */
+  --radius-lg:   22px;  /* @kind radius */
+  --radius:      24px;  /* @kind radius */
+  --radius-xl:   30px;  /* @kind radius */
+  --radius-pill: 999px; /* @kind radius */
+  --radius-bar:  28px;  /* @kind radius */
+
+  /* Layout */
+  --content-max:  760px;
+  --composer-max: 720px;
+  --drawer-w:     370px;
+}

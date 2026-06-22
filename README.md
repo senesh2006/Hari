@@ -42,7 +42,9 @@ pytest test_kapruka_mcp.py -v
 This repo also ships a tiny status page so the deployment serves real content
 (no more `/favicon.ico` or `(index)` 404s):
 
-- `public/index.html` — a status page that calls the health-check endpoint.
+- `public/index.html` — Kapruka Design System concierge UI (React + design tokens), wired to `/api/search`, `/api/tool`, and `/api/tts`.
+- `public/styles.css`, `public/tokens/`, `public/_ds_bundle.js` — design system assets.
+- `public/ui_kits/concierge/` — concierge shell (`ConciergeApp.jsx`, `kit.css`).
 - `api/check.py` — a Python serverless function that runs the MCP handshake
   server-side and returns the result as JSON at `GET /api/check`.
 

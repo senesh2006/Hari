@@ -1,0 +1,145 @@
+/* Kapruka — Component interaction layer & motion  (v2)
+   Reusable classes the React primitives render with: real :hover / :active
+   states, plus the keyframe library for button, loading and AI animations.
+   Shipped via styles.css so every page/card/kit gets identical motion. */
+
+/* ============ Keyframes ============ */
+@keyframes k-pop      { 0% { transform: scale(0);} 60% { transform: scale(1.18);} 100% { transform: scale(1);} }
+@keyframes k-bounce   { 0%,80%,100% { transform: translateY(0);   opacity:.45;} 40% { transform: translateY(-6px); opacity:1;} }
+@keyframes k-spin     { to { transform: rotate(360deg);} }
+@keyframes k-shimmer  { 0% { background-position: 200% 0;} 100% { background-position: -200% 0;} }
+@keyframes k-rise     { from { opacity:0; transform: translateY(12px);} to { opacity:1; transform:none;} }
+@keyframes k-pop-in   { from { opacity:0; transform: scale(.92);} to { opacity:1; transform:none;} }
+@keyframes k-floaty   { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-4px);} }
+@keyframes k-ring     { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 45%, transparent);} 70%,100% { box-shadow: 0 0 0 12px transparent;} }
+@keyframes k-sparkle  { 0%,100% { transform: scale(1) rotate(0); opacity:.85;} 50% { transform: scale(1.18) rotate(12deg); opacity:1;} }
+
+/* ============ Button ============ */
+.k-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  font-family: var(--font-display); font-weight: var(--weight-semibold);
+  line-height: 1.1; border: 1px solid transparent; border-radius: var(--radius-pill);
+  cursor: pointer; white-space: nowrap; -webkit-tap-highlight-color: transparent;
+  transition: transform .18s var(--ease-out), box-shadow .2s var(--ease-out),
+              background .18s ease, color .18s ease, border-color .18s ease, filter .18s ease;
+}
+.k-btn--sm   { padding: .46rem .9rem;  font-size: var(--text-sm); }
+.k-btn--md   { padding: .72rem 1.3rem; font-size: var(--text-base); }
+.k-btn--full { width: 100%; }
+.k-btn:active { transform: translateY(1px) scale(.97); }
+.k-btn[disabled] { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.k-btn--primary { background: var(--primary-soft); color: var(--on-primary); box-shadow: var(--shadow-btn); }
+.k-btn--primary:hover:not([disabled]) { background: var(--primary-strong); transform: translateY(-2px); box-shadow: var(--shadow-btn-hover); }
+.k-btn--soft { background: var(--surface-3); color: var(--text); border-color: var(--border); }
+.k-btn--soft:hover:not([disabled]) { background: var(--surface-2); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.k-btn--ghost { background: transparent; color: var(--muted); }
+.k-btn--ghost:hover:not([disabled]) { background: var(--surface-3); color: var(--text); }
+
+.k-btn__ic { display: inline-flex; transition: transform .2s var(--ease-out); }
+.k-btn:hover:not([disabled]) .k-btn__ic--right { transform: translateX(3px); }
+.k-btn:hover:not([disabled]) .k-btn__ic--left  { transform: translateX(-2px); }
+
+/* ============ Icon button ============ */
+.k-iconbtn {
+  position: relative; width: 42px; height: 42px; padding: 0; border-radius: 50%;
+  display: inline-grid; place-items: center; cursor: pointer;
+  background: var(--surface-3); color: var(--text); border: 1px solid var(--border);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .16s var(--ease-out), background .16s ease, box-shadow .16s ease, color .16s ease;
+}
+.k-iconbtn:hover { background: var(--surface-2); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.k-iconbtn:active { transform: scale(.9); }
+.k-iconbtn--active { background: var(--primary-soft); color: var(--on-primary); border-color: transparent; }
+.k-iconbtn--active:hover { background: var(--primary-strong); }
+
+/* ============ Badge ============ */
+.k-badge {
+  min-width: 1.3rem; height: 1.3rem; padding: 0 .34rem; border-radius: var(--radius-pill);
+  background: var(--primary); color: var(--on-primary);
+  font-family: var(--font-display); font-size: var(--text-xs); font-weight: var(--weight-bold);
+  line-height: 1; display: grid; place-items: center;
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: k-pop .34s var(--ease-spring) both;
+}
+
+/* ============ Suggestion chip ============ */
+.k-chip {
+  display: flex; flex-direction: column; gap: .55rem; text-align: left;
+  width: 156px; min-height: 92px; padding: .8rem .85rem;
+  border-radius: var(--radius-lg); cursor: pointer;
+  font-family: var(--font-body); color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: transform .18s var(--ease-out), box-shadow .2s var(--ease-out), border-color .18s ease;
+}
+.k-chip:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); }
+.k-chip:active { transform: translateY(0) scale(.98); }
+.k-chip__ic { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; flex: 0 0 auto; }
+
+/* ============ Product card ============ */
+.k-product {
+  display: flex; flex-direction: column; overflow: hidden; width: 100%;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+  transition: transform .22s var(--ease-out), box-shadow .22s var(--ease-out);
+}
+.k-product:hover { transform: translateY(-4px); box-shadow: var(--shadow-card); }
+.k-product__media { position: relative; overflow: hidden; aspect-ratio: 4 / 3; background: var(--surface-3); }
+.k-product__img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .5s var(--ease-out); }
+.k-product:hover .k-product__img { transform: scale(1.07); }
+.k-product__fav {
+  position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; border: none;
+  background: color-mix(in srgb, var(--surface) 78%, transparent); color: var(--text);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  transition: transform .16s var(--ease-spring), background .16s ease, color .16s ease;
+}
+.k-product__fav:hover { transform: scale(1.12); }
+.k-product__fav--on { color: #fff; background: var(--c-blush); }
+
+/* ============ Chat bubble avatar ============ */
+.k-avatar {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; color: #fff;
+  background: linear-gradient(140deg, var(--c-coral), var(--c-lilac));
+  box-shadow: var(--shadow-sm);
+}
+.k-avatar--ai { animation: k-floaty 3.6s var(--ease-in-out) infinite; }
+.k-avatar--thinking { animation: k-floaty 3.6s var(--ease-in-out) infinite, k-ring 1.6s ease-out infinite; }
+
+/* ============ Toast ============ */
+.k-toast {
+  display: flex; gap: .55rem; align-items: center; max-width: 90vw;
+  padding: .6rem .9rem .6rem .65rem; border-radius: var(--radius-pill);
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow); color: var(--text);
+  font-family: var(--font-body); font-size: var(--text-sm);
+  animation: k-pop-in .26s var(--ease-spring) both;
+}
+.k-toast__ic { width: 28px; height: 28px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center; background: color-mix(in srgb, var(--primary) 18%, var(--surface)); color: var(--primary); }
+
+/* ============ Loaders / AI ============ */
+.k-dots { display: inline-flex; gap: 5px; align-items: center; }
+.k-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); display: block; animation: k-bounce 1.2s var(--ease-in-out) infinite; }
+.k-dots i:nth-child(2) { animation-delay: .15s; }
+.k-dots i:nth-child(3) { animation-delay: .3s; }
+
+.k-spinner { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--surface-3); border-top-color: var(--primary); animation: k-spin .7s linear infinite; }
+
+.k-think { display: inline-flex; align-items: center; gap: .5rem; color: var(--muted); }
+.k-think__lbl {
+  font-family: var(--font-display); font-weight: var(--weight-semibold);
+  background: linear-gradient(90deg, var(--muted) 20%, var(--text) 50%, var(--muted) 80%);
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: k-shimmer 1.6s linear infinite;
+}
+.k-think__spark { color: var(--primary); animation: k-sparkle 1.4s var(--ease-in-out) infinite; display: inline-flex; }
+
+/* Skeleton shimmer block (loading product results) */
+.k-skel { position: relative; overflow: hidden; background: var(--surface-2); border-radius: var(--radius-lg); }
+.k-skel::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface-3) 70%, transparent), transparent); background-size: 200% 100%; animation: k-shimmer 1.3s linear infinite; }
+
+/* Entrance helper for staggered grids */
+.k-rise { opacity: 0; animation: k-rise .4s var(--ease-out) both; }

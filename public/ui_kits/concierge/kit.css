@@ -1,0 +1,79 @@
+/* Concierge UI kit — layout chrome  (v2)
+   The canvas (paper + glows) now comes from the design system's base.css, so
+   this file is just the shell: top bar, scrolling feed, composer pill, cart
+   drawer and toast stack. Soft, rounded, friendly. */
+
+#root { display: flex; flex-direction: column; height: 100dvh; min-height: 0; width: 100%; }
+body { height: 100dvh; overflow: hidden; }
+
+/* ===== Top bar ===== */
+.topbar { flex: 0 0 auto; z-index: 30; }
+.topbar .inner { max-width: var(--content-max); margin: 0 auto; padding: 1.1rem 1.2rem .55rem; display: flex; align-items: center; gap: .6rem; }
+.greet { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.brandmark { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; color: #fff; background: linear-gradient(140deg, var(--c-coral), var(--c-lilac)); box-shadow: var(--shadow-sm); flex: 0 0 auto; }
+.greet-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.greet-sub { color: var(--muted); font-size: .8rem; font-weight: 600; }
+.greet-title { font-family: var(--font-display); font-weight: 800; font-size: 1.18rem; color: var(--text); letter-spacing: -.005em; }
+.top-actions { margin-left: auto; display: flex; align-items: center; gap: .45rem; }
+.langsel { font: inherit; font-family: var(--font-display); font-weight: 700; font-size: .82rem; padding: .5rem .7rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-3); color: var(--text); cursor: pointer; transition: background .16s ease; }
+.langsel:hover { background: var(--surface-2); }
+.langsel option { background: var(--surface); color: var(--text); }
+
+/* ===== Feed ===== */
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; display: flex; flex-direction: column; }
+.thread { width: 100%; max-width: var(--content-max); margin: auto auto 0; padding: 1.4rem 1.1rem 1rem; display: flex; flex-direction: column; }
+.feed { display: flex; flex-direction: column; gap: 1.4rem; }
+.msg-in { animation: k-rise .42s var(--ease-out) both; }
+.grid { display: grid; gap: .7rem; margin: .8rem 0 0; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); }
+
+/* ===== Composer ===== */
+.composer { flex: 0 0 auto; z-index: 40; position: relative; padding: .4rem 1rem 1.1rem; background: linear-gradient(to top, var(--bg) 52%, transparent); }
+.composer-inner { max-width: var(--composer-max); margin: 0 auto; display: flex; flex-direction: column; gap: .75rem; }
+.status { margin: 0; color: var(--muted); font-size: .82rem; min-height: 1.2em; text-align: center; font-weight: 600; }
+.cards { display: flex; flex-wrap: wrap; justify-content: center; gap: .6rem; padding: .1rem; }
+.searchbar { display: flex; gap: .45rem; align-items: center; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: .35rem .35rem .35rem 1.25rem; box-shadow: var(--shadow); transition: border-color .18s var(--ease-out), box-shadow .18s var(--ease-out); }
+.searchbar:focus-within { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); box-shadow: var(--shadow), 0 0 0 4px var(--ring); }
+.searchbar input { flex: 1; min-width: 0; border: none; background: transparent; color: inherit; font-family: var(--font-body); font-size: 1rem; padding: .75rem 0; }
+.searchbar input::placeholder { color: var(--faint); }
+.searchbar input:focus { outline: none; }
+
+/* Mic / send button — soft coral, gentle breathing pulse */
+.mic { width: 48px; height: 48px; flex: 0 0 auto; cursor: pointer; border: none; padding: 0; border-radius: 50%; display: grid; place-items: center; color: var(--on-primary); background: var(--primary-soft); box-shadow: var(--shadow-btn); transition: transform .15s var(--ease-out), background .15s ease, box-shadow .15s ease; }
+.mic:hover { background: var(--primary-strong); transform: scale(1.06); box-shadow: var(--shadow-btn-hover); }
+.mic:active { transform: scale(.9); }
+.mic--listening { animation: k-mic-pulse 1.6s var(--ease-in-out) infinite; }
+@keyframes k-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 50%, transparent); }
+  50%      { box-shadow: 0 0 0 12px transparent; }
+}
+
+/* ===== Cart drawer ===== */
+.scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 55%, rgba(0,0,0,.4)); opacity: 0; pointer-events: none; transition: opacity .3s ease; z-index: 45; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.scrim.open { opacity: 1; pointer-events: auto; }
+.drawer { position: fixed; top: 0; right: 0; height: 100%; width: var(--drawer-w); max-width: 92vw; background: var(--bg-soft); border-left: 1px solid var(--border); box-shadow: var(--shadow-lg); transform: translateX(100%); transition: transform .44s var(--ease-drawer); z-index: 46; display: flex; flex-direction: column; }
+.drawer.open { transform: none; }
+.drawer header { display: flex; align-items: center; gap: .55rem; padding: 1.1rem 1.2rem; border-bottom: 1px solid var(--border-2); }
+.drawer header h3 { margin: 0; font-size: 1.1rem; font-family: var(--font-display); font-weight: 800; }
+.drawer .body { padding: 1rem 1.2rem; overflow-y: auto; flex: 1; }
+.citem { display: flex; gap: .6rem; align-items: center; margin-bottom: .85rem; animation: k-pop-in .26s var(--ease-spring) both; }
+.ci-img { width: 48px; height: 48px; border-radius: 14px; object-fit: cover; background: var(--surface-3); flex: 0 0 auto; }
+.ci-noimg { width: 48px; height: 48px; border-radius: 14px; background: var(--surface-3); display: grid; place-items: center; color: var(--muted); flex: 0 0 auto; }
+.ci-main { flex: 1; min-width: 0; }
+.ci-name { font-size: .86rem; line-height: 1.25; font-weight: 600; font-family: var(--font-display); }
+.ci-price { font-size: .78rem; color: var(--ink-accent); font-weight: 700; }
+.qty { display: inline-flex; align-items: center; gap: .1rem; background: var(--surface-3); border-radius: 999px; padding: .15rem; }
+.qty button { width: 1.65rem; height: 1.65rem; padding: 0; border-radius: 50%; background: var(--surface); color: var(--text); border: 1px solid var(--border-2); display: grid; place-items: center; cursor: pointer; transition: background .14s ease, transform .14s var(--ease-out); }
+.qty button:hover { background: var(--surface-2); }
+.qty button:active { transform: scale(.85); }
+.qty span { min-width: 1.2rem; text-align: center; font-size: .85rem; font-weight: 700; font-family: var(--font-display); }
+.ci-rm { background: transparent; color: var(--faint); border: none; padding: .2rem; cursor: pointer; display: grid; place-items: center; border-radius: 8px; transition: color .14s ease, background .14s ease; }
+.ci-rm:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.empty { color: var(--muted); font-size: .92rem; text-align: center; padding: 2rem .5rem; display: flex; flex-direction: column; align-items: center; gap: .7rem; }
+.empty .ic { color: var(--faint); animation: k-floaty 3.4s var(--ease-in-out) infinite; }
+.drawer .foot { border-top: 1px solid var(--border-2); padding: 1.1rem 1.2rem; }
+.totrow { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .8rem; }
+.totrow .lbl { color: var(--muted); font-size: .86rem; font-weight: 600; }
+.totrow .val { font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; }
+
+/* ===== Toast stack ===== */
+.toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 1.2rem; display: flex; flex-direction: column; gap: .5rem; z-index: 60; align-items: center; }
