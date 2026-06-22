@@ -1007,6 +1007,87 @@ def _vague_product_is_specified(text: str) -> bool:
     return False
 
 
+# --- Conversation (temporary) memory --------------------------------------- #
+# Facts established earlier in THIS chat, so the agent reuses them instead of
+# re-asking (e.g. after "my gf, casual, white, ~23", "also a watch" must search).
+_COLOR_WORDS_RE = re.compile(
+    r"\b(red|blue|black|white|pink|green|gold|silver|navy|maroon|beige|purple|"
+    r"yellow|orange|grey|gray|cream|brown|pastel|floral)\b",
+    re.I,
+)
+_STYLE_WORDS_RE = re.compile(
+    r"\b(casual|party|formal|evening|work|office|daytime|sporty|elegant|trendy|"
+    r"minimal|minimalist|classic|chic|cute|simple|fancy|smart)\b",
+    re.I,
+)
+_AGE_RE = re.compile(
+    r"\b(?:around|about|aged|age|she'?s|he'?s|she is|he is|turning|roughly)\s+(\d{1,2})\b"
+    r"|\b(\d{1,2})\s*(?:years?|yrs?|yo|year[- ]old)\b",
+    re.I,
+)
+_FOLLOWUP_ADD_RE = re.compile(r"\b(also|too|as well|and a|another|plus a|add a|need a)\b", re.I)
+
+
+def _extract_session_memory(conversation: list | None, current_text: str | None = None) -> dict:
+    """Collect gift facts the user has shared across this chat's user turns."""
+    texts: list[str] = []
+    for turn in conversation or []:
+        if turn.get("role") == "user":
+            texts.append(str(turn.get("content") or ""))
+    if current_text and (not texts or texts[-1] != current_text):
+        texts.append(current_text)
+    if not texts:
+        return {}
+    blob = " \n ".join(texts)
+    low = blob.lower()
+    mem: dict = {}
+    rec = _RECIPIENT_RE.search(low)
+    if rec:
+        mem["recipient"] = rec.group(0)
+    colors = sorted({c.lower() for c in _COLOR_WORDS_RE.findall(blob)})
+    if colors:
+        mem["color"] = colors[:4]
+    styles = sorted({s.lower() for s in _STYLE_WORDS_RE.findall(blob)})
+    if styles:
+        mem["style"] = styles[:4]
+    for m in _AGE_RE.finditer(blob):
+        g = m.group(1) or m.group(2)
+        if g and 1 <= int(g) <= 99:
+            mem["age"] = g
+            break
+    tastes = sorted({t.lower() for t in _TASTE_HINTS_RE.findall(low)})
+    if tastes:
+        mem["taste"] = tastes[:5]
+    return mem
+
+
+def _session_has_specifics(mem: dict) -> bool:
+    return bool(mem.get("color") or mem.get("style") or mem.get("age") or mem.get("taste"))
+
+
+def conversation_memory_message(conversation: list | None, current_text: str | None = None) -> str | None:
+    mem = _extract_session_memory(conversation, current_text)
+    bits = []
+    if mem.get("recipient"):
+        bits.append(f"recipient: {mem['recipient']}")
+    if mem.get("age"):
+        bits.append(f"age ~{mem['age']}")
+    if mem.get("color"):
+        bits.append(f"colour: {', '.join(mem['color'])}")
+    if mem.get("style"):
+        bits.append(f"style: {', '.join(mem['style'])}")
+    if mem.get("taste"):
+        bits.append(f"likes: {', '.join(mem['taste'])}")
+    if not bits:
+        return None
+    return (
+        "CONVERSATION MEMORY (already shared earlier in THIS chat — reuse it, do NOT ask again):\n- "
+        + "; ".join(bits)
+        + "\nWhen they add another item (\"also a watch\", \"a shoe too\"), apply this same recipient "
+        "and tastes and search straight away — never re-ask who it's for or what they like."
+    )
+
+
 def _needs_clarification_question(
     text: str,
     conversation: list | None = None,
@@ -1021,11 +1102,15 @@ def _needs_clarification_question(
         return False
     has_brainstorm = bool(_BRAINSTORM_RE.search(text))
     has_vague_product = bool(_VAGUE_PRODUCT_RE.search(text))
-    has_recipient = bool(_RECIPIENT_RE.search(low))
+    # Fold in temporary chat memory: a recipient or specifics named earlier in
+    # the conversation count just as much as in the current message.
+    mem = _extract_session_memory(conversation, text)
+    has_recipient = bool(_RECIPIENT_RE.search(low)) or bool(mem.get("recipient"))
+    specified = _vague_product_is_specified(text) or _session_has_specifics(mem)
     # A vague product needs BOTH who it's for AND real specifics before we
     # search. "my gf wants a dress" names the recipient but tells us nothing
     # about her style, size, colour or the occasion — so ask first.
-    if has_vague_product and not (has_recipient and _vague_product_is_specified(text)):
+    if has_vague_product and not (has_recipient and specified):
         return True
     if _has_search_ready_context(text):
         return False
@@ -1098,6 +1183,13 @@ def _should_search_first(
     low = (text or "").lower().strip()
     if not low:
         return False
+
+    # Ongoing gift session: once the recipient and their tastes are known in this
+    # chat, adding another item ("also a watch", "a shoe too") should search now.
+    mem = _extract_session_memory(conversation, text)
+    if mem.get("recipient") and _session_has_specifics(mem):
+        if _VAGUE_PRODUCT_RE.search(low) or _FOLLOWUP_ADD_RE.search(low):
+            return True
 
     occ = detect_occasion(text)
     if occ:
@@ -2328,6 +2420,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
 
     extra_ctx = [
         playbook_message(user_en, conv),
+        conversation_memory_message(conv, user_en),
         session_facts_message(profile),
         recipients_message(recipients),
         wishlist_message(wishlist),
