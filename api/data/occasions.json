@@ -72,9 +72,9 @@
     "notes": "Warm appreciation gifts; flowers and pamper hampers are popular."
   },
   "apology": {
-    "keywords": ["mad at me", "angry at me", "mad at", "gf is mad", "girlfriend is mad", "boyfriend is mad", "fight with", "make it up", "make up to", "say sorry", "messed up", "forgot anniversary", "forgot our anniversary"],
+    "keywords": ["mad at me", "angry at me", "mad at", "angry at", "gf is mad", "gf is angry", "girlfriend is mad", "girlfriend is angry", "boyfriend is mad", "boyfriend is angry", "is angry", "is mad", "is upset", "fight with", "make it up", "make up to", "say sorry", "messed up", "forgot anniversary", "forgot our anniversary"],
     "tone": "gentle",
-    "search_ideas": ["flower bouquet", "chocolate hamper", "rose bouquet", "greeting card", "teddy bear"],
-    "notes": "Empathy first — effort and sincerity beat price. Flowers + chocolate + a card is the classic recovery move. Never interrogate about budget before showing options."
+    "search_ideas": ["flower bouquet", "greeting card", "personalized gift", "spa hamper", "book"],
+    "notes": "Empathy first — effort beats price. Ask what she's into before assuming chocolate/flowers. One warm question about personality or hobbies, then search tailored picks."
   }
 }

@@ -498,21 +498,19 @@ UI PRESENTATION
 - NEVER name products, list options, or use numbers like "1." or "2." in your text — the cards already show them.
 - NEVER say "here are a few options", "here are some picks", or "let me know if you'd like to add to cart".
 - NEVER output numbered/bulleted catalogues, markdown (**bold**, [links]), prices, or kapruka.com links.
-- If you want to highlight one pick, say it in prose without the full product title (e.g. "the chocolate-and-roses combo feels right").
+- If you want to highlight one pick, say it in prose without the full product title (e.g. "the spa hamper feels like the thoughtful pick").
 - Proactive follow-ups feel natural: "I've got the flowers sorted. Trust me, hand-delivering them lands \
 much better than a courier 😊. Shall I add a note card too?"
 
 WHEN TO ASK vs SEARCH (critical)
-- DEFAULT TO SEARCH. If you can make reasonable gift picks, search first — show options, refine later.
-- NEVER call ask_user for: angry/upset partner, apology/make-up, forgotten anniversary, stress/panic \
-("aiyo", "help me", "don't panic"), condolences, get-well, or when recipient + situation are already clear.
-- For "gf is mad at me" / "forgot anniversary" / "aiyoo help": empathize briefly IN your final reply, \
-then kapruka_search_products immediately (flowers, chocolate, card). Do NOT ask budget or interests first.
-- ask_user is ONLY for truly ambiguous requests with no recipient AND no occasion AND no situation \
-(e.g. just "I need a gift" with zero context). Even then, ask at most ONE question.
-- NEVER ask "What's your budget?" as a first response when the user is emotional — use profile budget or pick sensible mid-range options.
-- NEVER ask "what does she like?" for apology/relationship-repair — flowers and chocolate are safe defaults.
-- When asking, questions must sound like a friend texting — never "To pick the best option" or form-style bullets.
+- DEFAULT TO SEARCH when occasion + recipient are clear, or when the user already said what they like.
+- For apology / angry partner / make-up gifts ("gf is mad at me"): empathize briefly, then ask ONE warm question \
+about what she's into — hobbies, favourite things, flowers vs food vs something sentimental. Not everyone wants chocolate and roses.
+- Do NOT ask budget as the first question when someone is emotional — use profile budget or sensible mid-range picks later.
+- NEVER call ask_user for: condolences, get-well, or pure panic with zero recipient ("help me" alone).
+- For clear occasions with recipient ("birthday cake for mom"): search immediately.
+- When asking, ONE friend-like question — never a form with budget + interests + city together.
+- Good taste question example: "Before I pick something — what's she usually into? More flowers-and-chocolate, or something she'd actually care about?"
 
 FOLLOW-UPS & CONTEXT
 - Honour budget and context from earlier turns.
@@ -559,9 +557,23 @@ TEXT_MODE_RESULT_PREFIX = (
 )
 
 SEARCH_FIRST_NUDGE = (
-    "IMPORTANT — search now, do NOT call ask_user. The user gave enough context (who + situation). "
+    "IMPORTANT — search now, do NOT call ask_user. The user gave enough context (who + situation + tastes). "
     "Call kapruka_search_products for fitting items immediately. "
     "Your reply: 1–2 warm sentences max, NO product names, NO numbered lists — cards show everything below."
+)
+
+TASTE_QUESTION_NUDGE = (
+    "IMPORTANT — ask about her tastes before searching. You know WHO and the SITUATION but not what she'd actually like. "
+    "Call ask_user with exactly ONE warm, conversational question about her personality, hobbies, or gift preferences "
+    "(e.g. flowers vs books vs food vs sentimental). Do NOT assume chocolate-and-roses. Do NOT ask budget yet. "
+    "Do NOT search until they answer (or say skip)."
+)
+
+REPAIR_INTERESTS_NUDGE = (
+    "IMPORTANT — search now using this recipient's known interests: {interests}. "
+    "Do NOT default to chocolate-and-roses unless those interests say so. "
+    "Run separate kapruka_search_products calls tailored to their tastes. "
+    "Reply: 1–2 warm sentences max, NO product names — cards show below."
 )
 
 _RECIPIENT_RE = re.compile(
@@ -570,23 +582,129 @@ _RECIPIENT_RE = re.compile(
     re.I,
 )
 _EMOTIONAL_URGENCY_RE = re.compile(
-    r"\b(mad|angry|upset|furious|annoyed|fight|fighting|forgot|forgotten|"
+    r"\b(mad|angry|angr\w*|upset|furious|annoyed|cross|hurt|fight|fighting|forgot|forgotten|"
     r"sorry|apolog|make up|make it up|panic|help me|save this|mess up|messed up|"
     r"aiyo|aiyoo|aiyyo|oh no|in trouble)\b",
     re.I,
 )
+_TASTE_HINTS_RE = re.compile(
+    r"\b(likes|loves|enjoys|into|favourite|favorite|fan of|prefers|"
+    r"book|reading|cooking|music|perfume|chocolate|flowers|sports|tea|coffee|"
+    r"jewellery|jewelry|makeup|games|plants|wine|spa)\b",
+    re.I,
+)
+_APOLOGY_SITUATION_RE = re.compile(
+    r"\b(mad at|angry at|upset with|fight with|make up|make it up|messed up|"
+    r"forgot our|forgot the|forgot anniversary|say sorry|in trouble with|"
+    r"(gf|bf|girlfriend|boyfriend|wife|husband|partner|her|him)\s+is\s+"
+    r"(mad|angry|angr\w*|upset|annoyed|furious|cross|hurt))\b",
+    re.I,
+)
+
+_PARTNER_RE = re.compile(
+    r"\b(gf|bf|girlfriend|boyfriend|wife|husband|partner|her|him|hubby|babe)\b",
+    re.I,
+)
 
 
-def _should_search_first(text: str, profile: dict | None = None) -> bool:
+def _is_repair_situation(text: str) -> bool:
+    low = (text or "").lower().strip()
+    if not low or not _RECIPIENT_RE.search(low):
+        return False
+    if _APOLOGY_SITUATION_RE.search(low):
+        return True
+    if _EMOTIONAL_URGENCY_RE.search(low):
+        return True
+    return False
+
+
+def _recipient_interests_for_repair(text: str, recipients: list | None) -> list[str] | None:
+    """Known interests for the partner/recipient mentioned in a repair scenario."""
+    if not _is_repair_situation(text):
+        return None
+    low = (text or "").lower()
+    for r in recipients or []:
+        ints = r.get("interests")
+        if not (isinstance(ints, list) and ints):
+            continue
+        name = (r.get("name") or "").lower()
+        rel = (r.get("relationship") or "").lower()
+        if name and name in low:
+            return [str(x) for x in ints[:8]]
+        if rel and rel in low:
+            return [str(x) for x in ints[:8]]
+        if rel in ("partner", "girlfriend", "boyfriend", "wife", "husband") and _PARTNER_RE.search(low):
+            return [str(x) for x in ints[:8]]
+    return None
+
+
+def _repair_taste_question(text: str) -> str:
+    low = (text or "").lower()
+    if re.search(r"\b(gf|girlfriend|wife|her|mom|mother|sister|grandma)\b", low):
+        who = "she"
+    elif re.search(r"\b(bf|boyfriend|husband|him|dad|father|brother|grandpa)\b", low):
+        who = "he"
+    else:
+        who = "they"
+    return (
+        f"Before I pick something — what's {who} usually into? "
+        "Flowers, food, books, something sentimental…?"
+    )
+
+
+def _has_taste_context(text: str, profile: dict | None = None) -> bool:
+    if _TASTE_HINTS_RE.search(text or ""):
+        return True
+    prefs = (profile or {}).get("preferences") or {}
+    if isinstance(prefs, dict) and prefs.get("styles"):
+        return True
+    facts = (profile or {}).get("session_facts") or {}
+    if isinstance(facts, dict) and facts.get("constraints"):
+        return True
+    return False
+
+
+def _needs_taste_question(
+    text: str,
+    profile: dict | None = None,
+    recipients: list | None = None,
+) -> bool:
+    """Ask what the recipient is into before defaulting to generic apology gifts."""
+    if _has_taste_context(text, profile):
+        return False
+    if not _is_repair_situation(text):
+        return False
+    if _recipient_interests_for_repair(text, recipients):
+        return False
+    return True
+
+
+def _should_search_first(
+    text: str,
+    profile: dict | None = None,
+    recipients: list | None = None,
+) -> bool:
     """True when ask_user would be wrong — search immediately instead."""
+    if _needs_taste_question(text, profile, recipients):
+        return False
     low = (text or "").lower().strip()
     if not low:
         return False
 
-    if _EMOTIONAL_URGENCY_RE.search(low):
+    occ = detect_occasion(text)
+    if occ:
+        if occ == "apology":
+            if _has_taste_context(text, profile):
+                return True
+            if _recipient_interests_for_repair(text, recipients):
+                return True
+            return False
         return True
 
-    if detect_occasion(text):
+    if _has_taste_context(text, profile):
+        return True
+
+    if _EMOTIONAL_URGENCY_RE.search(low) and not _RECIPIENT_RE.search(low):
         return True
 
     has_recipient = bool(_RECIPIENT_RE.search(low))
@@ -613,9 +731,9 @@ ASK_USER_TOOL = {
     "function": {
         "name": "ask_user",
         "description": (
-            "LAST RESORT ONLY — when the request has NO recipient, NO occasion, and NO situation at all. "
-            "Do NOT use for angry partner, apology, forgot anniversary, stress/panic, grief, or get-well. "
-            "Do NOT ask budget as first question when user is emotional. Max 1 conversational question."
+            "Ask ONE warm, friend-like question when you need taste/personality info before searching — "
+            "especially for apology/make-up gifts (e.g. what she's into). "
+            "Do NOT use for condolences or get-well. Do NOT ask budget first. Max 1 question."
         ),
         "parameters": {
             "type": "object",
@@ -1785,7 +1903,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     access_token = context.get("access_token")
     profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
 
-    search_first = _should_search_first(user_en, profile)
+    search_first = _should_search_first(user_en, profile, recipients)
+    taste_question = _needs_taste_question(user_en, profile, recipients)
+    repair_interests = _recipient_interests_for_repair(user_en, recipients)
     if search_first:
         allow_questions = False
 
@@ -1808,7 +1928,12 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         profile_message(profile),
         extra_ctx,
     )
-    if search_first:
+    if repair_interests and search_first:
+        messages.append({
+            "role": "system",
+            "content": REPAIR_INTERESTS_NUDGE.format(interests=", ".join(repair_interests)),
+        })
+    elif search_first:
         messages.append({"role": "system", "content": SEARCH_FIRST_NUDGE})
 
     trace, results, cart_actions = [], [], []
@@ -1857,6 +1982,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "user_en": user_en,
             "tools_available": tool_names,
         }
+
+    if taste_question:
+        return ask([_repair_taste_question(user_en)])
 
     reserve = 12 if target_lang else 0
     deadline = time.monotonic() + max(20.0, SEARCH_BUDGET - reserve)
@@ -1916,8 +2044,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 messages.append({
                     "role": "user",
                     "content": (
-                        "Do not ask clarifying questions. Search Kapruka now — "
-                        "flower bouquet, chocolate hamper, greeting card — then reply with empathy."
+                        "Do not ask clarifying questions. Search Kapruka now for items that fit "
+                        "the recipient and situation — then reply with brief empathy."
                     ),
                 })
                 continue
