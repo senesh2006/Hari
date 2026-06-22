@@ -832,10 +832,14 @@ function App({
         setAwaitingAnswers(true);
         const shown = (data.questions_local && data.questions_local.length) ? data.questions_local : (data.questions || []);
         const qs = shown.map((q) => `• ${q}`).join("\n");
+        const intro = (data.answer_local || data.answer || "").trim();
         const prefix = uiText("ask");
-        const full = prefix ? `${prefix}\n${qs}\n\n${uiText("skip")}` : `${qs}\n\n${uiText("skip")}`;
+        const body = intro
+          ? (prefix ? `${intro}\n\n${prefix}\n${qs}` : `${intro}\n\n${qs}`)
+          : (prefix ? `${prefix}\n${qs}` : qs);
+        const full = `${body}\n\n${uiText("skip")}`;
         setMessages((m) => [...m, { id: nid(), role: "bot", text: full }]);
-        setConversation((c) => [...c, { role: "assistant", content: "Clarifying questions: " + (data.questions || []).join(" ") }]);
+        setConversation((c) => [...c, { role: "assistant", content: (intro ? intro + " " : "") + (data.questions || []).join(" ") }]);
         speak(full);
         setStatus("Tap the mic to talk, or type below");
         return;

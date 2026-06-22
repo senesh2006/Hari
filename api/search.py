@@ -576,6 +576,14 @@ REPAIR_INTERESTS_NUDGE = (
     "Reply: 1–2 warm sentences max, NO product names — cards show below."
 )
 
+REPAIR_FOLLOWUP_NUDGE = (
+    "IMPORTANT — this is a make-up / apology gift after a fight. "
+    "Use the user's latest reply about her tastes (or pick varied thoughtful items they mentioned). "
+    "Do NOT default to chocolate hampers or roses unless they asked for that. "
+    "Try distinct ideas: spa hamper, books, personalized gift, her favourite food, flowers. "
+    "Reply: 1–2 warm sentences max, NO product names."
+)
+
 _RECIPIENT_RE = re.compile(
     r"\b(mom|mother|dad|father|wife|husband|girlfriend|boyfriend|partner|gf|bf|"
     r"her|him|sister|brother|friend|boss|colleague|grandma|grandpa|hubby|babe|baby)\b",
@@ -600,6 +608,30 @@ _APOLOGY_SITUATION_RE = re.compile(
     r"(mad|angry|angr\w*|upset|annoyed|furious|cross|hurt))\b",
     re.I,
 )
+
+_SKIP_REPLIES = frozenset({"skip", "just pick", "surprise me", "anything", "you pick", "whatever"})
+
+
+def _repair_context_in_conversation(conversation: list | None) -> str | None:
+    for turn in reversed(conversation or []):
+        if turn.get("role") != "user":
+            continue
+        text = str(turn.get("content") or "")
+        if _is_repair_situation(text):
+            return text
+    return None
+
+
+def _is_repair_follow_up(conversation: list | None, last_user: str) -> bool:
+    if _is_repair_situation(last_user):
+        return True
+    if not _repair_context_in_conversation(conversation):
+        return False
+    low = (last_user or "").strip().lower()
+    if _message_has_taste_hints(last_user):
+        return True
+    return low in _SKIP_REPLIES
+
 
 _PARTNER_RE = re.compile(
     r"\b(gf|bf|girlfriend|boyfriend|wife|husband|partner|her|him|hubby|babe)\b",
@@ -647,13 +679,24 @@ def _repair_taste_question(text: str) -> str:
     else:
         who = "they"
     return (
-        f"Before I pick something — what's {who} usually into? "
-        "Flowers, food, books, something sentimental…?"
+        f"What's {who} usually into when you're picking something thoughtful — "
+        "flowers, food, books, something sentimental?"
     )
 
 
+def _repair_ask_intro(text: str) -> str:
+    return (
+        "Okay, don't panic 💔 Effort and sincerity matter more than price here. "
+        "Not everyone wants the same make-up gift."
+    )
+
+
+def _message_has_taste_hints(text: str) -> bool:
+    return bool(_TASTE_HINTS_RE.search(text or ""))
+
+
 def _has_taste_context(text: str, profile: dict | None = None) -> bool:
-    if _TASTE_HINTS_RE.search(text or ""):
+    if _message_has_taste_hints(text):
         return True
     prefs = (profile or {}).get("preferences") or {}
     if isinstance(prefs, dict) and prefs.get("styles"):
@@ -670,11 +713,9 @@ def _needs_taste_question(
     recipients: list | None = None,
 ) -> bool:
     """Ask what the recipient is into before defaulting to generic apology gifts."""
-    if _has_taste_context(text, profile):
+    if _message_has_taste_hints(text):
         return False
     if not _is_repair_situation(text):
-        return False
-    if _recipient_interests_for_repair(text, recipients):
         return False
     return True
 
@@ -694,11 +735,7 @@ def _should_search_first(
     occ = detect_occasion(text)
     if occ:
         if occ == "apology":
-            if _has_taste_context(text, profile):
-                return True
-            if _recipient_interests_for_repair(text, recipients):
-                return True
-            return False
+            return _message_has_taste_hints(text)
         return True
 
     if _has_taste_context(text, profile):
@@ -1933,6 +1970,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "role": "system",
             "content": REPAIR_INTERESTS_NUDGE.format(interests=", ".join(repair_interests)),
         })
+    elif _is_repair_follow_up(conv, user_en) and search_first:
+        messages.append({"role": "system", "content": REPAIR_FOLLOWUP_NUDGE})
     elif search_first:
         messages.append({"role": "system", "content": SEARCH_FIRST_NUDGE})
 
@@ -1965,26 +2004,32 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "results": results,
         }
 
-    def ask(questions: list) -> dict:
+    def ask(questions: list, intro: str | None = None) -> dict:
         qs = questions[:3]
-        local = qs
+        local_qs = qs
         if target_lang and qs:
             joined = _translate("\n".join(qs), "en", target_lang)
             parts = [p.strip() for p in joined.split("\n") if p.strip()]
-            local = parts if len(parts) == len(qs) else qs
+            local_qs = parts if len(parts) == len(qs) else qs
+        intro_en = (intro or "").strip()
+        intro_local = intro_en
+        if target_lang and intro_en:
+            intro_local = _translate(intro_en, "en", target_lang) or intro_en
         return {
             "ok": True,
             "needs_input": True,
             "query": last_user,
             "model": NIM_MODEL,
+            "answer": intro_en,
+            "answer_local": intro_local,
             "questions": qs,
-            "questions_local": local,
+            "questions_local": local_qs,
             "user_en": user_en,
             "tools_available": tool_names,
         }
 
     if taste_question:
-        return ask([_repair_taste_question(user_en)])
+        return ask([_repair_taste_question(user_en)], intro=_repair_ask_intro(user_en))
 
     reserve = 12 if target_lang else 0
     deadline = time.monotonic() + max(20.0, SEARCH_BUDGET - reserve)
