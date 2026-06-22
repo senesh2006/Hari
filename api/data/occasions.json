@@ -1,0 +1,74 @@
+{
+  "birthday": {
+    "keywords": ["birthday", "bday", "turning", "born day"],
+    "tone": "celebratory",
+    "search_ideas": ["birthday cake", "flower bouquet", "chocolate hamper", "gift card"],
+    "notes": "Offer cake and flowers after main gift ideas unless budget is tight. Match age-appropriate picks for kids vs adults."
+  },
+  "anniversary": {
+    "keywords": ["anniversary", "wedding anniversary", "years together"],
+    "tone": "romantic",
+    "search_ideas": ["rose bouquet", "chocolate hamper", "personalized gift", "flower arrangement"],
+    "notes": "Romantic but tasteful; flowers and premium hampers work well."
+  },
+  "wedding": {
+    "keywords": ["wedding", "marriage", "bride", "groom", "newlywed"],
+    "tone": "celebratory",
+    "search_ideas": ["flower bouquet", "gift hamper", "home decor", "cake"],
+    "notes": "Traditional Sri Lankan weddings may prefer elegant flowers and practical home gifts."
+  },
+  "new_baby": {
+    "keywords": ["new baby", "newborn", "baby shower", "born", "expecting"],
+    "tone": "warm",
+    "search_ideas": ["baby hamper", "soft toy", "fruit basket", "flower bouquet"],
+    "notes": "Gentle, practical baby-safe items; avoid strong perfumes."
+  },
+  "get_well": {
+    "keywords": ["get well", "recovering", "surgery", "hospital", "not feeling well", "sick"],
+    "tone": "gentle",
+    "search_ideas": ["fruit basket", "flower bouquet", "hamper", "healthy snack"],
+    "notes": "Comforting, not overly cheerful; fruit baskets and soft flowers are appropriate."
+  },
+  "condolence": {
+    "keywords": ["condolence", "funeral", "passed away", "died", "death", "loss", "bereavement", "rip"],
+    "tone": "somber",
+    "search_ideas": ["condolence flowers", "flower wreath", "white flowers"],
+    "notes": "Respectful and understated only. No cakes, balloons, or party items. White or soft condolence flowers."
+  },
+  "thank_you": {
+    "keywords": ["thank you", "thanks", "gratitude", "appreciate"],
+    "tone": "warm",
+    "search_ideas": ["thank you hamper", "flower bouquet", "chocolate box", "gift card"],
+    "notes": "Thoughtful but not extravagant unless user indicates otherwise."
+  },
+  "congratulations": {
+    "keywords": ["congratulations", "congrats", "promotion", "graduation", "new job", "achievement"],
+    "tone": "celebratory",
+    "search_ideas": ["congratulations hamper", "flower bouquet", "cake", "gift hamper"],
+    "notes": "Celebrate the milestone; hampers and flowers are safe defaults."
+  },
+  "avurudu": {
+    "keywords": ["avurudu", "new year", "sinhala new year", "tamil new year", "aluth avurudu"],
+    "tone": "festive",
+    "search_ideas": ["avurudu hamper", "sweet hamper", "fruit basket", "traditional sweets"],
+    "notes": "Traditional Sri Lankan New Year gifts: sweets, hampers, fruit; respect cultural tone."
+  },
+  "vesak": {
+    "keywords": ["vesak", "buddha", "poya", "lantern"],
+    "tone": "respectful",
+    "search_ideas": ["vesak lantern", "flower offering", "fruit basket"],
+    "notes": "Respectful Buddhist occasion; avoid alcohol or inappropriate party items."
+  },
+  "valentine": {
+    "keywords": ["valentine", "valentines", "romantic", "love day"],
+    "tone": "romantic",
+    "search_ideas": ["rose bouquet", "chocolate hamper", "flower bouquet", "heart cake"],
+    "notes": "Romantic flowers and chocolates; confirm recipient relationship if unclear."
+  },
+  "mothers_day": {
+    "keywords": ["mother's day", "mothers day", "for mom", "for mum", "for mother"],
+    "tone": "warm",
+    "search_ideas": ["flower bouquet", "spa hamper", "chocolate hamper", "cake"],
+    "notes": "Warm appreciation gifts; flowers and pamper hampers are popular."
+  }
+}

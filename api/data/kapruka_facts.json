@@ -1,0 +1,22 @@
+{
+  "delivery": [
+    "Kapruka delivers gifts across Sri Lanka; always confirm city against kapruka_list_delivery_cities before checkout.",
+    "Use the exact city name from Kapruka's delivery list — spelling matters for order creation.",
+    "Same-day or next-day options depend on product and city; mention timing when user is last-minute."
+  ],
+  "search_tips": [
+    "Search concrete product nouns (flower bouquet, chocolate hamper) not vague phrases like 'gift'.",
+    "Run separate kapruka_search_products calls for each distinct item in a package.",
+    "Only use category filters from kapruka_list_categories — wrong categories return zero results."
+  ],
+  "popular_categories": [
+    "flowers and bouquets",
+    "cakes and bakery",
+    "chocolates and hampers",
+    "fruit baskets",
+    "gift cards",
+    "soft toys",
+    "home and kitchen",
+    "spa and wellness"
+  ]
+}

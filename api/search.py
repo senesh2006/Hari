@@ -31,6 +31,17 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler
 
+from personalization import (
+    extract_session_facts,
+    order_history_message,
+    playbook_message,
+    profile_message,
+    recipients_message,
+    session_facts_message,
+    upcoming_occasions_message,
+    wishlist_message,
+)
+
 # --- Kapruka MCP config ------------------------------------------------------
 MCP_URL = os.environ.get("KAPRUKA_MCP_URL", "https://mcp.kapruka.com/mcp")
 PROTOCOL_VERSION = "2025-03-26"
@@ -959,37 +970,6 @@ LANGBLY_URL = os.environ.get("LANGBLY_URL", "https://api.langbly.com/language/tr
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 
-PERSONALITY_LABELS = {
-    "thoughtful_planner": "Thoughtful Planner",
-    "last_minute_hero": "Last-Minute Hero",
-    "practical_gifter": "Practical Gifter",
-    "big_spender": "Big Spender",
-    "sentimental_soul": "Sentimental Soul",
-    "creative_maker": "Creative Maker",
-}
-
-BUDGET_BAND_LABELS = {
-    "under_2000": "under LKR 2,000",
-    "2000_5000": "LKR 2,000–5,000",
-    "5000_10000": "LKR 5,000–10,000",
-    "over_10000": "LKR 10,000+",
-}
-
-SHOPPING_STYLE_LABELS = {
-    "weeks_ahead": "plans weeks ahead",
-    "few_days": "shops a few days before",
-    "last_minute": "last-minute shopper",
-}
-
-RECIPIENT_LABELS = {
-    "family": "family",
-    "partner": "partner",
-    "colleagues": "colleagues",
-    "kids": "kids",
-    "mixed": "mixed recipients",
-}
-
-
 def _supabase_request(
     path: str,
     token: str | None = None,
@@ -1050,63 +1030,57 @@ def _load_profile(token: str | None) -> dict | None:
     return None
 
 
-def _profile_message(profile: dict | None) -> str | None:
-    """Compact profile block for the model."""
-    if not profile:
-        return None
-    lines = [
-        "USER PROFILE (use to personalize searches and tone; do not recite verbatim):"
-    ]
-    personality = profile.get("gifting_personality")
-    if personality:
-        label = PERSONALITY_LABELS.get(personality, personality.replace("_", " "))
-        lines.append(f"- Gifting personality: {label}")
-    scores = profile.get("personality_scores") or {}
-    if isinstance(scores, dict) and scores:
-        top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
-        traits = ", ".join(f"{k.replace('_', ' ')} ({v})" for k, v in top if v)
-        if traits:
-            lines.append(f"- Trait scores: {traits}")
-    budget = profile.get("default_budget")
-    if budget is not None:
-        try:
-            lines.append(f"- Typical budget: LKR {float(budget):,.0f}")
-        except (TypeError, ValueError):
-            pass
-    quiz = profile.get("quiz_answers") or {}
-    if isinstance(quiz, dict):
-        band = quiz.get("budget_band")
-        if band:
-            lines.append(f"- Budget band: {BUDGET_BAND_LABELS.get(band, band)}")
-        shop = quiz.get("shopping_style")
-        if shop:
-            lines.append(f"- Shops: {SHOPPING_STYLE_LABELS.get(shop, shop)}")
-        recip = quiz.get("recipient_focus")
-        if recip:
-            lines.append(f"- Usually buys for: {RECIPIENT_LABELS.get(recip, recip)}")
-    prefs = profile.get("preferences") or {}
-    if isinstance(prefs, dict):
-        styles = prefs.get("styles")
-        if styles:
-            if isinstance(styles, list):
-                lines.append(f"- Style: {', '.join(styles)}")
-            else:
-                lines.append(f"- Style: {styles}")
-        avoid = prefs.get("avoid_list")
-        if avoid and isinstance(avoid, list):
-            lines.append(f"- Avoid: {', '.join(avoid)}")
-    city = profile.get("default_city")
-    if city:
-        lines.append(f"- Default delivery city: {city}")
-    lang = profile.get("default_language")
-    if lang and lang != "en":
-        lines.append(f"- Preferred language: {LANG_NAMES.get(lang, lang)}")
-    saved = profile.get("saved_instructions") or []
-    if saved:
-        lines.append(f"- Saved notes: {'; '.join(str(x) for x in saved)}")
-    if len(lines) <= 1:
-        return None
-    return "\n".join(lines)
+def _load_recipients(token: str, uid: str) -> list:
+    rows = _supabase_request(
+        f"/rest/v1/recipients?user_id=eq.{uid}&select=*&order=updated_at.desc&limit=20",
+        token=token,
+    )
+    return rows if isinstance(rows, list) else []
+
+
+def _load_wishlist(token: str, uid: str) -> list:
+    rows = _supabase_request(
+        f"/rest/v1/wishlist_items?user_id=eq.{uid}&select=*&order=created_at.desc&limit=15",
+        token=token,
+    )
+    return rows if isinstance(rows, list) else []
+
+
+def _load_order_history(token: str, uid: str) -> list:
+    rows = _supabase_request(
+        f"/rest/v1/order_history?user_id=eq.{uid}&select=*&order=ordered_at.desc&limit=8",
+        token=token,
+    )
+    return rows if isinstance(rows, list) else []
+
+
+def _patch_profile(token: str, uid: str, patch: dict) -> None:
+    if not patch:
+        return
+    _supabase_request(
+        f"/rest/v1/profiles?id=eq.{uid}",
+        token=token,
+        method="PATCH",
+        body=patch,
+    )
+
+
+def _persist_session_facts(
+    token: str,
+    uid: str,
+    profile: dict,
+    conversation: list,
+    last_user: str,
+    answer: str,
+) -> None:
+    if not token or not uid or not answer:
+        return
+    existing = profile.get("session_facts") or {}
+    new_facts = extract_session_facts(conversation, last_user, answer, existing)
+    try:
+        _patch_profile(token, uid, {"session_facts": new_facts})
+    except Exception:
+        pass
 
 
 def _translate(text, source, target, timeout=TRANSLATE_TIMEOUT):
@@ -1149,6 +1123,7 @@ def _build_messages(
     cart_context: str | None = None,
     language: str | None = None,
     profile_context: str | None = None,
+    extra_contexts: list | None = None,
 ) -> list:
     """System prompt + language pref + user profile + cart context + recent turns."""
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -1158,6 +1133,9 @@ def _build_messages(
         msgs.append({"role": "system", "content": lang_msg})
     if profile_context:
         msgs.append({"role": "system", "content": profile_context})
+    for block in extra_contexts or []:
+        if block:
+            msgs.append({"role": "system", "content": block})
     if cart_context:
         msgs.append({"role": "system", "content": cart_context})
     for turn in conversation[-12:]:
@@ -1282,9 +1260,28 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
 
     access_token = context.get("access_token")
     profile = _load_profile(access_token) if access_token else None
-    profile_msg = _profile_message(profile)
+    uid = None
+    recipients = []
+    wishlist = []
+    orders = []
+    if access_token and profile:
+        auth_user = _verify_supabase_user(access_token)
+        uid = auth_user.get("id") if auth_user else None
+        if uid:
+            recipients = _load_recipients(access_token, uid)
+            wishlist = _load_wishlist(access_token, uid)
+            orders = _load_order_history(access_token, uid)
+    profile_msg = profile_message(profile)
+    extra_ctx = [
+        playbook_message(user_en, conv),
+        session_facts_message(profile),
+        recipients_message(recipients),
+        wishlist_message(wishlist),
+        order_history_message(orders),
+        upcoming_occasions_message(recipients),
+    ]
     cart_msg = _context_message(suggestions, cart, instructions)
-    messages = _build_messages(conv, cart_msg, None, profile_msg)
+    messages = _build_messages(conv, cart_msg, None, profile_msg, extra_ctx)
     trace = []
     results = []
     cart_actions = []
@@ -1300,6 +1297,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             if not (answer or "").strip():
                 answer = _EMPTY_CATALOG_FALLBACK
         local = _translate(answer, "en", target_lang) if (target_lang and answer) else answer
+        if uid and profile and answer:
+            _persist_session_facts(access_token, uid, profile, conv, user_en, answer)
         return {
             "ok": True,
             "query": last_user,

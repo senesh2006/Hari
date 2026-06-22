@@ -204,6 +204,248 @@ function CityPicker({ value, onChange, name, required, placeholder, inputRef }) 
   );
 }
 
+const AVOID_OPTIONS = [
+  { value: "chocolate", label: "Chocolate" },
+  { value: "alcohol", label: "Alcohol" },
+  { value: "perfume", label: "Perfume / fragrance" },
+  { value: "nuts", label: "Nuts" },
+  { value: "none", label: "No restrictions" },
+];
+
+const DIETARY_OPTIONS = [
+  { value: "none", label: "No preference" },
+  { value: "vegetarian", label: "Vegetarian" },
+  { value: "no_nuts", label: "No nuts" },
+  { value: "no_dairy", label: "No dairy" },
+];
+
+function SettingsPanel({
+  profile,
+  supabase,
+  session,
+  budget,
+  setBudget,
+  currentLang,
+  setCurrentLang,
+  onClose,
+  onProfileUpdate,
+  toast,
+}) {
+  const prefs = profile?.preferences || {};
+  const [avoid, setAvoid] = useState(prefs.avoid_list || []);
+  const [dietary, setDietary] = useState(prefs.dietary || "none");
+  const [city, setCity] = useState(profile?.default_city || "");
+  const [corporate, setCorporate] = useState(Boolean(prefs.corporate_gifting));
+  const [busy, setBusy] = useState(false);
+
+  const toggleAvoid = (value) => {
+    if (value === "none") setAvoid(["none"]);
+    else {
+      const next = avoid.includes(value)
+        ? avoid.filter((x) => x !== value)
+        : [...avoid.filter((x) => x !== "none"), value];
+      setAvoid(next);
+    }
+  };
+
+  const save = async () => {
+    if (!supabase || !session?.user?.id) return;
+    setBusy(true);
+    try {
+      const preferences = {
+        ...prefs,
+        avoid_list: avoid.filter((x) => x !== "none"),
+        dietary: dietary === "none" ? null : dietary,
+        corporate_gifting: corporate,
+      };
+      const updated = await window.KaprukaSupabase.updateProfile(supabase, session.user.id, {
+        default_budget: budget,
+        default_city: city.trim() || profile?.default_city,
+        default_language: currentLang,
+        preferences,
+      });
+      if (updated) onProfileUpdate(updated);
+      toast("Preferences saved", "check");
+      onClose();
+    } catch (e) {
+      toast(e.message || "Could not save", "x");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <aside className="drawer open side-drawer" aria-label="Settings">
+      <header>
+        <Icon name="sparkles" size={20} />
+        <h3>Your gifting style</h3>
+        <IconButton icon="x" title="Close" style={{ marginLeft: "auto" }} onClick={onClose} />
+      </header>
+      <div className="body settings-body">
+        <label>Typical budget (LKR)</label>
+        <input
+          type="number"
+          min="0"
+          step="100"
+          value={budget ?? ""}
+          onChange={(e) => setBudget(e.target.value ? +e.target.value : null)}
+        />
+        <label>Default delivery city</label>
+        <CityPicker value={city} onChange={setCity} placeholder="Search cities…" />
+        <label>Always avoid</label>
+        <div className="chip-row">
+          {AVOID_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              className={"chip-btn" + (avoid.includes(o.value) ? " on" : "")}
+              onClick={() => toggleAvoid(o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <label>Dietary</label>
+        <select value={dietary} onChange={(e) => setDietary(e.target.value)}>
+          {DIETARY_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <label className="check-row">
+          <input type="checkbox" checked={corporate} onChange={(e) => setCorporate(e.target.checked)} />
+          I often shop for colleagues / corporate gifts
+        </label>
+        {profile?.gifting_personality && (
+          <p className="settings-personality">
+            Personality: {window.KaprukaPersonality?.PERSONALITY_LABELS?.[profile.gifting_personality] || profile.gifting_personality}
+          </p>
+        )}
+      </div>
+      <div className="foot">
+        <Button variant="primary" full disabled={busy} onClick={save}>
+          {busy ? "Saving…" : "Save preferences"}
+        </Button>
+      </div>
+    </aside>
+  );
+}
+
+function RecipientsPanel({
+  recipients,
+  supabase,
+  session,
+  onClose,
+  onRefresh,
+  toast,
+}) {
+  const empty = { name: "", relationship: "", birthday: "", anniversary: "", city: "", interests: "", avoid: "", notes: "" };
+  const [form, setForm] = useState(empty);
+  const [editingId, setEditingId] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const loadForm = (r) => {
+    setEditingId(r.id);
+    setForm({
+      name: r.name || "",
+      relationship: r.relationship || "",
+      birthday: r.birthday ? String(r.birthday).slice(0, 10) : "",
+      anniversary: r.anniversary ? String(r.anniversary).slice(0, 10) : "",
+      city: r.city || "",
+      interests: (r.interests || []).join(", "),
+      avoid: (r.avoid || []).join(", "),
+      notes: r.notes || "",
+    });
+  };
+
+  const save = async () => {
+    if (!form.name.trim() || !supabase || !session?.user?.id) return;
+    setBusy(true);
+    try {
+      const row = {
+        id: editingId || undefined,
+        name: form.name.trim(),
+        relationship: form.relationship.trim() || null,
+        birthday: form.birthday || null,
+        anniversary: form.anniversary || null,
+        city: form.city.trim() || null,
+        interests: form.interests.split(",").map((s) => s.trim()).filter(Boolean),
+        avoid: form.avoid.split(",").map((s) => s.trim()).filter(Boolean),
+        notes: form.notes.trim() || null,
+      };
+      await window.KaprukaSupabase.upsertRecipient(supabase, session.user.id, row);
+      await onRefresh();
+      setForm(empty);
+      setEditingId(null);
+      toast("Contact saved", "heart");
+    } catch (e) {
+      toast(e.message || "Could not save", "x");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id) => {
+    if (!supabase) return;
+    try {
+      await window.KaprukaSupabase.deleteRecipient(supabase, id);
+      await onRefresh();
+      if (editingId === id) {
+        setForm(empty);
+        setEditingId(null);
+      }
+      toast("Contact removed", "trash-2");
+    } catch (e) {
+      toast(e.message || "Could not delete", "x");
+    }
+  };
+
+  return (
+    <aside className="drawer open side-drawer" aria-label="My people">
+      <header>
+        <Icon name="heart" size={20} />
+        <h3>My people</h3>
+        <IconButton icon="x" title="Close" style={{ marginLeft: "auto" }} onClick={onClose} />
+      </header>
+      <div className="body settings-body">
+        {recipients.length === 0 && (
+          <p className="muted-hint">Save gift contacts so the concierge remembers who you shop for.</p>
+        )}
+        <ul className="people-list">
+          {recipients.map((r) => (
+            <li key={r.id}>
+              <button type="button" className="people-item" onClick={() => loadForm(r)}>
+                <strong>{r.name}</strong>
+                {r.relationship && <span>{r.relationship}</span>}
+                {r.birthday && <span className="people-date">Bday {String(r.birthday).slice(0, 10)}</span>}
+              </button>
+              <button type="button" className="people-del" onClick={() => remove(r.id)} aria-label="Delete">
+                <Icon name="trash-2" size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+        <h4 className="people-form-title">{editingId ? "Edit contact" : "Add someone"}</h4>
+        <input placeholder="Name *" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        <input placeholder="Relationship (mom, partner, boss…)" value={form.relationship} onChange={(e) => setForm((f) => ({ ...f, relationship: e.target.value }))} />
+        <label>Birthday</label>
+        <input type="date" value={form.birthday} onChange={(e) => setForm((f) => ({ ...f, birthday: e.target.value }))} />
+        <label>Anniversary</label>
+        <input type="date" value={form.anniversary} onChange={(e) => setForm((f) => ({ ...f, anniversary: e.target.value }))} />
+        <label>Delivery city</label>
+        <CityPicker value={form.city} onChange={(v) => setForm((f) => ({ ...f, city: v }))} placeholder="City…" />
+        <input placeholder="Interests (comma-separated)" value={form.interests} onChange={(e) => setForm((f) => ({ ...f, interests: e.target.value }))} />
+        <input placeholder="Avoid (chocolate, alcohol…)" value={form.avoid} onChange={(e) => setForm((f) => ({ ...f, avoid: e.target.value }))} />
+        <textarea placeholder="Notes" rows={2} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
+      </div>
+      <div className="foot">
+        <Button variant="primary" full disabled={busy || !form.name.trim()} onClick={save}>
+          {busy ? "Saving…" : editingId ? "Update contact" : "Save contact"}
+        </Button>
+      </div>
+    </aside>
+  );
+}
+
 function App({
   session,
   profile,
@@ -238,6 +480,9 @@ function App({
   const [placing, setPlacing] = useState(false);
   const [modal, setModal] = useState(null);
   const [profileHydrated, setProfileHydrated] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [recipients, setRecipients] = useState([]);
 
   const feedRef = useRef(null);
   const checkoutFormRef = useRef(null);
@@ -245,6 +490,8 @@ function App({
   const currentAudioRef = useRef(null);
   const guestPromptedRef = useRef(false);
   const persistTimerRef = useRef(null);
+  const personalityGreetedRef = useRef(false);
+  const occasionNudgedRef = useRef(false);
 
   const defaultCity = profile?.default_city || "";
   const displayName =
@@ -279,7 +526,50 @@ function App({
     }
     if (profile.default_language) setCurrentLang(profile.default_language);
     setProfileHydrated(true);
+    const pg = window.KaprukaPersonality?.personalityGreeting?.(profile.gifting_personality);
+    if (pg && !personalityGreetedRef.current) {
+      personalityGreetedRef.current = true;
+      setMessages((m) => {
+        if (m.length !== 1 || m[0].role !== "bot") return m;
+        return [{ ...m[0], text: `${m[0].text}\n\n${pg}` }];
+      });
+    }
   }, [profile, profileHydrated]);
+
+  const refreshRecipients = useCallback(async () => {
+    if (!supabase || !session?.user?.id || isGuest) {
+      setRecipients([]);
+      return;
+    }
+    const list = await window.KaprukaSupabase.listRecipients(supabase, session.user.id);
+    setRecipients(list);
+  }, [supabase, session, isGuest]);
+
+  useEffect(() => {
+    refreshRecipients();
+  }, [refreshRecipients]);
+
+  useEffect(() => {
+    if (!supabase || !session?.user?.id || isGuest) return;
+    window.KaprukaSupabase.listWishlist(supabase, session.user.id).then((items) => {
+      const map = {};
+      items.forEach((w) => { map[w.name] = true; });
+      setFav(map);
+    });
+  }, [supabase, session, isGuest]);
+
+  useEffect(() => {
+    if (!recipients.length || occasionNudgedRef.current) return;
+    const up = window.KaprukaSupabase.upcomingOccasions(recipients, 21);
+    if (up.length) {
+      occasionNudgedRef.current = true;
+      const u = up[0];
+      toast(
+        `${u.name}'s ${u.type === "birthday" ? "birthday" : "anniversary"} in ${u.days} days — need gift ideas?`,
+        "gift"
+      );
+    }
+  }, [recipients]);
 
   useEffect(() => {
     if (!profileHydrated || isGuest) return;
@@ -425,6 +715,21 @@ function App({
     }
     products.forEach((p) => addToCartRaw(p, p.qty || 1));
     if (!quiet) toast(products.length === 1 ? `Added "${products[0].name}"` : `Added ${products.length} items`, "shopping-cart");
+  };
+
+  const toggleWishlist = async (p) => {
+    const turningOn = !fav[p.name];
+    setFav((f) => ({ ...f, [p.name]: turningOn }));
+    if (turningOn) toast("Saved to wishlist", "heart");
+    if (isGuest || !supabase || !session?.user?.id) return;
+    try {
+      const pid = p.id || idFromUrl(p.url) || p.name;
+      if (turningOn) {
+        await window.KaprukaSupabase.addWishlistItem(supabase, session.user.id, { ...p, id: pid });
+      } else {
+        await window.KaprukaSupabase.removeWishlistItem(supabase, session.user.id, pid);
+      }
+    } catch (_) {}
   };
 
   const applyCartActions = async (actions) => {
@@ -622,6 +927,15 @@ function App({
           `Order ready!${checkout.order_ref ? ` Ref: ${checkout.order_ref}.` : ""}${tot ? ` Total: ${tot}.` : ""} Pay link opened in a new tab — complete checkout there.`
         );
         toast("Order created — pay link opened", "check");
+        if (supabase && session?.user?.id) {
+          window.KaprukaSupabase.saveOrderHistory(supabase, session.user.id, {
+            recipient_name: f.rname.value.trim(),
+            items_summary: cart.map((c) => c.name).join(", "),
+            order_ref: checkout.order_ref || null,
+            grand_total: s.grand_total != null ? Number(s.grand_total) : null,
+            currency: s.currency || cart[0]?.currency || "LKR",
+          });
+        }
       } else {
         payTab?.close();
         const raw = (data.output && String(data.output)) || data.error || "Order could not be created.";
@@ -673,6 +987,12 @@ function App({
             </button>
             {!isGuest && session && (
               <IconButton icon="x" title="Sign out" onClick={onSignOut} />
+            )}
+            {!isGuest && session && (
+              <IconButton icon="heart" title="My people" onClick={() => { setPeopleOpen(true); setSettingsOpen(false); setCartOpen(false); }} />
+            )}
+            {!isGuest && session && (
+              <IconButton icon="star" title="Gifting preferences" onClick={() => { setSettingsOpen(true); setPeopleOpen(false); setCartOpen(false); }} />
             )}
             <select
               className="langsel"
@@ -731,10 +1051,7 @@ function App({
                         <ProductCard
                           {...p}
                           favorite={!!fav[p.name]}
-                          onFavorite={() => {
-                            setFav((f) => ({ ...f, [p.name]: !f[p.name] }));
-                            if (!fav[p.name]) toast("Saved to wishlist", "heart");
-                          }}
+                          onFavorite={() => toggleWishlist(p)}
                           onAdd={() => addItems([p])}
                         />
                       </div>
@@ -779,7 +1096,7 @@ function App({
         </div>
       </footer>
 
-      <div className={"scrim" + (cartOpen ? " open" : "")} onClick={() => setCartOpen(false)} />
+      <div className={"scrim" + (cartOpen || settingsOpen || peopleOpen ? " open" : "")} onClick={() => { setCartOpen(false); setSettingsOpen(false); setPeopleOpen(false); }} />
       <aside className={"drawer" + (cartOpen ? " open" : "")} aria-label="Cart">
         <header>
           <Icon name="shopping-cart" size={20} />
@@ -889,6 +1206,31 @@ function App({
           )}
         </div>
       </aside>
+
+      {settingsOpen && !isGuest && (
+        <SettingsPanel
+          profile={profile}
+          supabase={supabase}
+          session={session}
+          budget={budget}
+          setBudget={setBudget}
+          currentLang={currentLang}
+          setCurrentLang={setCurrentLang}
+          onClose={() => setSettingsOpen(false)}
+          onProfileUpdate={onProfileUpdate}
+          toast={toast}
+        />
+      )}
+      {peopleOpen && !isGuest && (
+        <RecipientsPanel
+          recipients={recipients}
+          supabase={supabase}
+          session={session}
+          onClose={() => setPeopleOpen(false)}
+          onRefresh={refreshRecipients}
+          toast={toast}
+        />
+      )}
 
       {modal && (
         <div className="modal-scrim open" onClick={() => closeModal(false)}>
@@ -1103,6 +1445,8 @@ const ONBOARDING_STEPS = [
     { value: "minimalist", label: "Minimal & modern" },
     { value: "traditional", label: "Traditional Sri Lankan" },
   ]},
+  { key: "avoid_list", title: "Anything to always avoid?", type: "multi", options: AVOID_OPTIONS },
+  { key: "dietary", title: "Dietary preferences?", type: "single", options: DIETARY_OPTIONS },
   { key: "default_city", title: "Default delivery city?", type: "city" },
 ];
 
@@ -1120,6 +1464,24 @@ function OnboardingWizard({ supabase, session, onComplete }) {
   const pick = (key, value) => {
     setAnswers((a) => ({ ...a, [key]: value }));
     setTimeout(() => setStep((s) => Math.min(s + 1, ONBOARDING_STEPS.length - 1)), 180);
+  };
+
+  const toggleMulti = (key, value) => {
+    setAnswers((a) => {
+      const cur = Array.isArray(a[key]) ? [...a[key]] : [];
+      if (value === "none") return { ...a, [key]: ["none"] };
+      const next = cur.includes(value)
+        ? cur.filter((x) => x !== value)
+        : [...cur.filter((x) => x !== "none"), value];
+      return { ...a, [key]: next };
+    });
+  };
+
+  const stepReady = () => {
+    if (current.type === "city") return cityChoice.trim().length >= 2;
+    if (current.type === "multi") return Array.isArray(answers[current.key]) && answers[current.key].length > 0;
+    if (current.type === "single") return Boolean(answers[current.key]);
+    return Boolean(answers[current.key]);
   };
 
   const finish = async () => {
@@ -1172,6 +1534,19 @@ function OnboardingWizard({ supabase, session, onComplete }) {
               placeholder="Search Kapruka delivery cities…"
             />
           </div>
+        ) : current.type === "multi" ? (
+          <div className="wizard-options">
+            {current.options.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={"wizard-opt" + ((answers[current.key] || []).includes(opt.value) ? " wizard-opt--on" : "")}
+                onClick={() => toggleMulti(current.key, opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         ) : (
           <div className="wizard-options">
             {current.options.map((opt) => (
@@ -1190,7 +1565,7 @@ function OnboardingWizard({ supabase, session, onComplete }) {
           {step > 0 && (
             <button type="button" className="auth-btn auth-btn--soft" onClick={() => setStep((s) => s - 1)}>Back</button>
           )}
-          {step < ONBOARDING_STEPS.length - 1 && answers[current.key] && current.key !== "default_city" && (
+          {step < ONBOARDING_STEPS.length - 1 && stepReady() && current.key !== "default_city" && (
             <button type="button" className="auth-btn auth-btn--primary" onClick={() => setStep((s) => s + 1)}>Next</button>
           )}
           {step === ONBOARDING_STEPS.length - 1 && (

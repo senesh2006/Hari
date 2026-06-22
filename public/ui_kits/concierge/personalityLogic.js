@@ -71,6 +71,17 @@ function computePersonality(answers) {
     styles: style ? [style] : [],
     recipient_focus: recip || null,
   };
+  const avoid = a.avoid_list;
+  if (Array.isArray(avoid) && avoid.length) {
+    preferences.avoid_list = avoid.filter((x) => x && x !== "none");
+  }
+  const dietary = a.dietary;
+  if (dietary && dietary !== "none") {
+    preferences.dietary = dietary;
+  }
+  if (a.corporate_gifting) {
+    preferences.corporate_gifting = true;
+  }
 
   return {
     gifting_personality: primary,
@@ -81,8 +92,26 @@ function computePersonality(answers) {
   };
 }
 
+const GREETING_SNIPPETS = {
+  thoughtful_planner: "I'll help you find gifts that feel carefully chosen.",
+  last_minute_hero: "Tell me who it's for — I'll find something great, fast.",
+  practical_gifter: "I'll keep things useful and within budget.",
+  big_spender: "Let's find something memorable that really impresses.",
+  sentimental_soul: "I'll help you find something heartfelt.",
+  creative_maker: "Let's find something a little unexpected.",
+};
+
+function personalityGreeting(personality) {
+  if (!personality) return null;
+  const label = PERSONALITY_LABELS[personality] || personality.replace(/_/g, " ");
+  const snippet = GREETING_SNIPPETS[personality];
+  if (!snippet) return null;
+  return `Welcome back — as a ${label}, ${snippet}`;
+}
+
 window.KaprukaPersonality = {
   PERSONALITY_LABELS,
   BUDGET_MAP,
   computePersonality,
+  personalityGreeting,
 };
