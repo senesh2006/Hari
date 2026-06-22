@@ -274,6 +274,11 @@
 .account-chip:hover { background: var(--surface-3); color: var(--text); }
 .account-chip .name { overflow: hidden; text-overflow: ellipsis; }
 .account-chip.guest { cursor: pointer; border-style: dashed; }
+
+@media (max-width: 720px) {
+  .account-chip { max-width: none; padding: .4rem; }
+  .account-chip .name { display: none; }
+}
 .boot-screen {
   min-height: 100vh;
   display: flex;
