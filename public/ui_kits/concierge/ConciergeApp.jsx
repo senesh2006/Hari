@@ -447,7 +447,13 @@ function App() {
           <div className="feed" ref={feedRef}>
             {messages.map((m) => (
               <div className="msg-in" key={m.id} style={{ display: "flex", flexDirection: "column" }}>
-                <Bubble role={m.role} thought={m.thought} thinking={m.thinking}>
+                {m.thought && m.role === "bot" && (
+                  <div className="bot-thought">
+                    <Icon name="sparkles" size={14} />
+                    <span>{m.thought}</span>
+                  </div>
+                )}
+                <Bubble role={m.role} thinking={m.thinking}>
                   {m.text}
                 </Bubble>
                 {m.products && (

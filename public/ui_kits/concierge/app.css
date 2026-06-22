@@ -1,5 +1,19 @@
 /* Concierge app extras — checkout form, budget, confirm modal */
 
+/* Search meta line — own row above the reply (Bubble's inline-flex thought overlaps text) */
+.bot-thought {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 2.4rem;
+  margin-bottom: 0.45rem;
+  color: var(--faint);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.bot-thought svg { color: var(--primary); flex-shrink: 0; }
+
 .budgetrow { display: flex; align-items: center; justify-content: space-between; margin-bottom: .7rem; }
 .budgetrow input { width: 120px; text-align: right; font: inherit; font-size: .9rem; padding: .45rem .55rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-3); color: inherit; }
 .budgetrow input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
