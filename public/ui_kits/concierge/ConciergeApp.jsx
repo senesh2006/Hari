@@ -90,6 +90,7 @@ function App({
   const [bump, setBump] = useState(false);
   const [currentLang, setCurrentLang] = useState("en");
   const [ttsOn, setTtsOn] = useState(false);
+  const [assemblyAi, setAssemblyAi] = useState(false);
   const [budget, setBudget] = useState(null);
   const [instructions, setInstructions] = useState([]);
   const [lastSuggestions, setLastSuggestions] = useState([]);
@@ -105,6 +106,9 @@ function App({
   const currentAudioRef = useRef(null);
   const guestPromptedRef = useRef(false);
   const persistTimerRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const mediaChunksRef = useRef([]);
 
   const defaultCity = profile?.default_city || "";
   const displayName =
@@ -156,6 +160,13 @@ function App({
   const uiText = (k) => (UI_TEXT[currentLang] || UI_TEXT.en)[k];
 
   useEffect(() => {
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((c) => setAssemblyAi(Boolean(c.assemblyAiEnabled)))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     const el = feedRef.current;
     if (el && el.parentElement) el.parentElement.scrollTop = el.parentElement.scrollHeight;
   }, [messages]);
@@ -205,22 +216,20 @@ function App({
   const speak = useCallback(async (text) => {
     if (!ttsOn || !text) return;
     stopSpeaking();
-    if (currentLang !== "en") {
-      try {
-        const res = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: String(text).slice(0, 600), lang: currentLang }),
-        });
-        if (!res.ok) throw new Error("tts");
-        const url = URL.createObjectURL(await res.blob());
-        const audio = new Audio(url);
-        currentAudioRef.current = audio;
-        audio.onended = () => URL.revokeObjectURL(url);
-        await audio.play();
-        return;
-      } catch (_) {}
-    }
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: String(text).slice(0, 600), lang: currentLang }),
+      });
+      if (!res.ok) throw new Error("tts");
+      const url = URL.createObjectURL(await res.blob());
+      const audio = new Audio(url);
+      currentAudioRef.current = audio;
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+      return;
+    } catch (_) {}
     const synth = window.speechSynthesis;
     if (!synth) return;
     const u = new SpeechSynthesisUtterance(String(text).slice(0, 600));
@@ -384,12 +393,78 @@ function App({
     setStatus("Tap the mic to talk, or type below");
   };
 
+  const stopAssemblyMic = () => {
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state === "recording") mr.stop();
+    mediaRecorderRef.current = null;
+  };
+
+  const startAssemblyMic = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast("Microphone not available", "mic");
+      return;
+    }
+    stopSpeaking();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const mr = new MediaRecorder(stream, { mimeType: mime });
+      mediaChunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data?.size) mediaChunksRef.current.push(e.data);
+      };
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+        setListening(false);
+        const blob = new Blob(mediaChunksRef.current, { type: mime });
+        if (!blob.size) {
+          setStatus("Tap the mic to talk, or type below");
+          return;
+        }
+        setStatus("Transcribing…");
+        try {
+          const res = await fetch("/api/transcribe", {
+            method: "POST",
+            headers: { "Content-Type": blob.type || "audio/webm" },
+            body: blob,
+          });
+          const data = await res.json();
+          if (data.ok && data.text) send(data.text.trim());
+          else toast(data.error || "Couldn't transcribe speech", "mic");
+        } catch (_) {
+          toast("Transcription failed", "mic");
+        }
+        setStatus("Tap the mic to talk, or type below");
+      };
+      mediaRecorderRef.current = mr;
+      mr.start();
+      setListening(true);
+      setStatus("Listening… speak now");
+    } catch (_) {
+      toast("Microphone permission denied", "mic");
+      setListening(false);
+    }
+  };
+
   const micClick = () => {
     if (query.trim()) { send(query); return; }
+    if (assemblyAi && currentLang === "en" && navigator.mediaDevices?.getUserMedia) {
+      if (listening && mediaRecorderRef.current?.state === "recording") {
+        stopAssemblyMic();
+      } else {
+        stopAssemblyMic();
+        startAssemblyMic();
+      }
+      return;
+    }
     const recog = recogRef.current;
     if (!recog) { toast("Voice input isn't supported in this browser", "mic"); return; }
     if (listening) recog.stop();
-    else { stopSpeaking(); try { recog.start(); } catch (_) {} }
+    else { stopSpeaking(); stopAssemblyMic(); try { recog.start(); } catch (_) {} }
   };
 
   const setQty = (name, d) =>

@@ -1,14 +1,13 @@
 """Vercel Python serverless function: server-side text-to-speech via CAMB.AI.
 
-The browser's Web Speech API has no Sinhala or Tamil voices on most devices, so
-we proxy those (and optionally any) languages through CAMB.AI's MARS models,
-which speak 140+ languages. CAMB's `/apis/tts-stream` endpoint returns finished
-audio in one synchronous call, so no task polling is needed.
+English, Sinhala, and Tamil replies use CAMB.AI (browser speech is fallback only).
+AssemblyAI is used for English mic input via /api/transcribe — not for TTS.
 
-POST /api/tts  body: {"text": "...", "lang": "si"}  -> audio/mpeg bytes.
+CAMB's `/apis/tts-stream` endpoint returns finished audio in one synchronous call.
 
-Requires the CAMB_API_KEY environment variable. Set it in your Vercel project's
-Environment Variables (and locally for testing).
+POST /api/tts  body: {"text": "...", "lang": "en|si|ta"}  -> audio/mpeg bytes.
+
+Requires the CAMB_API_KEY environment variable.
 """
 
 from __future__ import annotations
