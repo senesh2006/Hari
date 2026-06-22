@@ -734,6 +734,9 @@ CART & SELECTIONS
 - add_all_suggestions_to_cart: user wants everything suggested.
 - remove_from_cart: drop items or clear the cart.
 - add_instruction: save gift-wrapping, hamper requests, delivery notes, card messages verbatim.
+- set_customization: for items marked CUSTOMIZABLE in context, ask for the name/message to print or \
+engrave (for a photo item, tell them they can attach a photo in the app), then record it with the item's number. \
+Do this before or right as you add a customizable item to the cart — don't let it go to checkout blank.
 - After cart/instruction actions, confirm in one short natural sentence.
 - Use suggestion/cart numbers exactly as given in context.
 
@@ -1507,6 +1510,28 @@ CART_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_customization",
+            "description": (
+                "Record the personalisation the user gives for a CUSTOMIZABLE product "
+                "(one marked customizable in context) — the text to print/engrave, or a "
+                "note that they're attaching a photo. Use the 1-based suggestion or cart "
+                "number to say which item it's for. A photo itself is uploaded in the app, "
+                "not here — only capture the text and the intent."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item": {"type": "integer", "description": "1-based suggestion/cart number being customised."},
+                    "text": {"type": "string", "description": "Custom text to print/engrave (e.g. a name or message)."},
+                    "wants_photo": {"type": "boolean", "description": "True if they want to attach a photo."},
+                },
+                "required": ["item"],
+            },
+        },
+    },
 ]
 CART_TOOL_NAMES = {t["function"]["name"] for t in CART_TOOLS}
 
@@ -1892,17 +1917,48 @@ def _looks_like_product(d: dict) -> bool:
     return any(_first(d, ks) is not None for ks in (PRICE_KEYS, URL_KEYS, IMAGE_KEYS))
 
 
+# Products that take a buyer-supplied photo or message. Kapruka exposes no
+# explicit flag, so infer it from the name/description.
+_CUSTOM_PHOTO_RE = re.compile(
+    r"\b(photo|picture|pic|image|collage|portrait)\b", re.I
+)
+_CUSTOM_TEXT_RE = re.compile(
+    r"\b(personali[sz]ed|customi[sz]ed|custom|engrav\w*|monogram\w*|name\s*(printed|engraved)?|"
+    r"your\s+(name|message|text|photo)|with\s+name|printed\s+with)\b",
+    re.I,
+)
+
+
+def _detect_customization(name: str | None, desc: str | None) -> str | None:
+    """Return 'photo', 'text', or None for what custom input a product needs."""
+    blob = f"{name or ''} {desc or ''}"
+    photo = bool(_CUSTOM_PHOTO_RE.search(blob)) and bool(
+        re.search(r"\b(personali[sz]ed|custom|your|upload|print)\b", blob, re.I)
+    )
+    text = bool(_CUSTOM_TEXT_RE.search(blob))
+    if photo:
+        return "photo"
+    if text:
+        return "text"
+    return None
+
+
 def _normalize_product(d: dict) -> dict:
     amount, currency_from_price = _money(_first(d, PRICE_KEYS))
     url = _abs_url(_first(d, URL_KEYS))
+    name = _first(d, NAME_KEYS)
+    description = _clean_desc(_first(d, DESC_KEYS))
+    custom = _detect_customization(name, description)
     return {
         "id": _first(d, ID_KEYS) or _id_from_url(url),
-        "name": _first(d, NAME_KEYS),
+        "name": name,
         "price": amount,
         "currency": _first(d, CURRENCY_KEYS) or currency_from_price,
         "image": _abs_url(_first(d, IMAGE_KEYS)),
         "url": url,
-        "description": _clean_desc(_first(d, DESC_KEYS)),
+        "description": description,
+        "customizable": bool(custom),
+        "customization_type": custom,
     }
 
 
@@ -2183,11 +2239,23 @@ def _context_message(suggestions: list, cart: list, instructions: list) -> str |
     lines = []
     if suggestions:
         lines.append("CURRENT SUGGESTIONS (use these numbers for add_to_cart):")
+        any_custom = False
         for i, p in enumerate(suggestions, 1):
             cur = p.get("currency") or "LKR"
             price = p.get("price")
             price_txt = f" — {cur} {price}" if price not in (None, "") else ""
-            lines.append(f"{i}. {p.get('name')}{price_txt}")
+            tag = ""
+            if p.get("customizable"):
+                any_custom = True
+                ctype = p.get("customization_type") or "text"
+                tag = f"  [CUSTOMIZABLE: needs a {'photo' if ctype == 'photo' else 'custom name/message'}]"
+            lines.append(f"{i}. {p.get('name')}{price_txt}{tag}")
+        if any_custom:
+            lines.append(
+                "Note: items marked CUSTOMIZABLE need personalisation. Before/at add-to-cart, ask for "
+                "the name or message to print (and, for a photo item, tell them they can attach a photo "
+                "in the app), then call set_customization with that item's number."
+            )
     if cart:
         lines.append("")
         lines.append("CURRENT CART (use these numbers for remove_from_cart):")
@@ -2449,6 +2517,19 @@ def _resolve_cart_action(name: str, args: dict, suggestions: list):
     if name == "add_instruction":
         text = str(args.get("instruction") or "").strip()
         return {"action": "instruction", "text": text} if text else None
+    if name == "set_customization":
+        try:
+            n = int(args.get("item"))
+        except (TypeError, ValueError):
+            return None
+        product = suggestions[n - 1] if 0 < n <= len(suggestions) else None
+        return {
+            "action": "customization",
+            "item": n,
+            "product_name": (product or {}).get("name"),
+            "text": str(args.get("text") or "").strip() or None,
+            "wants_photo": bool(args.get("wants_photo")),
+        }
     return None
 
 
@@ -2465,6 +2546,14 @@ def _cart_confirmation(action) -> str:
         return f"Removed {len(action.get('items') or [])} item(s) from the cart."
     if kind == "instruction":
         return f"Saved instruction: {action.get('text')}"
+    if kind == "customization":
+        bits = []
+        if action.get("text"):
+            bits.append(f"text “{action['text']}”")
+        if action.get("wants_photo"):
+            bits.append("photo to be attached in the app")
+        detail = ", ".join(bits) if bits else "noted"
+        return f"Saved customisation for item {action.get('item')}: {detail}."
     return "Cart updated."
 
 
