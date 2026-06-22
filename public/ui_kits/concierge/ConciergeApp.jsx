@@ -79,21 +79,29 @@ const normNameKey = (name) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-/** Drop numbered/bulleted product lines when cards render the same data below. */
+/** Drop numbered/bulleted product lines and corporate filler when cards render below. */
 const stripCatalogFromText = (text, products) => {
-  if (!text || !products?.length) return text;
+  if (!text) return text;
+  let out = text
+    .replace(
+      /\b(?:here are (?:a few |some )?(?:options|picks|ideas|gift ideas)|i(?:'ve| have) (?:found|got|pulled together) (?:some |a few )?(?:options|ideas|picks))[^.!\n]*[.:]?\s*/gi,
+      ""
+    )
+    .replace(
+      /\s*(?:let me know if (?:you(?:'d| would) like|you want)|please let me know|feel free to (?:let me know|ask))[^.!\n]*[.!]?\s*/gi,
+      ""
+    )
+    .replace(/\s*\d+\.\s+[A-Z][^.!\n]{20,}/g, "");
+  if (!products?.length) return out.replace(/\n{3,}/g, "\n\n").trim();
   const names = products.map((p) => normNameKey(p.name)).filter((n) => n.length >= 3);
-  if (!names.length) return text;
-  const kept = text.split("\n").filter((line) => {
+  const kept = out.split("\n").filter((line) => {
     const s = line.trim();
     if (!s) return true;
-    const numbered = /^\d+\.\s/.test(s);
-    const bulleted = /^[-•*]\s/.test(s);
-    if (!numbered && !bulleted) return true;
+    if (/^\d+\.\s/.test(s)) return false;
+    if (/^[-•*]\s/.test(s) && (s.length > 40 || names.some((n) => s.toLowerCase().includes(n)))) return false;
     const norm = s.toLowerCase().replace(/[*_#[\]()]/g, " ");
-    const mentions = names.some((n) => norm.includes(n));
-    const hasPrice = /(?:LKR|Rs\.?\s*\d|\(\s*LKR)/i.test(s);
-    return !(mentions && (hasPrice || numbered));
+    if (names.some((n) => n.length >= 8 && (norm.includes(n) || n.includes(norm))) && s.length > 30) return false;
+    return true;
   });
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 };
@@ -843,7 +851,7 @@ function App({
           display = stripCatalogFromText(display, products);
           if (!display.trim()) {
             display =
-              "I found some options that should work well — take a look below. Say a number to add one to your cart, or tell me if you'd like something different.";
+              "Pulled a few things that should work — they're right below 😊 Tell me if one jumps out.";
           }
         }
         if (display || products.length) {

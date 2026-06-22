@@ -448,6 +448,9 @@ VOICE & PERSONALITY
 - Sound like a real person texting a friend — never corporate.
 - Never say: "I'd be happy to assist", "Please let me know", "Certainly", "Kindly provide".
 - Use natural Sri Lankan warmth. Occasional emojis are fine when they fit (😊 🥹 💔 😭 — don't overdo it).
+- Do NOT start every message with "Aiyo" or "Aiyoo" — only echo it if the user said it first or they're clearly panicking. \
+Vary openings: "Okay listen", "Right", "Don't panic", "Hmm yeah", or jump straight into helpful advice.
+- Never say: "Here are a few options", "Let me know if you'd like", "I'd be happy to help".
 - Good tone examples:
   • "Aww 🥹 that's such a lovely milestone."
   • "Aiyo 😭 Okay, don't panic. We can save this."
@@ -491,9 +494,11 @@ SEARCH RULES (mandatory)
 
 UI PRESENTATION
 - The app renders product cards below your message (photo, name, price, Add to cart).
-- Write ONLY a warm conversational intro (1–3 sentences). The cards carry product details.
-- NEVER output numbered/bulleted product catalogues, markdown (**bold**, [links]), prices, or kapruka.com links.
-- Reference items by number only when the user must choose (e.g. "Option 2 feels the most romantic").
+- Write ONLY a warm conversational intro (1–2 short sentences). The cards carry ALL product details.
+- NEVER name products, list options, or use numbers like "1." or "2." in your text — the cards already show them.
+- NEVER say "here are a few options", "here are some picks", or "let me know if you'd like to add to cart".
+- NEVER output numbered/bulleted catalogues, markdown (**bold**, [links]), prices, or kapruka.com links.
+- If you want to highlight one pick, say it in prose without the full product title (e.g. "the chocolate-and-roses combo feels right").
 - Proactive follow-ups feel natural: "I've got the flowers sorted. Trust me, hand-delivering them lands \
 much better than a courier 😊. Shall I add a note card too?"
 
@@ -537,8 +542,9 @@ When USER PROFILE context is provided, bias searches and suggestions toward thei
 style, typical budget, and default city — without ignoring their current request."""
 
 UI_PRESENTATION_PROMPT = (
-    "REMINDER: Product cards render below your reply. Your text is conversational context ONLY — "
-    "no numbered lists, no bullet catalogues, no markdown, no (LKR …) price lines, no kapruka.com links."
+    "REMINDER: Product cards render below your reply. Your text is 1–2 warm sentences ONLY — "
+    "no product names, no numbered lists (1. 2.), no 'here are options', no 'let me know'. "
+    "Do not start every reply with Aiyo — vary your opening."
 )
 
 TOOL_JSON_NUDGE = (
@@ -555,7 +561,7 @@ TEXT_MODE_RESULT_PREFIX = (
 SEARCH_FIRST_NUDGE = (
     "IMPORTANT — search now, do NOT call ask_user. The user gave enough context (who + situation). "
     "Call kapruka_search_products for fitting items immediately. "
-    "Your reply should open with warm empathy (e.g. 'Aiyo 💔' / 'Don't panic 😭') then the cards do the rest."
+    "Your reply: 1–2 warm sentences max, NO product names, NO numbered lists — cards show everything below."
 )
 
 _RECIPIENT_RE = re.compile(
@@ -1162,45 +1168,71 @@ _CATALOG_LINE = re.compile(
     r"^\s*(?:\d+\.|[-•*])\s+.*(?:LKR|Rs\.?\s*\d|\(\s*LKR|\bLKR\b)",
     re.I,
 )
-_NUMBERED_PRODUCT = re.compile(r"^\s*\d+\.\s+")
+_NUMBERED_LINE = re.compile(r"^\s*\d+\.\s+")
+_CATALOG_INTRO_RE = re.compile(
+    r"(?i)\b(?:here are (?:a few |some )?(?:options|picks|ideas|gift ideas)|"
+    r"i(?:'ve| have) (?:found|got|pulled together) (?:some |a few )?(?:options|ideas|picks|gift ideas))"
+    r"[^.!\n]*[.:]?\s*",
+)
+_CORPORATE_PHRASES_RE = re.compile(
+    r"(?i)\s*(?:let me know if (?:you(?:'d| would) like|you want)|"
+    r"please let me know|feel free to (?:let me know|ask)|"
+    r"i(?:'d be happy to| would be happy to) (?:help|assist))[^.!\n]*[.!]?\s*",
+)
 
 
 def _line_mentions_product(line: str, names: set[str]) -> bool:
     norm = _norm_text(re.sub(r"[*_#\[\]()]", " ", line))
-    return any(n and n in norm for n in names)
+    if not norm:
+        return False
+    # Substring match on normalized product titles (handles partial names in lists).
+    return any(n and (n in norm or norm in n) for n in names if len(n) >= 8)
 
 
 def _strip_catalog_from_answer(answer: str, products: list) -> str:
-    if not answer or not products:
+    if not answer:
         return answer
+
+    text = _CATALOG_INTRO_RE.sub("", answer)
+    text = _CORPORATE_PHRASES_RE.sub("", text)
+
+    if not products:
+        return re.sub(r"\n{3,}", "\n\n", text).strip()
+
     names = {
         _norm_text(p.get("name"))
         for p in products
         if p.get("name") and len(_norm_text(p.get("name"))) >= 3
     }
-    if not names:
-        return answer
 
     out = []
-    for line in answer.splitlines():
+    for line in text.splitlines():
         s = line.strip()
         if not s:
             out.append("")
             continue
-        is_catalog = (
-            _CATALOG_LINE.match(s)
-            or (_NUMBERED_PRODUCT.match(s) and _line_mentions_product(s, names))
-            or (re.match(r"^\s*[-•*]\s+", s) and _line_mentions_product(s, names))
-        )
-        if not is_catalog:
-            out.append(line.rstrip())
+        if _NUMBERED_LINE.match(s):
+            continue
+        if _CATALOG_LINE.match(s):
+            continue
+        if re.match(r"^\s*[-•*]\s+", s) and (
+            _line_mentions_product(s, names) or len(s) > 40
+        ):
+            continue
+        if names and _line_mentions_product(s, names) and len(s) > 30:
+            continue
+        out.append(line.rstrip())
 
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    # Catch numbered items embedded mid-paragraph: "options: 2. Product Name"
+    text = re.sub(r"(?i)(?:here are|options:?)\s*\d+\.\s+[^.!\n]+", "", text)
+    text = re.sub(r"\s*\d+\.\s+[A-Z][^.!\n]{20,}", "", text)
+    return text.strip()
 
 
 _EMPTY_CATALOG_FALLBACK = (
-    "I pulled together some options that should work — take a look below 😊 "
-    "Say a number to add one, or tell me if you'd like something different."
+    "Pulled a few things that should work — they're right below 😊 "
+    "Tell me a number if one jumps out, or say what vibe you're going for."
 )
 
 
