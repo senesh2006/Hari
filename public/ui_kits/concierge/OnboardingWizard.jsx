@@ -5,6 +5,15 @@
   const { computePersonality } = window.KaprukaPersonality || {
     computePersonality: () => ({}),
   };
+  const CityPicker = window.CityPicker || function CityPickerFallback(props) {
+    return (
+      <input
+        placeholder={props.placeholder}
+        value={props.value || ""}
+        onChange={(e) => props.onChange?.(e.target.value)}
+      />
+    );
+  };
 
   const STEPS = [
     {
@@ -61,19 +70,13 @@
       key: "default_city",
       title: "Default delivery city?",
       type: "city",
-      options: [
-        { value: "Colombo", label: "Colombo" },
-        { value: "Kandy", label: "Kandy" },
-        { value: "Galle", label: "Galle" },
-        { value: "other", label: "Other" },
-      ],
     },
   ];
 
   function OnboardingWizard({ supabase, session, onComplete }) {
     const [step, setStep] = useState(0);
     const [answers, setAnswers] = useState({});
-    const [cityOther, setCityOther] = useState("");
+    const [cityChoice, setCityChoice] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
 
@@ -82,9 +85,7 @@
 
     const pick = (key, value) => {
       setAnswers((a) => ({ ...a, [key]: value }));
-      if (key !== "default_city" || value !== "other") {
-        setTimeout(() => setStep((s) => Math.min(s + 1, STEPS.length - 1)), 180);
-      }
+      setTimeout(() => setStep((s) => Math.min(s + 1, STEPS.length - 1)), 180);
     };
 
     const finish = async () => {
@@ -92,9 +93,7 @@
       setError("");
       try {
         const finalAnswers = { ...answers };
-        if (finalAnswers.default_city === "other") {
-          finalAnswers.default_city = cityOther.trim() || "Colombo";
-        }
+        finalAnswers.default_city = cityChoice.trim() || "Colombo 03";
         const computed = computePersonality(finalAnswers);
         const patch = {
           quiz_answers: finalAnswers,
@@ -123,9 +122,7 @@
       }
     };
 
-    const canFinish =
-      current.key === "default_city" &&
-      (answers.default_city === "other" ? cityOther.trim() : answers.default_city);
+    const canFinish = current.key === "default_city" && cityChoice.trim().length >= 2;
 
     return (
       <div className="auth-shell">
@@ -135,30 +132,29 @@
           </div>
           <p className="wizard-step">Step {step + 1} of {STEPS.length}</p>
           <h1>{current.title}</h1>
-          <div className="wizard-options">
-            {current.options.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={
-                  "wizard-opt" + (answers[current.key] === opt.value ? " wizard-opt--on" : "")
-                }
-                onClick={() => pick(current.key, opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          {current.type === "city" && answers.default_city === "other" && (
-            <label className="wizard-city">
-              City name
-              <input
-                type="text"
-                placeholder="e.g. Negombo"
-                value={cityOther}
-                onChange={(e) => setCityOther(e.target.value)}
+          {current.type === "city" ? (
+            <div className="wizard-city-picker">
+              <CityPicker
+                value={cityChoice}
+                onChange={setCityChoice}
+                placeholder="Search Kapruka delivery cities…"
               />
-            </label>
+            </div>
+          ) : (
+            <div className="wizard-options">
+              {current.options.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={
+                    "wizard-opt" + (answers[current.key] === opt.value ? " wizard-opt--on" : "")
+                  }
+                  onClick={() => pick(current.key, opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           )}
           <div className="wizard-nav">
             {step > 0 && (

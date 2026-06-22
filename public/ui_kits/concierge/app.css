@@ -29,6 +29,46 @@
 .formgrid .full { grid-column: 1 / -1; }
 .formgrid input, .formgrid select, .formgrid textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: .9rem; padding: .5rem .6rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-3); color: inherit; }
 .formgrid input:focus, .formgrid select:focus, .formgrid textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+.city-picker { position: relative; }
+.city-picker-hint { margin: .35rem 0 0; font-size: .74rem; color: var(--faint); line-height: 1.35; }
+.city-picker-err { margin: .35rem 0 0; font-size: .74rem; color: var(--bad); }
+.city-picker-empty { margin: .35rem 0 0; font-size: .78rem; color: var(--muted); background: var(--surface-3); border: 1px solid var(--border); border-radius: 10px; padding: .45rem .55rem; }
+.city-picker-list {
+  position: absolute;
+  left: 0; right: 0; top: calc(100% + .15rem);
+  z-index: 20;
+  max-height: 11rem;
+  overflow-y: auto;
+  margin: 0; padding: .25rem;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+}
+.city-picker-list li { margin: 0; }
+.city-picker-list button {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: .84rem;
+  padding: .45rem .55rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+}
+.city-picker-list button:hover, .city-picker-list button:focus-visible {
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-3));
+  outline: none;
+}
+.city-picker-name { font-weight: 600; }
+.city-picker-alias { font-size: .72rem; color: var(--faint); }
+.wizard-city-picker { margin-bottom: 1rem; }
 .co-ok { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 12px; padding: .8rem; font-size: .9rem; margin-top: .6rem; }
 .co-ok .pay { display: block; text-align: center; margin-top: .6rem; padding: .65rem; border-radius: 10px; background: var(--primary-soft); color: var(--on-primary); text-decoration: none; font-weight: 700; }
 .co-bad { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 12px; padding: .7rem; font-size: .88rem; margin-top: .6rem; }

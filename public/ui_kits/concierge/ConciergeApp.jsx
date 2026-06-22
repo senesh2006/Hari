@@ -67,6 +67,19 @@ const greetSub = () => {
   return "Good evening";
 };
 
+const CityPicker = window.CityPicker || function CityPickerFallback(props) {
+  return (
+    <input
+      ref={props.inputRef}
+      name={props.name}
+      required={props.required}
+      placeholder={props.placeholder}
+      value={props.value || ""}
+      onChange={(e) => props.onChange?.(e.target.value)}
+    />
+  );
+};
+
 function App({
   session,
   profile,
@@ -96,6 +109,7 @@ function App({
   const [lastSuggestions, setLastSuggestions] = useState([]);
   const [awaitingAnswers, setAwaitingAnswers] = useState(false);
   const [checkoutResult, setCheckoutResult] = useState("");
+  const [checkoutCity, setCheckoutCity] = useState("");
   const [placing, setPlacing] = useState(false);
   const [modal, setModal] = useState(null);
   const [profileHydrated, setProfileHydrated] = useState(false);
@@ -158,6 +172,10 @@ function App({
   const cartCount = cart.reduce((n, c) => n + c.qty, 0);
   const cartSubtotal = () => cart.reduce((s, c) => s + priceNum(c) * c.qty, 0);
   const uiText = (k) => (UI_TEXT[currentLang] || UI_TEXT.en)[k];
+
+  useEffect(() => {
+    if (defaultCity) setCheckoutCity(defaultCity);
+  }, [defaultCity]);
 
   useEffect(() => {
     fetch("/api/config")
@@ -485,10 +503,15 @@ function App({
       }
       items.push({ product_id: pid, quantity: c.qty });
     }
+    const city = (checkoutCity || f.city?.value || "").trim();
+    if (!city) {
+      setCheckoutResult("Pick a delivery city from Kapruka's list.");
+      return;
+    }
     const params = {
       cart: items,
       recipient: { name: f.rname.value.trim(), phone: f.rphone.value.trim() },
-      delivery: { address: f.address.value.trim(), city: f.city.value.trim(), date: f.date.value, location_type: f.location_type.value },
+      delivery: { address: f.address.value.trim(), city, date: f.date.value, location_type: f.location_type.value },
       sender: { name: f.sname.value.trim() },
       currency: cart[0]?.currency || "LKR",
       response_format: "json",
@@ -498,6 +521,7 @@ function App({
 
     setPlacing(true);
     setCheckoutResult("");
+    const payTab = window.open("about:blank", "_blank");
     try {
       const res = await fetch("/api/tool", {
         method: "POST",
@@ -507,17 +531,30 @@ function App({
       const data = await res.json();
       let order = null;
       try { order = JSON.parse(data.output); } catch (_) {}
-      if (data.ok && order?.checkout_url) {
-        const s = order.summary || {};
+      const checkout = data.checkout || order;
+      const payUrl = checkout?.checkout_url;
+      if (data.ok && payUrl) {
+        if (payTab) {
+          payTab.location.href = payUrl;
+          payTab.focus?.();
+        } else {
+          const opened = window.open(payUrl, "_blank", "noopener,noreferrer");
+          if (!opened) window.location.assign(payUrl);
+        }
+        const s = checkout.summary || {};
         const tot = s.grand_total != null ? fmtMoney(s.grand_total, s.currency) : "";
         setCheckoutResult(
-          `Order ready!${order.order_ref ? ` Ref: ${order.order_ref}.` : ""}${tot ? ` Total: ${tot}.` : ""} Open the pay link to complete checkout.`
+          `Order ready!${checkout.order_ref ? ` Ref: ${checkout.order_ref}.` : ""}${tot ? ` Total: ${tot}.` : ""} Pay link opened in a new tab — complete checkout there.`
         );
-        toast("Order created — open the pay link", "check");
+        toast("Order created — pay link opened", "check");
       } else {
-        setCheckoutResult((data.output && String(data.output)) || data.error || "Order could not be created.");
+        payTab?.close();
+        const raw = (data.output && String(data.output)) || data.error || "Order could not be created.";
+        const cityErr = window.KaprukaDeliveryCities?.formatCityError?.(raw);
+        setCheckoutResult(cityErr || raw);
       }
     } catch (err) {
+      payTab?.close();
       setCheckoutResult(String(err));
     } finally {
       setPlacing(false);
@@ -528,6 +565,7 @@ function App({
     if (!cart.length) { toast("Your cart is empty", "shopping-cart"); return; }
     setCheckoutView(true);
     setCheckoutResult("");
+    if (defaultCity && !checkoutCity) setCheckoutCity(defaultCity);
     const today = new Date();
     today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
     if (checkoutFormRef.current?.date) checkoutFormRef.current.date.min = today.toISOString().slice(0, 10);
@@ -702,7 +740,16 @@ function App({
               <div className="full"><label>Recipient name *</label><input name="rname" required placeholder="Who receives the gift" /></div>
               <div className="full"><label>Recipient phone *</label><input name="rphone" required placeholder="07X XXX XXXX" /></div>
               <div className="full"><label>Delivery address *</label><input name="address" required /></div>
-              <div><label>City *</label><input name="city" required placeholder="Negombo" defaultValue={defaultCity} /></div>
+              <div className="full">
+                <label>City *</label>
+                <CityPicker
+                  name="city"
+                  required
+                  placeholder="Search Kapruka delivery cities…"
+                  value={checkoutCity}
+                  onChange={setCheckoutCity}
+                />
+              </div>
               <div><label>Delivery date *</label><input name="date" type="date" required /></div>
               <div className="full"><label>Address type</label>
                 <select name="location_type"><option value="house">House</option><option value="apartment">Apartment</option><option value="office">Office</option><option value="other">Other</option></select>
@@ -981,19 +1028,14 @@ const ONBOARDING_STEPS = [
     { value: "minimalist", label: "Minimal & modern" },
     { value: "traditional", label: "Traditional Sri Lankan" },
   ]},
-  { key: "default_city", title: "Default delivery city?", type: "city", options: [
-    { value: "Colombo", label: "Colombo" },
-    { value: "Kandy", label: "Kandy" },
-    { value: "Galle", label: "Galle" },
-    { value: "other", label: "Other" },
-  ]},
+  { key: "default_city", title: "Default delivery city?", type: "city" },
 ];
 
 function OnboardingWizard({ supabase, session, onComplete }) {
   const computePersonality = (window.KaprukaPersonality && window.KaprukaPersonality.computePersonality) || (() => ({}));
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [cityOther, setCityOther] = useState("");
+  const [cityChoice, setCityChoice] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -1002,9 +1044,7 @@ function OnboardingWizard({ supabase, session, onComplete }) {
 
   const pick = (key, value) => {
     setAnswers((a) => ({ ...a, [key]: value }));
-    if (key !== "default_city" || value !== "other") {
-      setTimeout(() => setStep((s) => Math.min(s + 1, ONBOARDING_STEPS.length - 1)), 180);
-    }
+    setTimeout(() => setStep((s) => Math.min(s + 1, ONBOARDING_STEPS.length - 1)), 180);
   };
 
   const finish = async () => {
@@ -1012,9 +1052,7 @@ function OnboardingWizard({ supabase, session, onComplete }) {
     setError("");
     try {
       const finalAnswers = { ...answers };
-      if (finalAnswers.default_city === "other") {
-        finalAnswers.default_city = cityOther.trim() || "Colombo";
-      }
+      finalAnswers.default_city = cityChoice.trim() || "Colombo 03";
       const computed = computePersonality(finalAnswers);
       const patch = {
         quiz_answers: finalAnswers,
@@ -1041,9 +1079,7 @@ function OnboardingWizard({ supabase, session, onComplete }) {
     }
   };
 
-  const canFinish =
-    current.key === "default_city" &&
-    (answers.default_city === "other" ? cityOther.trim() : answers.default_city);
+  const canFinish = current.key === "default_city" && cityChoice.trim().length >= 2;
 
   return (
     <div className="auth-shell">
@@ -1053,23 +1089,27 @@ function OnboardingWizard({ supabase, session, onComplete }) {
         </div>
         <p className="wizard-step">Step {step + 1} of {ONBOARDING_STEPS.length}</p>
         <h1>{current.title}</h1>
-        <div className="wizard-options">
-          {current.options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={"wizard-opt" + (answers[current.key] === opt.value ? " wizard-opt--on" : "")}
-              onClick={() => pick(current.key, opt.value)}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        {current.type === "city" && answers.default_city === "other" && (
-          <label className="wizard-city">
-            City name
-            <input type="text" placeholder="e.g. Negombo" value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
-          </label>
+        {current.type === "city" ? (
+          <div className="wizard-city-picker">
+            <CityPicker
+              value={cityChoice}
+              onChange={setCityChoice}
+              placeholder="Search Kapruka delivery cities…"
+            />
+          </div>
+        ) : (
+          <div className="wizard-options">
+            {current.options.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={"wizard-opt" + (answers[current.key] === opt.value ? " wizard-opt--on" : "")}
+                onClick={() => pick(current.key, opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         )}
         <div className="wizard-nav">
           {step > 0 && (
