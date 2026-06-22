@@ -9,8 +9,12 @@
     "api/tts.py": { "maxDuration": 30 },
     "api/transcribe.py": { "maxDuration": 60 },
     "api/voice_token.py": { "maxDuration": 15 },
-    "api/config.py": { "maxDuration": 10 }
+    "api/config.py": { "maxDuration": 10 },
+    "api/refresh_trends.py": { "maxDuration": 60 }
   },
+  "crons": [
+    { "path": "/api/refresh_trends", "schedule": "0 2 * * *" }
+  ],
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

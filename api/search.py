@@ -93,6 +93,8 @@ LANG_NAMES = {"en": "English", "si": "Sinhala", "ta": "Tamil"}
 _OCCASIONS_CACHE: dict | None = None
 _FACTS_CACHE: dict | None = None
 _TRENDS_CACHE: dict | None = None
+_TRENDS_CACHE_AT: float = 0.0
+_TRENDS_TTL = float(os.environ.get("TRENDS_TTL_SECONDS", "21600"))  # 6h in-memory cache
 
 
 def _load_json_data(name: str) -> dict:
@@ -118,10 +120,40 @@ def get_kapruka_facts() -> dict:
     return _FACTS_CACHE
 
 
+def _fetch_trends_from_supabase() -> dict | None:
+    """Latest web-distilled trends from the trends_cache table (anon read).
+    Returns None on any failure so the static file can take over."""
+    rows = _supabase_request("/rest/v1/trends_cache?id=eq.global&select=data", timeout=4)
+    if isinstance(rows, list) and rows:
+        data = rows[0].get("data")
+        if isinstance(data, dict) and (data.get("bestsellers") or data.get("style_trends")):
+            return data
+    return None
+
+
 def get_trends() -> dict:
-    global _TRENDS_CACHE
-    if _TRENDS_CACHE is None:
-        _TRENDS_CACHE = _load_json_data("trends.json")
+    """Curated static trends (api/data/trends.json) overlaid with the latest
+    web-refreshed trends from Supabase. Cached in-memory per warm instance so
+    the chat path pays at most one short DB read every TTL window."""
+    global _TRENDS_CACHE, _TRENDS_CACHE_AT
+    now = time.monotonic()
+    if _TRENDS_CACHE is not None and (now - _TRENDS_CACHE_AT) < _TRENDS_TTL:
+        return _TRENDS_CACHE
+    merged = _load_json_data("trends.json") or {}
+    try:
+        live = _fetch_trends_from_supabase()
+    except Exception:
+        live = None
+    if live:
+        if isinstance(live.get("bestsellers"), list) and live["bestsellers"]:
+            merged["bestsellers"] = live["bestsellers"]
+        if isinstance(live.get("style_trends"), dict):
+            base = dict(merged.get("style_trends") or {})
+            base.update({k: v for k, v in live["style_trends"].items() if isinstance(v, list) and v})
+            merged["style_trends"] = base
+        merged["_source"] = live.get("_source") or "web"
+    _TRENDS_CACHE = merged
+    _TRENDS_CACHE_AT = now
     return _TRENDS_CACHE
 
 
