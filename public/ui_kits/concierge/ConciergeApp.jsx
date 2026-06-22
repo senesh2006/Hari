@@ -17,13 +17,13 @@ const CHIPS = [
   { icon: "gift", tone: "butter", tx: "Under Rs 3000", prompt: "A nice gift and a card under Rs 3000" },
 ];
 const GREETING =
-  "Hi there! Tell me who you're shopping for and the occasion — a birthday, an anniversary, a get-well basket, anything at all. Tap the mic to talk, or type below and I'll happily add things to your cart.";
+  "Hi 😊 I'm your gift concierge. Who are we spoiling today? Tap the mic or type below.";
 const LANG_CODES = { en: "en-US", si: "si-LK", ta: "ta-LK" };
 const LANG_NAMES = { en: "English", si: "Sinhala", ta: "Tamil" };
 const UI_TEXT = {
-  en: { ask: "To pick the best option, could you tell me a bit more?", skip: 'Just reply here, or say "skip".' },
-  si: { ask: "හොඳම තේරීම කරන්න, ටිකක් වැඩිදුර කියන්න පුළුවන්ද?", skip: 'මෙතන පිළිතුරු දෙන්න, නැත්නම් "skip" කියන්න.' },
-  ta: { ask: "சிறந்ததைத் தேர்ந்தெடுக்க, இன்னும் சற்று சொல்ல முடியுமா?", skip: 'இங்கே பதிலளிக்கவும், அல்லது "skip" எனச் சொல்லவும்.' },
+  en: { ask: "", skip: 'Reply here, or say "skip" if you want me to just pick.' },
+  si: { ask: "", skip: 'මෙතන පිළිතුරු දෙන්න, නැත්නම් "skip" කියන්න.' },
+  ta: { ask: "", skip: 'இங்கே பதிலளிக்கவும், அல்லது "skip" எனச் சொல்லவும்.' },
 };
 
 let _id = 1;
@@ -824,7 +824,8 @@ function App({
         setAwaitingAnswers(true);
         const shown = (data.questions_local && data.questions_local.length) ? data.questions_local : (data.questions || []);
         const qs = shown.map((q) => `• ${q}`).join("\n");
-        const full = `${uiText("ask")}\n${qs}\n\n${uiText("skip")}`;
+        const prefix = uiText("ask");
+        const full = prefix ? `${prefix}\n${qs}\n\n${uiText("skip")}` : `${qs}\n\n${uiText("skip")}`;
         setMessages((m) => [...m, { id: nid(), role: "bot", text: full }]);
         setConversation((c) => [...c, { role: "assistant", content: "Clarifying questions: " + (data.questions || []).join(" ") }]);
         speak(full);

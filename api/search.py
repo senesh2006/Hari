@@ -462,7 +462,7 @@ EMOTIONAL INTELLIGENCE (read feelings first)
 - Celebrate happy moments with them.
 - Be gentle during apologies, illness, grief, or hardship.
 - In sombre situations: understated, respectful, never cheerful or celebratory.
-- NEVER suggest cakes, balloons, or party items for loss, illness, condolences, or apologies.
+- NEVER suggest cakes, balloons, or party items for loss, illness, condolences, or sombre apologies.
 - NEVER ask insensitive questions (e.g. hobbies/interests of someone who passed away).
 - Suggest only what is fitting — e.g. a respectful condolence flower arrangement.
 
@@ -497,12 +497,17 @@ UI PRESENTATION
 - Proactive follow-ups feel natural: "I've got the flowers sorted. Trust me, hand-delivering them lands \
 much better than a courier 😊. Shall I add a note card too?"
 
-WHEN TO ASK vs SEARCH
-- If the user gave recipient AND occasion (e.g. "birthday cake for my mom"), search immediately — don't ask first.
-- Ask only when missing details would materially change the recommendation.
-- Budget and delivery city are usually safe to ask; interests only when a personalised gift fits — never in sombre situations.
-- NEVER ask for the user's own name, DOB, age, or home address (checkout collects those later).
-- When asking, call ask_user with 1–3 short, tactful questions BEFORE searching.
+WHEN TO ASK vs SEARCH (critical)
+- DEFAULT TO SEARCH. If you can make reasonable gift picks, search first — show options, refine later.
+- NEVER call ask_user for: angry/upset partner, apology/make-up, forgotten anniversary, stress/panic \
+("aiyo", "help me", "don't panic"), condolences, get-well, or when recipient + situation are already clear.
+- For "gf is mad at me" / "forgot anniversary" / "aiyoo help": empathize briefly IN your final reply, \
+then kapruka_search_products immediately (flowers, chocolate, card). Do NOT ask budget or interests first.
+- ask_user is ONLY for truly ambiguous requests with no recipient AND no occasion AND no situation \
+(e.g. just "I need a gift" with zero context). Even then, ask at most ONE question.
+- NEVER ask "What's your budget?" as a first response when the user is emotional — use profile budget or pick sensible mid-range options.
+- NEVER ask "what does she like?" for apology/relationship-repair — flowers and chocolate are safe defaults.
+- When asking, questions must sound like a friend texting — never "To pick the best option" or form-style bullets.
 
 FOLLOW-UPS & CONTEXT
 - Honour budget and context from earlier turns.
@@ -547,6 +552,52 @@ TEXT_MODE_RESULT_PREFIX = (
     "Write a brief warm intro only; do NOT list names, prices or links in your message.\n\n"
 )
 
+SEARCH_FIRST_NUDGE = (
+    "IMPORTANT — search now, do NOT call ask_user. The user gave enough context (who + situation). "
+    "Call kapruka_search_products for fitting items immediately. "
+    "Your reply should open with warm empathy (e.g. 'Aiyo 💔' / 'Don't panic 😭') then the cards do the rest."
+)
+
+_RECIPIENT_RE = re.compile(
+    r"\b(mom|mother|dad|father|wife|husband|girlfriend|boyfriend|partner|gf|bf|"
+    r"her|him|sister|brother|friend|boss|colleague|grandma|grandpa|hubby|babe|baby)\b",
+    re.I,
+)
+_EMOTIONAL_URGENCY_RE = re.compile(
+    r"\b(mad|angry|upset|furious|annoyed|fight|fighting|forgot|forgotten|"
+    r"sorry|apolog|make up|make it up|panic|help me|save this|mess up|messed up|"
+    r"aiyo|aiyoo|aiyyo|oh no|in trouble)\b",
+    re.I,
+)
+
+
+def _should_search_first(text: str, profile: dict | None = None) -> bool:
+    """True when ask_user would be wrong — search immediately instead."""
+    low = (text or "").lower().strip()
+    if not low:
+        return False
+
+    if _EMOTIONAL_URGENCY_RE.search(low):
+        return True
+
+    if detect_occasion(text):
+        return True
+
+    has_recipient = bool(_RECIPIENT_RE.search(low))
+    has_gift_intent = bool(re.search(
+        r"\b(gift|birthday|anniversary|flowers|cake|hamper|bouquet|present|something for)\b",
+        low,
+        re.I,
+    ))
+    if has_recipient and has_gift_intent:
+        return True
+
+    if has_recipient and profile and profile.get("default_budget"):
+        if re.search(r"\b(gift|something|help|ideas|suggest|need)\b", low, re.I):
+            return True
+
+    return False
+
 # =============================================================================
 # Synthetic tools (not part of the MCP)
 # =============================================================================
@@ -556,8 +607,9 @@ ASK_USER_TOOL = {
     "function": {
         "name": "ask_user",
         "description": (
-            "Ask 1–3 short, conversational questions when budget, delivery city, "
-            "or recipient details are missing and would materially improve the gift choice."
+            "LAST RESORT ONLY — when the request has NO recipient, NO occasion, and NO situation at all. "
+            "Do NOT use for angry partner, apology, forgot anniversary, stress/panic, grief, or get-well. "
+            "Do NOT ask budget as first question when user is emotional. Max 1 conversational question."
         ),
         "parameters": {
             "type": "object",
@@ -1685,10 +1737,6 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         _TOOLS_CACHE = mcp.list_tools()
     tools = _TOOLS_CACHE
 
-    openai_tools = mcp_tools_to_openai(tools) + CART_TOOLS
-    if allow_questions:
-        openai_tools = openai_tools + [ASK_USER_TOOL]
-
     target_lang = (language or "en").lower()
     if target_lang not in ("si", "ta"):
         target_lang = None
@@ -1705,6 +1753,14 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     access_token = context.get("access_token")
     profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
 
+    search_first = _should_search_first(user_en, profile)
+    if search_first:
+        allow_questions = False
+
+    openai_tools = mcp_tools_to_openai(tools) + CART_TOOLS
+    if allow_questions:
+        openai_tools = openai_tools + [ASK_USER_TOOL]
+
     extra_ctx = [
         playbook_message(user_en, conv),
         session_facts_message(profile),
@@ -1720,6 +1776,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         profile_message(profile),
         extra_ctx,
     )
+    if search_first:
+        messages.append({"role": "system", "content": SEARCH_FIRST_NUDGE})
 
     trace, results, cart_actions = [], [], []
     tool_names = [t.get("name") for t in tools]
@@ -1813,11 +1871,24 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 return finalize("Hi 😊 I'm your gift concierge. Who are we spoiling today?")
             return finalize(content)
 
-        for c in norm:
-            if c["name"] == "ask_user" and allow_questions:
-                questions = _normalize_questions((c.get("arguments") or {}).get("questions"))
-                if questions:
-                    return ask(questions)
+        if allow_questions:
+            for c in norm:
+                if c["name"] == "ask_user":
+                    questions = _normalize_questions((c.get("arguments") or {}).get("questions"))
+                    if questions:
+                        return ask(questions)
+
+        if not allow_questions and any(c.get("name") == "ask_user" for c in norm):
+            norm = [c for c in norm if c.get("name") != "ask_user"]
+            if not norm:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Do not ask clarifying questions. Search Kapruka now — "
+                        "flower bouquet, chocolate hamper, greeting card — then reply with empathy."
+                    ),
+                })
+                continue
 
         did_cart, text_outputs = _execute_tool_calls(
             norm,

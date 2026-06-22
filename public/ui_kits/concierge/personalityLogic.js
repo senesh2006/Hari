@@ -93,20 +93,19 @@ function computePersonality(answers) {
 }
 
 const GREETING_SNIPPETS = {
-  thoughtful_planner: "I'll help you find gifts that feel carefully chosen.",
-  last_minute_hero: "Tell me who it's for — I'll find something great, fast.",
-  practical_gifter: "I'll keep things useful and within budget.",
-  big_spender: "Let's find something memorable that really impresses.",
-  sentimental_soul: "I'll help you find something heartfelt.",
-  creative_maker: "Let's find something a little unexpected.",
+  thoughtful_planner: "let's find something that feels properly thought through.",
+  last_minute_hero: "tell me who it's for — I'll find something great, fast.",
+  practical_gifter: "we'll keep it useful and sensible.",
+  big_spender: "let's find something that really wows.",
+  sentimental_soul: "let's find something with real heart.",
+  creative_maker: "let's find something a little unexpected.",
 };
 
 function personalityGreeting(personality) {
   if (!personality) return null;
-  const label = PERSONALITY_LABELS[personality] || personality.replace(/_/g, " ");
   const snippet = GREETING_SNIPPETS[personality];
   if (!snippet) return null;
-  return `Welcome back — as a ${label}, ${snippet}`;
+  return `Hey, welcome back 😊 ${snippet.charAt(0).toUpperCase()}${snippet.slice(1)}`;
 }
 
 window.KaprukaPersonality = {
