@@ -67,6 +67,40 @@ const greetSub = () => {
   return "Good evening";
 };
 
+const normNameKey = (name) =>
+  String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/** Drop numbered/bulleted product lines when cards render the same data below. */
+const stripCatalogFromText = (text, products) => {
+  if (!text || !products?.length) return text;
+  const names = products.map((p) => normNameKey(p.name)).filter((n) => n.length >= 3);
+  if (!names.length) return text;
+  const kept = text.split("\n").filter((line) => {
+    const s = line.trim();
+    if (!s) return true;
+    const numbered = /^\d+\.\s/.test(s);
+    const bulleted = /^[-•*]\s/.test(s);
+    if (!numbered && !bulleted) return true;
+    const norm = s.toLowerCase().replace(/[*_#[\]()]/g, " ");
+    const mentions = names.some((n) => norm.includes(n));
+    const hasPrice = /(?:LKR|Rs\.?\s*\d|\(\s*LKR)/i.test(s);
+    return !(mentions && (hasPrice || numbered));
+  });
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+};
+
+const BotText = ({ text }) => {
+  if (!text) return null;
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
+    const m = part.match(/^\*\*(.+)\*\*$/);
+    if (m) return <strong key={i}>{m[1]}</strong>;
+    return part;
+  });
+};
+
 const CityPicker = window.CityPicker || function CityPickerFallback(props) {
   return (
     <input
@@ -387,10 +421,17 @@ function App({
 
       if (data.ok) {
         if (Array.isArray(data.cart_actions) && data.cart_actions.length) await applyCartActions(data.cart_actions);
-        const display = data.answer_local || data.answer || "";
         const products = Array.isArray(data.products) ? data.products.map(normProduct) : [];
         if (products.length) setLastSuggestions(data.products);
         const thought = products.length ? `Searched Kapruka · ${products.length} matches` : null;
+        let display = data.answer_local || data.answer || "";
+        if (products.length) {
+          display = stripCatalogFromText(display, products);
+          if (!display.trim()) {
+            display =
+              "I found some options that should work well — take a look below. Say a number to add one to your cart, or tell me if you'd like something different.";
+          }
+        }
         if (display || products.length) {
           setMessages((m) => [...m, { id: nid(), role: "bot", text: display, thought, products }]);
         } else {
@@ -647,7 +688,7 @@ function App({
                   </div>
                 )}
                 <Bubble role={m.role} thinking={m.thinking}>
-                  {m.text}
+                  {m.role === "bot" && m.text && !m.thinking ? <BotText text={m.text} /> : m.text}
                 </Bubble>
                 {m.products && (
                   <div className="grid" style={{ marginLeft: "2.4rem" }}>

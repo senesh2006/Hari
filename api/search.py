@@ -112,10 +112,14 @@ SYSTEM_PROMPT = (
     "reading → q='book').\n"
     "- Do NOT pass a category filter unless you got the exact category name from "
     "kapruka_list_categories — a wrong category returns zero results.\n\n"
-    "Present your suggestions clearly: when it's a package, group items by their "
-    "role with a short heading and an emoji; for each pick give the name, price, "
-    "link, and a one-line reason it fits. Keep the combined total within the "
-    "user's budget and note the rough total.\n\n"
+    "UI PRESENTATION — the app shows each product as a visual card below your "
+    "message (photo, name, price, Add to cart). Do NOT duplicate that catalogue "
+    "in your text: no numbered or bulleted lists of product names, prices, or "
+    "links, and no markdown (**bold**, [links](url)). Write a short, warm intro "
+    "(1-3 sentences) about why these picks fit; reference items by number only "
+    "when the user must choose (e.g. 'Option 2 is the most romantic'). If "
+    "relevant, mention budget totals in plain prose. For multi-part packages, "
+    "one brief sentence per role is enough — the cards carry the details.\n\n"
     "Ask before guessing, but only what is APPROPRIATE and necessary. If the "
     "user has already told you the recipient AND the occasion (e.g. 'a birthday "
     "cake for my mom'), you have enough — go straight to kapruka_search_products, "
@@ -165,6 +169,14 @@ SYSTEM_PROMPT = (
     "queries and your suggestions toward that person's gifting personality, "
     "style, typical budget, and default city — without ignoring their current "
     "request."
+)
+
+UI_PRESENTATION_PROMPT = (
+    "The user's screen renders Kapruka search hits as interactive product cards "
+    "under your reply. Never output a numbered or bulleted product catalogue in "
+    "text — no markdown formatting, no (LKR …) price lines, no kapruka.com "
+    "links. Your message should be conversational context only; the cards carry "
+    "the product details."
 )
 
 # A synthetic tool (not part of the MCP) that lets the model pause and ask the
@@ -731,6 +743,59 @@ def extract_products(results: list) -> list:
     return unique
 
 
+_CATALOG_LINE = re.compile(
+    r"^\s*(?:\d+\.|[-•*])\s+.*(?:LKR|Rs\.?\s*\d|\(\s*LKR|\bLKR\b)",
+    re.I,
+)
+_NUMBERED_PRODUCT = re.compile(r"^\s*\d+\.\s+")
+
+
+def _line_mentions_product(line: str, names: set[str]) -> bool:
+    norm = _norm_text(re.sub(r"[*_#\[\]()]", " ", line))
+    return any(n and n in norm for n in names)
+
+
+def _strip_catalog_from_answer(answer: str, products: list) -> str:
+    """Remove numbered/bulleted product catalogues the model should not repeat.
+
+    The UI renders product cards from tool results; duplicating name/price/link
+    lines in the chat bubble shows raw markdown/ASCII instead of the cards.
+    """
+    if not answer or not products:
+        return answer
+    names = {
+        _norm_text(p.get("name"))
+        for p in products
+        if p.get("name") and len(_norm_text(p.get("name"))) >= 3
+    }
+    if not names:
+        return answer
+
+    out = []
+    for line in answer.splitlines():
+        s = line.strip()
+        if not s:
+            out.append("")
+            continue
+        is_catalog = (
+            _CATALOG_LINE.match(s)
+            or (_NUMBERED_PRODUCT.match(s) and _line_mentions_product(s, names))
+            or (re.match(r"^\s*[-•*]\s+", s) and _line_mentions_product(s, names))
+        )
+        if is_catalog:
+            continue
+        out.append(line.rstrip())
+
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    return text
+
+
+_EMPTY_CATALOG_FALLBACK = (
+    "I found some options that should work well — take a look below. "
+    "Say a number to add one to your cart, or tell me if you'd like something different."
+)
+
+
 # === NVIDIA NIM plumbing =====================================================
 class NimTimeout(Exception):
     """The NIM model didn't answer in time (transient — worth degrading gracefully)."""
@@ -1087,6 +1152,7 @@ def _build_messages(
 ) -> list:
     """System prompt + language pref + user profile + cart context + recent turns."""
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
+    msgs.append({"role": "system", "content": UI_PRESENTATION_PROMPT})
     lang_msg = _language_message(language)
     if lang_msg:
         msgs.append({"role": "system", "content": lang_msg})
@@ -1228,6 +1294,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         valid_names = valid_names | {"ask_user"}
 
     def finalize(answer: str) -> dict:
+        products = extract_products(results)
+        if products:
+            answer = _strip_catalog_from_answer(answer, products)
+            if not (answer or "").strip():
+                answer = _EMPTY_CATALOG_FALLBACK
         local = _translate(answer, "en", target_lang) if (target_lang and answer) else answer
         return {
             "ok": True,
@@ -1236,7 +1307,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "answer": answer,
             "answer_local": local,
             "user_en": user_en,
-            "products": extract_products(results),
+            "products": products,
             "cart_actions": cart_actions,
             "tools_available": tool_names,
             "tool_calls": trace,
@@ -1372,8 +1443,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             chunks = []
             if text_outputs:
                 chunks.append(
-                    "Tool results — use ONLY these to recommend products "
-                    "(name, price, link, one-line reason).\n\n" + "\n\n".join(text_outputs)
+                    "Tool results — the UI shows these as product cards below your "
+                    "reply. Write a brief warm intro only; do NOT list names, prices "
+                    "or links in your message.\n\n" + "\n\n".join(text_outputs)
                 )
             if did_cart:
                 chunks.append("Cart/instructions updated as requested — confirm to the user in one short sentence.")
