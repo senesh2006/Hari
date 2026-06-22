@@ -2,7 +2,7 @@
   "functions": {
     "api/search.py": {
       "maxDuration": 60,
-      "includeFiles": ["api/personalization.py", "api/data/**", "api/__init__.py"]
+      "includeFiles": "api/**"
     },
     "api/tool.py": { "maxDuration": 30 },
     "api/check.py": { "maxDuration": 30 },
