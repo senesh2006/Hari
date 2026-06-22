@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":3,"namespace":"KaprukaDesignSystem_d6db4e","components":[{"name":"Bubble","sourcePath":"components/chat/Bubble.jsx"},{"name":"SuggestionCard","sourcePath":"components/chat/SuggestionCard.jsx"},{"name":"ProductCard","sourcePath":"components/commerce/ProductCard.jsx"},{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"ICON_NAMES","sourcePath":"components/core/Icon.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"ThemeToggle","sourcePath":"components/core/ThemeToggle.jsx"},{"name":"Loader","sourcePath":"components/feedback/Loader.jsx"},{"name":"Toast","sourcePath":"components/feedback/Toast.jsx"}],"sourceHashes":{"components/chat/Bubble.jsx":"e2c1ac955c67","components/chat/SuggestionCard.jsx":"82b787463c33","components/commerce/ProductCard.jsx":"6dd64507fc65","components/core/Badge.jsx":"b8ef78685dfd","components/core/Button.jsx":"a2162064557a","components/core/Icon.jsx":"56c86ea50fe1","components/core/IconButton.jsx":"3c42ccd8c749","components/core/ThemeToggle.jsx":"31496e537e38","components/feedback/Loader.jsx":"dc7c56f6cbfc","components/feedback/Toast.jsx":"2401f143f44f","ui_kits/concierge/ConciergeApp.jsx":"38749ce137b1"},"inlinedExternals":[],"unexposedExports":[]} */
+﻿/* @ds-bundle: {"format":3,"namespace":"KaprukaDesignSystem_d6db4e","components":[{"name":"Bubble","sourcePath":"components/chat/Bubble.jsx"},{"name":"SuggestionCard","sourcePath":"components/chat/SuggestionCard.jsx"},{"name":"ProductCard","sourcePath":"components/commerce/ProductCard.jsx"},{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"ICON_NAMES","sourcePath":"components/core/Icon.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"ThemeToggle","sourcePath":"components/core/ThemeToggle.jsx"},{"name":"Loader","sourcePath":"components/feedback/Loader.jsx"},{"name":"Toast","sourcePath":"components/feedback/Toast.jsx"}],"sourceHashes":{"components/chat/Bubble.jsx":"e2c1ac955c67","components/chat/SuggestionCard.jsx":"82b787463c33","components/commerce/ProductCard.jsx":"6dd64507fc65","components/core/Badge.jsx":"b8ef78685dfd","components/core/Button.jsx":"a2162064557a","components/core/Icon.jsx":"56c86ea50fe1","components/core/IconButton.jsx":"3c42ccd8c749","components/core/ThemeToggle.jsx":"31496e537e38","components/feedback/Loader.jsx":"dc7c56f6cbfc","components/feedback/Toast.jsx":"2401f143f44f","ui_kits/concierge/ConciergeApp.jsx":"38749ce137b1"},"inlinedExternals":[],"unexposedExports":[]} */
 
 (() => {
 
@@ -30,7 +30,7 @@ Object.assign(__ds_scope, { Badge });
 try { (() => {
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /**
- * Icon — inline Lucide icons (ISC-licensed, MIT-compatible). The product's
+ * Icon â€” inline Lucide icons (ISC-licensed, MIT-compatible). The product's
  * emoji are replaced by this single, consistent line-icon set. Renders an SVG
  * that inherits `currentColor`, so it tints to whatever text color it sits in.
  *
@@ -102,7 +102,7 @@ Object.assign(__ds_scope, { Icon, ICON_NAMES });
 try { (() => {
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /**
- * Suggestion chip — starter prompts above the composer. A colored Lucide icon
+ * Suggestion chip â€” starter prompts above the composer. A colored Lucide icon
  * tile over a short label; lifts on hover, presses with a spring. `tone` picks
  * the pastel accent for the icon tile.
  */
@@ -151,7 +151,7 @@ Object.assign(__ds_scope, { SuggestionCard });
 try { (() => {
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /**
- * Kapruka Button — friendly, pillowy, three weights.
+ * Kapruka Button â€” friendly, pillowy, three weights.
  *  - "primary": pastel-coral fill, deep warm ink, soft lift on hover
  *  - "soft": neutral surface secondary
  *  - "ghost": quiet text action
@@ -196,7 +196,7 @@ Object.assign(__ds_scope, { Button });
 // components/commerce/ProductCard.jsx
 try { (() => {
 /**
- * Gift product card — image with a heart wishlist toggle, name, price in the
+ * Gift product card â€” image with a heart wishlist toggle, name, price in the
  * accent ink, a 2-line blurb, and a soft "Add to cart" action. Lifts on hover
  * while the image zooms.
  */
@@ -333,7 +333,7 @@ Object.assign(__ds_scope, { IconButton });
 // components/core/ThemeToggle.jsx
 try { (() => {
 /**
- * ThemeToggle — flips the whole system between dark (default) and light by
+ * ThemeToggle â€” flips the whole system between dark (default) and light by
  * setting `data-theme` on <html>, and remembers the choice in localStorage.
  * Sun in dark mode (tap for light), moon in light mode.
  */
@@ -386,7 +386,7 @@ Object.assign(__ds_scope, { ThemeToggle });
 // components/feedback/Loader.jsx
 try { (() => {
 /**
- * Loader — the system's loading + "AI is working" animations.
+ * Loader â€” the system's loading + "AI is working" animations.
  *  - "dots":     three bouncing coral dots (typing / sending)
  *  - "spinner":  a small spinning ring (button / inline waits)
  *  - "thinking": sparkle + shimmering gradient label (assistant is reasoning)
@@ -432,9 +432,9 @@ Object.assign(__ds_scope, { Loader });
 try { (() => {
 /**
  * Chat message. Bot replies render as plain text beside a soft gradient
- * avatar (a leaf — the Kapruka mark); user messages are a right-aligned
+ * avatar (a leaf â€” the Kapruka mark); user messages are a right-aligned
  * pill bubble. Set `thinking` for the AI loading state, or `thought` for the
- * "Searched Kapruka · N matches" meta line. `thinking` floats + glows the
+ * "Searched Kapruka Â· N matches" meta line. `thinking` floats + glows the
  * avatar via the .k-avatar--thinking animation.
  */
 function Bubble({
@@ -518,7 +518,7 @@ Object.assign(__ds_scope, { Bubble });
 
 // components/feedback/Toast.jsx
 try { (() => {
-/** Transient confirmation toast — icon chip + message. Springs in on mount. */
+/** Transient confirmation toast â€” icon chip + message. Springs in on mount. */
 function Toast({
   icon = "check",
   children,
@@ -537,359 +537,6 @@ function Toast({
 }
 Object.assign(__ds_scope, { Toast });
 })(); } catch (e) { __ds_ns.__errors.push({ path: "components/feedback/Toast.jsx", error: String((e && e.message) || e) }); }
-
-// ui_kits/concierge/ConciergeApp.jsx
-try { (() => {
-function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
-/* Concierge UI kit  (v2) — friendly soft pastel recreation of the Kapruka
-   gift assistant. Composes the design-system primitives over kit.css.
-   Lucide icons (no emoji), light/dark theme toggle, and lots of smooth motion:
-   staggered card entrances, AI "thinking" loaders, button & badge animations,
-   a breathing mic button. Fake data only. */
-const {
-  useState,
-  useRef,
-  useEffect
-} = React;
-const {
-  Button,
-  IconButton,
-  Badge,
-  Bubble,
-  SuggestionCard,
-  ProductCard,
-  Toast,
-  Loader,
-  Icon,
-  ThemeToggle
-} = window.KaprukaDesignSystem_d6db4e;
-
-/* ---- Canned concierge knowledge (no backend) ---- */
-const CHIPS = [{
-  icon: "cake",
-  tone: "blush",
-  tx: "Birthday gift for mom",
-  prompt: "Birthday gift for mom under Rs 5000"
-}, {
-  icon: "flower",
-  tone: "mint",
-  tx: "Anniversary flowers",
-  prompt: "Anniversary flowers delivered to Colombo"
-}, {
-  icon: "heart-pulse",
-  tone: "lilac",
-  tx: "Get-well hamper",
-  prompt: "Get-well hamper for a friend"
-}, {
-  icon: "gift",
-  tone: "butter",
-  tx: "Under Rs 3000",
-  prompt: "A nice gift and a card under Rs 3000"
-}];
-const CATALOG = [{
-  name: "Birthday Chocolate Hamper",
-  price: "Rs 4,500",
-  description: "Assorted pralines & truffles in a keepsake box.",
-  image: "https://images.unsplash.com/photo-1549007994-cb92caebd54b?w=400&q=70"
-}, {
-  name: "Pastel Rose Bouquet",
-  price: "Rs 3,900",
-  description: "A dozen soft-pink roses, hand-tied with ribbon.",
-  image: "https://images.unsplash.com/photo-1561181286-d3fee7d55364?w=400&q=70"
-}, {
-  name: "Spa Pamper Basket",
-  price: "Rs 4,800",
-  description: "Candles, bath salts & botanical soaps to unwind.",
-  image: "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=400&q=70"
-}];
-const REPLY = "Lovely choice! Here are a few thoughtful options I'd recommend — tap “Add to cart”, or just tell me to add one and I'll handle it.";
-const GREETING = "Hi there! Tell me who you're shopping for and the occasion — a birthday, an anniversary, a get-well basket, anything at all. Tap the mic to talk, or type below and I'll happily add things to your cart.";
-let _id = 1;
-const nid = () => _id++;
-const rupees = cart => cart.reduce((s, c) => s + parseInt(c.price.replace(/[^\d]/g, ""), 10) * c.qty, 0);
-function App() {
-  const [messages, setMessages] = useState([{
-    id: nid(),
-    role: "bot",
-    text: GREETING
-  }]);
-  const [query, setQuery] = useState("");
-  const [cart, setCart] = useState([]);
-  const [fav, setFav] = useState({});
-  const [cartOpen, setCartOpen] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [status, setStatus] = useState("Tap the mic to talk, or type below");
-  const [toasts, setToasts] = useState([]);
-  const [bump, setBump] = useState(false);
-  const feedRef = useRef(null);
-  const started = messages.some(m => m.role === "user");
-  const cartCount = cart.reduce((n, c) => n + c.qty, 0);
-  useEffect(() => {
-    const el = feedRef.current;
-    if (el) el.parentElement.scrollTop = el.parentElement.scrollHeight;
-  }, [messages]);
-  const toast = (msg, icon = "check") => {
-    const id = nid();
-    setToasts(t => [...t, {
-      id,
-      msg,
-      icon
-    }]);
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 2400);
-  };
-  const addToCart = p => {
-    setCart(prev => {
-      const ex = prev.find(c => c.name === p.name);
-      if (ex) return prev.map(c => c.name === p.name ? {
-        ...c,
-        qty: c.qty + 1
-      } : c);
-      return [...prev, {
-        ...p,
-        qty: 1
-      }];
-    });
-    setBump(true);
-    setTimeout(() => setBump(false), 260);
-    toast(`Added “${p.name}”`, "shopping-cart");
-  };
-  const setQty = (name, d) => setCart(prev => prev.map(c => c.name === name ? {
-    ...c,
-    qty: c.qty + d
-  } : c).filter(c => c.qty > 0));
-  const toggleFav = name => {
-    setFav(f => ({
-      ...f,
-      [name]: !f[name]
-    }));
-    if (!fav[name]) toast("Saved to wishlist", "heart");
-  };
-  const send = text => {
-    text = (text || "").trim();
-    if (!text) return;
-    setQuery("");
-    setListening(false);
-    setMessages(m => [...m, {
-      id: nid(),
-      role: "user",
-      text
-    }]);
-    setStatus("Kapruka is thinking…");
-    const tid = nid();
-    setMessages(m => [...m, {
-      id: tid,
-      role: "bot",
-      thinking: true
-    }]);
-    setTimeout(() => {
-      const picks = CATALOG.slice(0, 3);
-      setMessages(m => m.filter(x => x.id !== tid).concat({
-        id: nid(),
-        role: "bot",
-        text: REPLY,
-        thought: `Searched Kapruka · ${picks.length} matches · 2s`,
-        products: picks
-      }));
-      setStatus("Tap the mic to talk, or type below");
-    }, 1500);
-  };
-  const micClick = () => query.trim() ? send(query) : setListening(v => !v);
-  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("header", {
-    className: "topbar"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "inner"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "greet"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "brandmark"
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "leaf",
-    size: 20
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "greet-text"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "greet-sub"
-  }, "Good evening"), /*#__PURE__*/React.createElement("span", {
-    className: "greet-title"
-  }, "What can I find for you?"))), /*#__PURE__*/React.createElement("div", {
-    className: "top-actions"
-  }, /*#__PURE__*/React.createElement("select", {
-    className: "langsel",
-    defaultValue: "en",
-    "aria-label": "Language"
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "en"
-  }, "EN"), /*#__PURE__*/React.createElement("option", {
-    value: "si"
-  }, "\u0DC3\u0DD2\u0D82"), /*#__PURE__*/React.createElement("option", {
-    value: "ta"
-  }, "\u0BA4\u0BAE\u0BBF\u0BB4\u0BCD")), /*#__PURE__*/React.createElement(ThemeToggle, null), /*#__PURE__*/React.createElement(IconButton, {
-    icon: "volume-2",
-    title: "Read replies aloud"
-  }), /*#__PURE__*/React.createElement(IconButton, {
-    icon: "shopping-cart",
-    title: "View cart",
-    badge: cartCount,
-    onClick: () => setCartOpen(true),
-    style: bump ? {
-      transform: "scale(1.08)"
-    } : undefined
-  })))), /*#__PURE__*/React.createElement("main", null, /*#__PURE__*/React.createElement("div", {
-    className: "thread"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "feed",
-    ref: feedRef
-  }, messages.map(m => /*#__PURE__*/React.createElement("div", {
-    className: "msg-in",
-    key: m.id,
-    style: {
-      display: "flex",
-      flexDirection: "column"
-    }
-  }, /*#__PURE__*/React.createElement(Bubble, {
-    role: m.role,
-    thought: m.thought,
-    thinking: m.thinking
-  }, m.text), m.products && /*#__PURE__*/React.createElement("div", {
-    className: "grid",
-    style: {
-      marginLeft: "2.4rem"
-    }
-  }, m.products.map((p, i) => /*#__PURE__*/React.createElement("div", {
-    className: "k-rise",
-    key: i,
-    style: {
-      animationDelay: `${Math.min(i, 8) * 70}ms`
-    }
-  }, /*#__PURE__*/React.createElement(ProductCard, _extends({}, p, {
-    favorite: !!fav[p.name],
-    onFavorite: () => toggleFav(p.name),
-    onAdd: () => addToCart(p)
-  })))))))))), /*#__PURE__*/React.createElement("footer", {
-    className: "composer"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "composer-inner"
-  }, /*#__PURE__*/React.createElement("p", {
-    className: "status"
-  }, listening ? "Listening…" : status), !started && /*#__PURE__*/React.createElement("div", {
-    className: "cards"
-  }, CHIPS.map(c => /*#__PURE__*/React.createElement(SuggestionCard, {
-    key: c.prompt,
-    icon: c.icon,
-    tone: c.tone,
-    onClick: () => send(c.prompt)
-  }, c.tx))), /*#__PURE__*/React.createElement("form", {
-    className: "searchbar",
-    onSubmit: e => {
-      e.preventDefault();
-      send(query);
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    value: query,
-    onChange: e => setQuery(e.target.value),
-    type: "text",
-    autoComplete: "off",
-    placeholder: "Tell Kapruka what you're looking for\u2026"
-  }), /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    className: "mic" + (listening ? " mic--listening" : ""),
-    "aria-label": query.trim() ? "Send" : "Tap to talk",
-    onClick: micClick
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: query.trim() ? "send" : "mic",
-    size: 20
-  }))))), /*#__PURE__*/React.createElement("div", {
-    className: "scrim" + (cartOpen ? " open" : ""),
-    onClick: () => setCartOpen(false)
-  }), /*#__PURE__*/React.createElement("aside", {
-    className: "drawer" + (cartOpen ? " open" : ""),
-    "aria-label": "Cart"
-  }, /*#__PURE__*/React.createElement("header", null, /*#__PURE__*/React.createElement(Icon, {
-    name: "shopping-cart",
-    size: 20
-  }), /*#__PURE__*/React.createElement("h3", null, "Your cart"), /*#__PURE__*/React.createElement(IconButton, {
-    icon: "x",
-    title: "Close",
-    style: {
-      marginLeft: "auto"
-    },
-    onClick: () => setCartOpen(false)
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "body"
-  }, cart.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    className: "empty"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "ic"
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "gift",
-    size: 40,
-    strokeWidth: 1.5
-  })), "Your cart is empty.", /*#__PURE__*/React.createElement("br", null), "Add items from the suggestions, or just ask me to.") : cart.map(c => /*#__PURE__*/React.createElement("div", {
-    className: "citem",
-    key: c.name
-  }, c.image ? /*#__PURE__*/React.createElement("img", {
-    className: "ci-img",
-    src: c.image,
-    alt: ""
-  }) : /*#__PURE__*/React.createElement("div", {
-    className: "ci-noimg"
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "gift",
-    size: 20
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "ci-main"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ci-name"
-  }, c.name), /*#__PURE__*/React.createElement("div", {
-    className: "ci-price"
-  }, c.price)), /*#__PURE__*/React.createElement("div", {
-    className: "qty"
-  }, /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    "aria-label": "Decrease",
-    onClick: () => setQty(c.name, -1)
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "minus",
-    size: 14
-  })), /*#__PURE__*/React.createElement("span", null, c.qty), /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    "aria-label": "Increase",
-    onClick: () => setQty(c.name, 1)
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "plus",
-    size: 14
-  }))), /*#__PURE__*/React.createElement("button", {
-    type: "button",
-    className: "ci-rm",
-    title: "Remove",
-    onClick: () => setQty(c.name, -c.qty)
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "trash-2",
-    size: 16
-  }))))), /*#__PURE__*/React.createElement("div", {
-    className: "foot"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "totrow"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "lbl"
-  }, "Estimated total"), /*#__PURE__*/React.createElement("span", {
-    className: "val"
-  }, cart.length ? `Rs ${rupees(cart).toLocaleString()}` : "Rs 0")), /*#__PURE__*/React.createElement(Button, {
-    variant: "primary",
-    full: true,
-    iconRight: "arrow-right",
-    disabled: !cart.length,
-    onClick: () => cart.length && toast("Heading to checkout…", "check")
-  }, "Proceed to checkout"))), /*#__PURE__*/React.createElement("div", {
-    className: "toasts",
-    "aria-live": "polite"
-  }, toasts.map(t => /*#__PURE__*/React.createElement(Toast, {
-    key: t.id,
-    icon: t.icon
-  }, t.msg))));
-}
-ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
-})(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/concierge/ConciergeApp.jsx", error: String((e && e.message) || e) }); }
 
 __ds_ns.Bubble = __ds_scope.Bubble;
 

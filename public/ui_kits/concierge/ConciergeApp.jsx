@@ -228,7 +228,6 @@ function App({
   const [currentLang, setCurrentLang] = useState("en");
   const [ttsOn, setTtsOn] = useState(false);
   const [assemblyAi, setAssemblyAi] = useState(false);
-  const [assemblyMicBroken, setAssemblyMicBroken] = useState(false);
   const [assemblyVoice, setAssemblyVoice] = useState("ivy");
   const [budget, setBudget] = useState(null);
   const [instructions, setInstructions] = useState([]);
@@ -246,9 +245,6 @@ function App({
   const currentAudioRef = useRef(null);
   const guestPromptedRef = useRef(false);
   const persistTimerRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const mediaStreamRef = useRef(null);
-  const mediaChunksRef = useRef([]);
 
   const defaultCity = profile?.default_city || "";
   const displayName =
@@ -556,83 +552,12 @@ function App({
     setStatus("Tap the mic to talk, or type below");
   };
 
-  const stopAssemblyMic = () => {
-    const mr = mediaRecorderRef.current;
-    if (mr && mr.state === "recording") mr.stop();
-    mediaRecorderRef.current = null;
-  };
-
-  const startAssemblyMic = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      toast("Microphone not available", "mic");
-      return;
-    }
-    stopSpeaking();
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
-      const mr = new MediaRecorder(stream, { mimeType: mime });
-      mediaChunksRef.current = [];
-      mr.ondataavailable = (e) => {
-        if (e.data?.size) mediaChunksRef.current.push(e.data);
-      };
-      mr.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
-        setListening(false);
-        const blob = new Blob(mediaChunksRef.current, { type: mime });
-        if (!blob.size) {
-          setStatus("Tap the mic to talk, or type below");
-          return;
-        }
-        setStatus("Transcribing…");
-        try {
-          const res = await fetch("/api/transcribe", {
-            method: "POST",
-            headers: { "Content-Type": blob.type || "audio/webm" },
-            body: blob,
-          });
-          const data = await res.json().catch(() => ({}));
-          if (data.ok && data.text) {
-            send(data.text.trim());
-          } else {
-            toast(data.error || "Couldn't transcribe — tap mic to try browser voice", "mic");
-            setAssemblyMicBroken(true);
-          }
-        } catch (_) {
-          toast("Transcription failed — tap mic to try browser voice", "mic");
-          setAssemblyMicBroken(true);
-        }
-        setStatus("Tap the mic to talk, or type below");
-      };
-      mediaRecorderRef.current = mr;
-      mr.start();
-      setListening(true);
-      setStatus("Listening… speak now");
-    } catch (_) {
-      toast("Microphone permission denied", "mic");
-      setListening(false);
-    }
-  };
-
   const micClick = () => {
     if (query.trim()) { send(query); return; }
-    if (assemblyAi && !assemblyMicBroken && currentLang === "en" && navigator.mediaDevices?.getUserMedia) {
-      if (listening && mediaRecorderRef.current?.state === "recording") {
-        stopAssemblyMic();
-      } else {
-        stopAssemblyMic();
-        startAssemblyMic();
-      }
-      return;
-    }
     const recog = recogRef.current;
     if (!recog) { toast("Voice input isn't supported in this browser", "mic"); return; }
     if (listening) recog.stop();
-    else { stopSpeaking(); stopAssemblyMic(); try { recog.start(); } catch (_) {} }
+    else { stopSpeaking(); try { recog.start(); } catch (_) {} }
   };
 
   const setQty = (name, d) =>
