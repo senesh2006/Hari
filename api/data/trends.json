@@ -1,0 +1,23 @@
+{
+  "_comment": "Manually curated trend cues for the gift concierge. Refresh seasonally. Used only as a soft bias when the user has not specified style/colour or an exact product; never overrides an explicit request.",
+  "bestsellers": [
+    "flower bouquets",
+    "chocolate hampers",
+    "personalized gifts",
+    "spa & wellness hampers",
+    "cakes",
+    "indoor plants",
+    "fruit baskets",
+    "scented candles"
+  ],
+  "style_trends": {
+    "dress": ["pastel midi dresses", "floral co-ord sets", "linen slip dresses"],
+    "saree": ["organza sarees", "pastel shades", "minimalist zari borders"],
+    "outfit": ["co-ord sets", "earth-tone linens", "smart-casual layers"],
+    "jewellery": ["minimalist gold layering", "pearl drops", "personalized name pendants"],
+    "watch": ["slim minimalist dials", "earth-tone leather straps"],
+    "perfume": ["warm vanilla & oud", "fresh citrus florals"],
+    "handbag": ["structured mini totes", "neutral earth tones"],
+    "shoes": ["clean white sneakers", "block-heel sandals"]
+  }
+}

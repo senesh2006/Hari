@@ -92,6 +92,7 @@ LANG_NAMES = {"en": "English", "si": "Sinhala", "ta": "Tamil"}
 
 _OCCASIONS_CACHE: dict | None = None
 _FACTS_CACHE: dict | None = None
+_TRENDS_CACHE: dict | None = None
 
 
 def _load_json_data(name: str) -> dict:
@@ -115,6 +116,13 @@ def get_kapruka_facts() -> dict:
     if _FACTS_CACHE is None:
         _FACTS_CACHE = _load_json_data("kapruka_facts.json")
     return _FACTS_CACHE
+
+
+def get_trends() -> dict:
+    global _TRENDS_CACHE
+    if _TRENDS_CACHE is None:
+        _TRENDS_CACHE = _load_json_data("trends.json")
+    return _TRENDS_CACHE
 
 
 def detect_occasion(text: str) -> str | None:
@@ -310,6 +318,43 @@ def order_history_message(orders: list | None) -> str | None:
     return "\n".join(lines)
 
 
+def trends_message(user_text: str, recipients: list | None = None, orders: list | None = None) -> str | None:
+    """Soft trend bias: lean toward what's popular / in-style / their own patterns,
+    but only when the user hasn't pinned down specifics. Never overrides a clear request."""
+    trends = get_trends()
+    if not trends:
+        return None
+    lines = [
+        "TRENDS TO CONSIDER (soft bias only — apply when the user is open or vague; "
+        "NEVER override what they explicitly asked for, and don't skip a clarifying question for it):"
+    ]
+    bestsellers = trends.get("bestsellers") or []
+    if bestsellers:
+        lines.append(
+            f"- Currently popular gifts: {', '.join(bestsellers[:8])}. "
+            "When unsure, favour proven, well-loved picks over obscure ones."
+        )
+    low = (user_text or "").lower()
+    styles = trends.get("style_trends") or {}
+    matched = []
+    for item, cues in styles.items():
+        if isinstance(cues, list) and cues and re.search(rf"\b{re.escape(item)}s?\b", low):
+            matched.append(f"{item} → {', '.join(cues[:3])}")
+    if matched:
+        lines.append(
+            "- In style right now (use to enrich a fashion search only if they gave no colour/style of their own): "
+            + "; ".join(matched[:4])
+        )
+    if recipients or orders:
+        lines.append(
+            "- Personal trend: if their saved recipients, wishlist, or recent orders show a repeated theme, "
+            "lean into that pattern rather than a generic pick."
+        )
+    if len(lines) <= 1:
+        return None
+    return "\n".join(lines)
+
+
 def upcoming_occasions_message(recipients: list | None, within_days: int = 21) -> str | None:
     if not recipients:
         return None
@@ -485,6 +530,9 @@ GIFT REASONING
 - Do NOT search the user's literal words. Understand recipient, occasion, and the feeling they want.
 - Decide what that moment calls for — sometimes one item, sometimes a thoughtful package.
 - If they want one specific thing, find good options for it; don't pad unnecessarily.
+- Consider what's trending (see TRENDS TO CONSIDER): lean toward currently popular/bestselling gifts and \
+in-style colours/cuts when the user is open, and notice the recipient's own repeat patterns from their \
+orders/wishlist — but never override an explicit request or skip a needed clarifying question for it.
 
 SEARCH RULES (mandatory)
 - Turn each idea into a short, specific product noun and run a SEPARATE kapruka_search_products call \
@@ -2122,6 +2170,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         recipients_message(recipients),
         wishlist_message(wishlist),
         order_history_message(orders),
+        trends_message(user_en, recipients, orders),
         upcoming_occasions_message(recipients),
     ]
     messages = _build_messages(
