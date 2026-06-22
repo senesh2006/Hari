@@ -591,6 +591,15 @@ def extract_session_facts(
         if snippet and snippet not in bullets:
             bullets.append(snippet)
     facts["bullets"] = bullets[-8:]
+    # Persist the richer recipient profile (age/colour/style/tastes) so the gift
+    # brief can recall it in a future chat, not just within this session.
+    mem = _extract_session_memory(conversation, last_user)
+    if mem.get("recipient") or _session_has_specifics(mem):
+        rp = dict(facts.get("recipient_profile") or {})
+        for key in ("recipient", "age", "color", "style", "taste"):
+            if mem.get(key):
+                rp[key] = mem[key]
+        facts["recipient_profile"] = rp
     facts["updated_at"] = datetime.utcnow().isoformat() + "Z"
     return facts
 
@@ -826,8 +835,9 @@ _PRODUCT_SPECIFIC_RE = re.compile(
 )
 
 _RECIPIENT_RE = re.compile(
-    r"\b(mom|mother|dad|father|wife|husband|girlfriend|boyfriend|partner|gf|bf|"
-    r"her|him|sister|brother|friend|boss|colleague|grandma|grandpa|hubby|babe|baby)\b",
+    r"\b(mom|mother|mum|mummy|dad|father|wife|husband|girlfriend|boyfriend|partner|gf|bf|"
+    r"fiance|fiancee|her|him|sister|brother|daughter|son|friend|bestie|boss|colleague|"
+    r"grandma|grandpa|granny|aunt|uncle|cousin|hubby|babe|baby)\b",
     re.I,
 )
 _EMOTIONAL_URGENCY_RE = re.compile(
@@ -1012,12 +1022,14 @@ def _vague_product_is_specified(text: str) -> bool:
 # re-asking (e.g. after "my gf, casual, white, ~23", "also a watch" must search).
 _COLOR_WORDS_RE = re.compile(
     r"\b(red|blue|black|white|pink|green|gold|silver|navy|maroon|beige|purple|"
-    r"yellow|orange|grey|gray|cream|brown|pastel|floral)\b",
+    r"yellow|orange|grey|gray|cream|brown|teal|turquoise|lavender|peach|coral|"
+    r"burgundy|olive|mustard|pastel|floral|multicolou?r)\b",
     re.I,
 )
 _STYLE_WORDS_RE = re.compile(
     r"\b(casual|party|formal|evening|work|office|daytime|sporty|elegant|trendy|"
-    r"minimal|minimalist|classic|chic|cute|simple|fancy|smart)\b",
+    r"minimal|minimalist|classic|chic|cute|simple|fancy|smart|vintage|boho|"
+    r"modern|traditional|ethnic|streetwear|girly|edgy|sophisticated)\b",
     re.I,
 )
 _AGE_RE = re.compile(
@@ -1026,6 +1038,38 @@ _AGE_RE = re.compile(
     re.I,
 )
 _FOLLOWUP_ADD_RE = re.compile(r"\b(also|too|as well|and a|another|plus a|add a|need a)\b", re.I)
+
+_TASTE_VERB_WORDS = frozenset(
+    {"likes", "loves", "enjoys", "into", "favourite", "favorite", "fan of", "prefers"}
+)
+# Grab the interest phrase that follows a "likes/loves/into …" verb, so we catch
+# tastes the fixed vocabulary misses ("loves cricket", "into hiking").
+_INTEREST_VERB_RE = re.compile(
+    r"\b(?:likes?|loves?|loving|enjoys?|enjoy|into|prefers?|prefer|fan of|"
+    r"favou?rite|obsessed with|crazy about|keen on)\s+([a-z][a-z\-& ]{1,40})",
+    re.I,
+)
+_INTEREST_STOP = frozenset({
+    "a", "an", "the", "to", "and", "but", "so", "it", "its", "her", "him", "his", "she",
+    "he", "they", "them", "really", "very", "always", "just", "more", "most", "that",
+    "this", "when", "while", "because", "for", "with", "stuff", "things", "thing",
+    "something", "anything", "everything", "lot", "lots", "kind", "sort", "type", "bit",
+    "colour", "color", "size", "white", "black", "blue", "red", "pink", "green",
+    "casual", "formal", "party", "dress", "dresses", "watch", "shoes", "gift",
+})
+
+
+def _interest_phrases(blob: str) -> list[str]:
+    out: list[str] = []
+    for m in _INTEREST_VERB_RE.finditer(blob or ""):
+        for part in re.split(r"\band\b|,|&|/", m.group(1).lower()):
+            words = [w for w in re.findall(r"[a-z][a-z\-]+", part) if w not in _INTEREST_STOP]
+            if not words:
+                continue
+            cand = " ".join(words[:2]).strip()
+            if len(cand) >= 3 and cand not in out:
+                out.append(cand)
+    return out[:6]
 
 
 def _extract_session_memory(conversation: list | None, current_text: str | None = None) -> dict:
@@ -1041,9 +1085,20 @@ def _extract_session_memory(conversation: list | None, current_text: str | None 
     blob = " \n ".join(texts)
     low = blob.lower()
     mem: dict = {}
-    rec = _RECIPIENT_RE.search(low)
-    if rec:
-        mem["recipient"] = rec.group(0)
+    # Active recipient = most recently mentioned, preferring a specific role over
+    # a bare pronoun; remember earlier ones so we don't conflate two people.
+    recs = [m.group(0).lower() for m in _RECIPIENT_RE.finditer(low)]
+    if recs:
+        pronouns = {"her", "him", "babe", "baby"}
+        specifics = [r for r in recs if r not in pronouns]
+        mem["recipient"] = specifics[-1] if specifics else recs[-1]
+        uniq: list[str] = []
+        for r in (specifics or recs):
+            if r not in uniq:
+                uniq.append(r)
+        others = [r for r in uniq if r != mem["recipient"]]
+        if others:
+            mem["other_recipients"] = others[-3:]
     colors = sorted({c.lower() for c in _COLOR_WORDS_RE.findall(blob)})
     if colors:
         mem["color"] = colors[:4]
@@ -1055,16 +1110,14 @@ def _extract_session_memory(conversation: list | None, current_text: str | None 
         if g and 1 <= int(g) <= 99:
             mem["age"] = g
             break
-    # _TASTE_HINTS_RE doubles as a verb detector; keep only real interest nouns.
-    tastes = sorted({t.lower() for t in _TASTE_HINTS_RE.findall(low)} - _TASTE_VERB_WORDS)
-    if tastes:
-        mem["taste"] = tastes[:5]
+    # _TASTE_HINTS_RE doubles as a verb detector; keep only real interest nouns,
+    # then add free-text interests captured after a "likes/loves/into" verb.
+    tastes = {t.lower() for t in _TASTE_HINTS_RE.findall(low)} - _TASTE_VERB_WORDS
+    ordered = sorted(tastes) + [p for p in _interest_phrases(blob) if p not in tastes]
+    if ordered:
+        mem["taste"] = ordered[:6]
     return mem
 
-
-_TASTE_VERB_WORDS = frozenset(
-    {"likes", "loves", "enjoys", "into", "favourite", "favorite", "fan of", "prefers"}
-)
 
 
 def _session_has_specifics(mem: dict) -> bool:
@@ -1116,9 +1169,11 @@ def _recipient_label(recipient: str | None) -> str:
 def _recipient_pronoun(recipient: str | None) -> tuple[str, str]:
     """Returns (subject, object) pronouns for natural-language briefs."""
     r = (recipient or "").lower()
-    if r in {"gf", "girlfriend", "wife", "mom", "mother", "mum", "sister", "grandma", "her"}:
+    if r in {"gf", "girlfriend", "wife", "mom", "mother", "mum", "mummy", "sister", "grandma",
+             "granny", "daughter", "aunt", "fiancee", "her"}:
         return ("she", "her")
-    if r in {"bf", "boyfriend", "husband", "hubby", "dad", "father", "brother", "grandpa", "him"}:
+    if r in {"bf", "boyfriend", "husband", "hubby", "dad", "father", "brother", "grandpa",
+             "son", "uncle", "fiance", "him"}:
         return ("he", "him")
     return ("they", "them")
 
@@ -1139,6 +1194,13 @@ def _items_discussed(conversation: list | None, current_text: str | None = None)
     return found[:6]
 
 
+def _persisted_recipient_profile(profile: dict | None) -> dict:
+    """The recipient profile saved across sessions (set by extract_session_facts)."""
+    facts = (profile or {}).get("session_facts") or {}
+    rp = facts.get("recipient_profile") if isinstance(facts, dict) else None
+    return rp if isinstance(rp, dict) else {}
+
+
 def conversation_memory_message(
     conversation: list | None,
     current_text: str | None = None,
@@ -1148,16 +1210,24 @@ def conversation_memory_message(
     the model understands the recipient, their preferences, and the factors that
     should shape every pick — instead of a terse fact list it might ignore."""
     mem = _extract_session_memory(conversation, current_text)
+    # Cross-session recall: fill gaps this chat hasn't re-established from the
+    # recipient profile saved for signed-in users.
+    persisted = _persisted_recipient_profile(profile)
+    recalled = not mem.get("recipient") and not _session_has_specifics(mem)
+    for key in ("recipient", "age", "color", "style", "taste"):
+        if not mem.get(key) and persisted.get(key):
+            mem[key] = persisted[key]
     if not mem.get("recipient") and not _session_has_specifics(mem):
         return None
 
     subj, obj = _recipient_pronoun(mem.get("recipient"))
     sentences: list[str] = []
+    lead = "From what they've told you before, you" if recalled else "You"
 
     # Who we're shopping for.
     if mem.get("recipient"):
         age = f", who is around {mem['age']} years old" if mem.get("age") else ""
-        sentences.append(f"You are helping the user pick a gift for {_recipient_label(mem.get('recipient'))}{age}.")
+        sentences.append(f"{lead} are helping the user pick a gift for {_recipient_label(mem.get('recipient'))}{age}.")
     elif mem.get("age"):
         sentences.append(f"The person we're shopping for is around {mem['age']} years old.")
 
@@ -1193,6 +1263,11 @@ def conversation_memory_message(
     items = _items_discussed(conversation, current_text)
     if items:
         sentences.append(f"So far in this chat you've already looked at {', '.join(items)} for {obj}.")
+    if mem.get("other_recipients"):
+        sentences.append(
+            f"Heads up — this chat also involves {', '.join(mem['other_recipients'])}; keep each "
+            "person's gifts separate and apply the right preferences to each."
+        )
 
     # How to use the brief.
     sentences.append(
