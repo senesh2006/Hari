@@ -604,6 +604,17 @@ _SEARCH_READY_RE = re.compile(
     r"for my|for her|for him|for\s+(mom|dad|wife|husband|gf|bf|friend|sister|brother))\b",
     re.I,
 )
+# Concrete details that make a vague product (dress, saree, watch...) ready to
+# search. Unlike _SEARCH_READY_RE this deliberately excludes "for my/for her"
+# recipient phrases — knowing WHO it's for is not the same as knowing WHAT to
+# pick (style, size, colour, occasion).
+_PRODUCT_SPECIFIC_RE = re.compile(
+    r"\b(party|formal|casual|evening|work|office|daytime|"
+    r"size\s*\d|size\s*(xs|s|m|l|xl|xxl)|\b(xs|s|m|l|xl|xxl)\b|"
+    r"red|blue|black|white|pink|green|gold|silver|navy|maroon|beige|"
+    r"silk|cotton|linen|chiffon|denim|lace|floral|striped|pastel)\b",
+    re.I,
+)
 
 _RECIPIENT_RE = re.compile(
     r"\b(mom|mother|dad|father|wife|husband|girlfriend|boyfriend|partner|gf|bf|"
@@ -776,6 +787,17 @@ def _is_clarification_follow_up(conversation: list | None, last_user: str) -> bo
     return False
 
 
+def _vague_product_is_specified(text: str) -> bool:
+    """A vague product (dress, saree, watch...) is only ready to search once the
+    user gives concrete details — an occasion, style/vibe, size, colour, or
+    fabric. Naming the recipient alone does not count."""
+    if _PRODUCT_SPECIFIC_RE.search(text or ""):
+        return True
+    if detect_occasion(text):
+        return True
+    return False
+
+
 def _needs_clarification_question(
     text: str,
     conversation: list | None = None,
@@ -788,15 +810,19 @@ def _needs_clarification_question(
         return False
     if _is_repair_situation(text):
         return False
-    if _has_search_ready_context(text):
-        return False
     has_brainstorm = bool(_BRAINSTORM_RE.search(text))
     has_vague_product = bool(_VAGUE_PRODUCT_RE.search(text))
-    if has_brainstorm and (has_vague_product or not _RECIPIENT_RE.search(low)):
+    has_recipient = bool(_RECIPIENT_RE.search(low))
+    # A vague product needs BOTH who it's for AND real specifics before we
+    # search. "my gf wants a dress" names the recipient but tells us nothing
+    # about her style, size, colour or the occasion — so ask first.
+    if has_vague_product and not (has_recipient and _vague_product_is_specified(text)):
         return True
-    if has_vague_product and not _RECIPIENT_RE.search(low):
+    if _has_search_ready_context(text):
+        return False
+    if has_brainstorm and not has_recipient:
         return True
-    if re.search(r"\b(gift|something|ideas?|suggest)\b", low) and not _RECIPIENT_RE.search(low):
+    if re.search(r"\b(gift|something|ideas?|suggest)\b", low) and not has_recipient:
         if not detect_occasion(text):
             return True
     return False
@@ -804,17 +830,31 @@ def _needs_clarification_question(
 
 def _clarification_ask(text: str) -> tuple[str, str]:
     low = (text or "").lower()
+    has_recipient = bool(_RECIPIENT_RE.search(low))
     intro = "Good question — happy to help you figure that out 😊"
-    if re.search(r"\b(dress|dresses|saree|sari|outfit|clothing|clothes)\b", low):
-        question = (
-            "Who's the dress for, and what's the vibe — casual, party, or formal? "
-            "Any size or colour in mind?"
-        )
+    if re.search(r"\b(dress|dresses|saree|sari|outfit|clothing|clothes|skirt|shirt|suit)\b", low):
+        if has_recipient:
+            question = (
+                "Love that 😊 So I don't pick blind — what's her style usually, "
+                "and is this for something casual, a party, or more formal? "
+                "Any colours, a size, or even her age range that'd help?"
+            )
+        else:
+            question = (
+                "Who's the dress for, and what's the vibe — casual, party, or formal? "
+                "Any size or colour in mind?"
+            )
     elif re.search(r"\b(watch|jewell?ery|jewelry|perfume|handbag|purse|shoes)\b", low):
-        question = (
-            "Who is it for, and do you know their style or size? "
-            "That'll help me pick something they'll actually love."
-        )
+        if has_recipient:
+            question = (
+                "Nice 😊 What's their taste like — classic, trendy, or minimal? "
+                "Any colours, brands, or a size I should keep in mind?"
+            )
+        else:
+            question = (
+                "Who is it for, and do you know their style or size? "
+                "That'll help me pick something they'll actually love."
+            )
     else:
         question = (
             "Who are we shopping for, and what's the occasion? "
