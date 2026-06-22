@@ -350,6 +350,124 @@ def order_history_message(orders: list | None) -> str | None:
     return "\n".join(lines)
 
 
+# --- Order tracking -------------------------------------------------------- #
+_TRACK_STRONG_RE = re.compile(
+    r"\b(track|tracking|order status|delivered yet|arrived yet|on its way|"
+    r"dispatch(ed)?|shipped|out for delivery)\b",
+    re.I,
+)
+_TRACK_SOFT_RE = re.compile(
+    r"\b((any |an )?update on|update (on|about)|status (of|on)|where('?s| is)|"
+    r"how('?s| is)|has it arrived|did it arrive|when will it)\b",
+    re.I,
+)
+_OWNED_ORDER_RE = re.compile(
+    r"\b(my|the|her|his|their|our)\b[^.?!]{0,40}\b"
+    r"(order|gift|delivery|parcel|package|present|flowers|cake|hamper|bouquet)\b",
+    re.I,
+)
+# Relationship words -> the relationship values stored on recipients.
+_REL_SYNONYMS = {
+    "sister": {"sister"}, "brother": {"brother"},
+    "mom": {"mother", "mom", "mum"}, "mum": {"mother", "mom", "mum"},
+    "mother": {"mother", "mom", "mum"}, "dad": {"father", "dad"},
+    "father": {"father", "dad"}, "wife": {"wife"}, "husband": {"husband"},
+    "gf": {"girlfriend", "partner"}, "girlfriend": {"girlfriend", "partner"},
+    "bf": {"boyfriend", "partner"}, "boyfriend": {"boyfriend", "partner"},
+    "partner": {"girlfriend", "boyfriend", "partner", "wife", "husband"},
+    "friend": {"friend"}, "grandma": {"grandmother", "grandma"},
+    "grandpa": {"grandfather", "grandpa"},
+}
+
+
+def _is_order_tracking_request(text: str) -> bool:
+    """True when the user is asking about an existing order's status, not shopping."""
+    low = (text or "").lower()
+    if _TRACK_STRONG_RE.search(low):
+        return True
+    if _TRACK_SOFT_RE.search(low) and (_OWNED_ORDER_RE.search(low) or "my order" in low):
+        return True
+    return False
+
+
+def _resolve_tracked_orders(text: str, orders: list | None, recipients: list | None) -> list:
+    """Pick the order(s) the user means — by recipient name, by relationship
+    (sister -> the recipient named X -> their order), else the most recent."""
+    if not orders:
+        return []
+    low = (text or "").lower()
+    by_name = []
+    for o in orders:
+        rn = (o.get("recipient_name") or "").lower().strip()
+        if rn and rn.split()[0] in low:
+            by_name.append(o)
+    if by_name:
+        return by_name
+
+    rel_to_names: dict[str, set] = {}
+    for r in recipients or []:
+        rel = (r.get("relationship") or "").lower().strip()
+        nm = (r.get("name") or "").lower().strip()
+        if rel and nm:
+            rel_to_names.setdefault(rel, set()).add(nm)
+    wanted_names: set = set()
+    for word in re.findall(r"[a-z]+", low):
+        syns = _REL_SYNONYMS.get(word)
+        if not syns:
+            continue
+        for rel, names in rel_to_names.items():
+            if rel in syns:
+                wanted_names |= names
+    if wanted_names:
+        by_rel = [o for o in orders if (o.get("recipient_name") or "").lower().strip() in wanted_names]
+        if by_rel:
+            return by_rel
+
+    # Generic "any update on my order / is it here yet" -> most recent order.
+    return [orders[0]]
+
+
+def order_tracking_message(text: str, orders: list | None, recipients: list | None) -> str | None:
+    matched = _resolve_tracked_orders(text, orders, recipients)
+    lines = [
+        "ORDER TRACKING REQUEST — the user wants a STATUS UPDATE on an existing order, "
+        "NOT a product search. Do NOT call kapruka_search_products and do NOT show product cards."
+    ]
+    if not matched:
+        lines.append(
+            "- No order is on file for this user. If they're signed in, gently say there's no order on "
+            "record yet. Otherwise ask for their order reference number, then call any available Kapruka "
+            "order-tracking/status tool with it."
+        )
+    else:
+        lines.append("- Matching order(s) on file:")
+        for o in matched[:3]:
+            parts = []
+            if o.get("recipient_name"):
+                parts.append(f"for {o['recipient_name']}")
+            if o.get("items_summary"):
+                parts.append(str(o["items_summary"]))
+            if o.get("order_ref"):
+                parts.append(f"ref {o['order_ref']}")
+            if o.get("grand_total"):
+                parts.append(f"total {o.get('currency', 'LKR')} {o['grand_total']}")
+            if o.get("ordered_at"):
+                parts.append(f"ordered {str(o['ordered_at'])[:10]}")
+            lines.append("  • " + " — ".join(parts))
+        lines.append(
+            "- If a Kapruka tool for order status/tracking exists (e.g. a tool whose name contains "
+            "'track', 'order', or 'status'), CALL it with the order reference above to fetch live "
+            "delivery status, then report what it returns."
+        )
+        lines.append(
+            "- If there is no live tracking tool or it returns nothing, give a clear report from the "
+            "details above (what was ordered, for whom, the reference, the order date and total) and tell "
+            "them they can track it on Kapruka with that reference."
+        )
+    lines.append("- Reply as a tidy, warm status report in plain sentences — no product cards, no upsell.")
+    return "\n".join(lines)
+
+
 def trends_message(user_text: str, recipients: list | None = None, orders: list | None = None) -> str | None:
     """Soft trend bias: lean toward what's popular / in-style / their own patterns,
     but only when the user hasn't pinned down specifics. Never overrides a clear request."""
@@ -583,6 +701,9 @@ UI PRESENTATION
 much better than a courier 😊. Shall I add a note card too?"
 
 WHEN TO ASK vs SEARCH (critical)
+- ORDER TRACKING is different from shopping: if they ask for an update/status on an existing order or gift \
+("any update on my sister's gift", "track my order", "has it arrived?"), do NOT search products — use the order \
+on file, call a Kapruka tracking/status tool if one exists, and reply with a short status report (see ORDER TRACKING REQUEST context).
 - DEFAULT TO SEARCH when occasion + recipient + enough detail are clear.
 - For vague ideas or opinions ("thinking about a dress", "what do you think"): ask ONE warm question first — \
 who it's for, occasion, size/style/colour — then search. Do NOT dump random products on a half-formed idea.
@@ -642,6 +763,14 @@ SEARCH_FIRST_NUDGE = (
     "IMPORTANT — search now, do NOT call ask_user. The user gave enough context (who + situation + tastes). "
     "Call kapruka_search_products for fitting items immediately. "
     "Your reply: 1–2 warm sentences max, NO product names, NO numbered lists — cards show everything below."
+)
+
+ORDER_TRACKING_NUDGE = (
+    "IMPORTANT — this is an ORDER TRACKING request, not shopping. Use the ORDER TRACKING REQUEST context. "
+    "Do NOT call kapruka_search_products and do NOT show product cards. If a Kapruka order-status/tracking "
+    "tool is available, call it with the order reference to fetch live status; otherwise report the order "
+    "details we have on file. Reply as a short, warm status report — what it is, who it's for, the reference, "
+    "and where it stands."
 )
 
 TASTE_QUESTION_NUDGE = (
@@ -2185,9 +2314,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     access_token = context.get("access_token")
     profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
 
-    search_first = _should_search_first(user_en, profile, recipients, conv)
-    taste_question = _needs_taste_question(user_en, profile, recipients)
-    clarify_question = _needs_clarification_question(user_en, conv)
+    track_request = _is_order_tracking_request(user_en)
+    search_first = False if track_request else _should_search_first(user_en, profile, recipients, conv)
+    taste_question = False if track_request else _needs_taste_question(user_en, profile, recipients)
+    clarify_question = False if track_request else _needs_clarification_question(user_en, conv)
     repair_interests = _recipient_interests_for_repair(user_en, recipients)
     if search_first:
         allow_questions = False
@@ -2205,6 +2335,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         trends_message(user_en, recipients, orders),
         upcoming_occasions_message(recipients),
     ]
+    if track_request:
+        extra_ctx.append(order_tracking_message(user_en, orders, recipients))
     messages = _build_messages(
         conv,
         _context_message(suggestions, cart, instructions),
@@ -2212,7 +2344,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         profile_message(profile),
         extra_ctx,
     )
-    if repair_interests and search_first:
+    if track_request:
+        messages.append({"role": "system", "content": ORDER_TRACKING_NUDGE})
+    elif repair_interests and search_first:
         messages.append({
             "role": "system",
             "content": REPAIR_INTERESTS_NUDGE.format(interests=", ".join(repair_interests)),
