@@ -1,8 +1,14 @@
 /* Kapruka Gift Concierge — design-system UI wired to Hari backend APIs */
 const { useState, useRef, useEffect, useCallback } = React;
-const {
-  Button, IconButton, Badge, Bubble, SuggestionCard, ProductCard, Toast, Loader, Icon, ThemeToggle,
-} = window.KaprukaDesignSystem_d6db4e;
+const DS = window.KaprukaDesignSystem_d6db4e || {};
+const Button = DS.Button || ((p) => <button type="button" {...p}>{p.children}</button>);
+const IconButton = DS.IconButton || ((p) => <button type="button" {...p} />);
+const Bubble = DS.Bubble || ((p) => <div {...p}>{p.children}</div>);
+const SuggestionCard = DS.SuggestionCard || ((p) => <button type="button" onClick={p.onClick}>{p.children}</button>);
+const ProductCard = DS.ProductCard || ((p) => <div>{p.name}</div>);
+const Toast = DS.Toast || ((p) => <div>{p.children}</div>);
+const Icon = DS.Icon || (() => null);
+const ThemeToggle = DS.ThemeToggle || (() => null);
 
 const CHIPS = [
   { icon: "cake", tone: "blush", tx: "Birthday gift for mom", prompt: "Birthday gift for mom under Rs 5000" },
@@ -101,18 +107,102 @@ const BotText = ({ text }) => {
   });
 };
 
-const CityPicker = window.CityPicker || function CityPickerFallback(props) {
+function CityPicker({ value, onChange, name, required, placeholder, inputRef }) {
+  const [query, setQuery] = useState(value || "");
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [cities, setCities] = useState([]);
+  const [total, setTotal] = useState(null);
+  const [err, setErr] = useState("");
+  const wrapRef = useRef(null);
+  const debounceRef = useRef(null);
+  const api = window.KaprukaDeliveryCities;
+
+  useEffect(() => {
+    setQuery(value || "");
+  }, [value]);
+
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const runSearch = (q) => {
+    if (!api) return;
+    setLoading(true);
+    setErr("");
+    api.searchDeliveryCities(q)
+      .then((res) => {
+        setCities(res.cities || []);
+        setTotal(res.total ?? res.cities?.length ?? 0);
+      })
+      .catch((e) => setErr(e.message || String(e)))
+      .finally(() => setLoading(false));
+  };
+
+  const onFocus = () => {
+    setOpen(true);
+    if (!cities.length) runSearch(query);
+  };
+
+  const onInput = (e) => {
+    const next = e.target.value;
+    setQuery(next);
+    onChange?.(next);
+    setOpen(true);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => runSearch(next), 220);
+  };
+
+  const pick = (cityName) => {
+    setQuery(cityName);
+    onChange?.(cityName);
+    setOpen(false);
+  };
+
+  const hint =
+    total != null
+      ? `${total} Kapruka delivery cities — pick the exact name from the list.`
+      : "Search Kapruka delivery cities";
+
   return (
-    <input
-      ref={props.inputRef}
-      name={props.name}
-      required={props.required}
-      placeholder={props.placeholder}
-      value={props.value || ""}
-      onChange={(e) => props.onChange?.(e.target.value)}
-    />
+    <div className="city-picker" ref={wrapRef}>
+      <input
+        ref={inputRef}
+        name={name}
+        type="text"
+        required={required}
+        autoComplete="off"
+        placeholder={placeholder || "Type to search cities…"}
+        value={query}
+        onFocus={onFocus}
+        onChange={onInput}
+      />
+      <p className="city-picker-hint">{loading ? "Loading cities…" : hint}</p>
+      {err && <p className="city-picker-err">{err}</p>}
+      {open && cities.length > 0 && (
+        <ul className="city-picker-list" role="listbox">
+          {cities.map((c) => (
+            <li key={c.name}>
+              <button type="button" role="option" onMouseDown={(e) => e.preventDefault()} onClick={() => pick(c.name)}>
+                <span className="city-picker-name">{c.name}</span>
+                {c.aliases?.length > 0 && (
+                  <span className="city-picker-alias">also: {c.aliases.slice(0, 3).join(", ")}</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && !loading && cities.length === 0 && query.trim() && (
+        <p className="city-picker-empty">No matching cities — try a different spelling.</p>
+      )}
+    </div>
   );
-};
+}
 
 function App({
   session,
@@ -138,6 +228,7 @@ function App({
   const [currentLang, setCurrentLang] = useState("en");
   const [ttsOn, setTtsOn] = useState(false);
   const [assemblyAi, setAssemblyAi] = useState(false);
+  const [assemblyMicBroken, setAssemblyMicBroken] = useState(false);
   const [assemblyVoice, setAssemblyVoice] = useState("ivy");
   const [budget, setBudget] = useState(null);
   const [instructions, setInstructions] = useState([]);
@@ -504,11 +595,16 @@ function App({
             headers: { "Content-Type": blob.type || "audio/webm" },
             body: blob,
           });
-          const data = await res.json();
-          if (data.ok && data.text) send(data.text.trim());
-          else toast(data.error || "Couldn't transcribe speech", "mic");
+          const data = await res.json().catch(() => ({}));
+          if (data.ok && data.text) {
+            send(data.text.trim());
+          } else {
+            toast(data.error || "Couldn't transcribe — tap mic to try browser voice", "mic");
+            setAssemblyMicBroken(true);
+          }
         } catch (_) {
-          toast("Transcription failed", "mic");
+          toast("Transcription failed — tap mic to try browser voice", "mic");
+          setAssemblyMicBroken(true);
         }
         setStatus("Tap the mic to talk, or type below");
       };
@@ -524,7 +620,7 @@ function App({
 
   const micClick = () => {
     if (query.trim()) { send(query); return; }
-    if (assemblyAi && currentLang === "en" && navigator.mediaDevices?.getUserMedia) {
+    if (assemblyAi && !assemblyMicBroken && currentLang === "en" && navigator.mediaDevices?.getUserMedia) {
       if (listening && mediaRecorderRef.current?.state === "recording") {
         stopAssemblyMic();
       } else {
@@ -667,7 +763,7 @@ function App({
               <option value="si">සිං</option>
               <option value="ta">தமிழ்</option>
             </select>
-            <ThemeToggle />
+            {ThemeToggle ? <ThemeToggle /> : null}
             <IconButton
               icon={ttsOn ? "volume-2" : "volume-x"}
               title="Read replies aloud"

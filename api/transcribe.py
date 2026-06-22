@@ -22,27 +22,64 @@ from http.server import BaseHTTPRequestHandler
 ASSEMBLYAI_API_KEY = os.environ.get("ASSEMBLYAI_API_KEY")
 ASSEMBLY_BASE = os.environ.get("ASSEMBLYAI_BASE_URL", "https://api.assemblyai.com/v2")
 ASSEMBLY_SPEECH_MODEL = os.environ.get("ASSEMBLYAI_SPEECH_MODEL", "universal-3-pro")
-ASSEMBLY_TIMEOUT = float(os.environ.get("ASSEMBLYAI_TIMEOUT", "25"))
-POLL_INTERVAL = float(os.environ.get("ASSEMBLYAI_POLL_INTERVAL", "0.4"))
+ASSEMBLY_TIMEOUT = float(os.environ.get("ASSEMBLYAI_TIMEOUT", "28"))
+POLL_INTERVAL = float(os.environ.get("ASSEMBLYAI_POLL_INTERVAL", "0.5"))
 
 
-def _request(method: str, path: str, data: bytes | None = None, headers: dict | None = None):
+def _auth_headers(extra: dict | None = None) -> dict:
     if not ASSEMBLYAI_API_KEY:
         raise PermissionError(
             "ASSEMBLYAI_API_KEY is not set. Add it in Vercel Environment Variables."
         )
-    url = f"{ASSEMBLY_BASE.rstrip('/')}/{path.lstrip('/')}"
     hdrs = {"authorization": ASSEMBLYAI_API_KEY}
-    if headers:
-        hdrs.update(headers)
+    if extra:
+        hdrs.update(extra)
+    return hdrs
+
+
+def _request(method: str, path: str, data: bytes | None = None, headers: dict | None = None):
+    url = f"{ASSEMBLY_BASE.rstrip('/')}/{path.lstrip('/')}"
+    hdrs = _auth_headers(headers)
     req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
     try:
         with urllib.request.urlopen(req, timeout=ASSEMBLY_TIMEOUT) as resp:
             raw = resp.read().decode("utf-8")
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
-        detail = exc.read()[:400].decode("utf-8", errors="replace")
+        try:
+            detail = exc.read()[:500].decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
         raise ValueError(f"AssemblyAI HTTP {exc.code}: {detail}") from exc
+
+
+def _start_transcript(audio_url: str, speech_models: list[str] | None) -> str:
+    payload: dict = {"audio_url": audio_url, "language_code": "en"}
+    if speech_models:
+        payload["speech_models"] = speech_models
+    job = _request(
+        "POST",
+        "transcript",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"content-type": "application/json"},
+    )
+    tid = job.get("id")
+    if not tid:
+        raise ValueError("AssemblyAI transcript job failed to start.")
+    return tid
+
+
+def _poll_transcript(tid: str) -> str:
+    deadline = time.monotonic() + ASSEMBLY_TIMEOUT
+    while time.monotonic() < deadline:
+        result = _request("GET", f"transcript/{tid}")
+        status = result.get("status")
+        if status == "completed":
+            return str(result.get("text") or "").strip()
+        if status == "error":
+            raise ValueError(result.get("error") or "AssemblyAI transcription error.")
+        time.sleep(POLL_INTERVAL)
+    raise TimeoutError("AssemblyAI transcription timed out.")
 
 
 def transcribe_audio(audio_bytes: bytes) -> str:
@@ -53,31 +90,12 @@ def transcribe_audio(audio_bytes: bytes) -> str:
     if not audio_url:
         raise ValueError("AssemblyAI upload failed — no upload_url.")
 
-    payload = {"audio_url": audio_url, "language_code": "en"}
-    if ASSEMBLY_SPEECH_MODEL:
-        payload["speech_model"] = ASSEMBLY_SPEECH_MODEL
-
-    job = _request(
-        "POST",
-        "transcript",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"content-type": "application/json"},
-    )
-    tid = job.get("id")
-    if not tid:
-        raise ValueError("AssemblyAI transcript job failed to start.")
-
-    deadline = time.monotonic() + ASSEMBLY_TIMEOUT
-    while time.monotonic() < deadline:
-        result = _request("GET", f"transcript/{tid}")
-        status = result.get("status")
-        if status == "completed":
-            return str(result.get("text") or "").strip()
-        if status == "error":
-            raise ValueError(result.get("error") or "AssemblyAI transcription error.")
-        time.sleep(POLL_INTERVAL)
-
-    raise TimeoutError("AssemblyAI transcription timed out.")
+    models = [ASSEMBLY_SPEECH_MODEL, "universal-2"] if ASSEMBLY_SPEECH_MODEL else ["universal-2"]
+    try:
+        tid = _start_transcript(audio_url, models)
+    except ValueError:
+        tid = _start_transcript(audio_url, ["universal-2"])
+    return _poll_transcript(tid)
 
 
 class handler(BaseHTTPRequestHandler):

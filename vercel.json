@@ -4,7 +4,7 @@
     "api/tool.py": { "maxDuration": 30 },
     "api/check.py": { "maxDuration": 30 },
     "api/tts.py": { "maxDuration": 30 },
-    "api/transcribe.py": { "maxDuration": 30 },
+    "api/transcribe.py": { "maxDuration": 60 },
     "api/voice_token.py": { "maxDuration": 15 },
     "api/config.py": { "maxDuration": 10 }
   },
