@@ -715,6 +715,309 @@ function App({
   );
 }
 
+function AuthGate({ supabase, initialMode, onGuest, onAuthed }) {
+  const [mode, setMode] = useState(initialMode || "welcome");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const resetErr = () => setError("");
+
+  const googleSignIn = async () => {
+    if (!supabase) {
+      setError("Sign-in is not configured yet. Add SUPABASE_URL and SUPABASE_ANON_KEY on Vercel, then redeploy.");
+      return;
+    }
+    resetErr();
+    setBusy(true);
+    try {
+      const { error: err } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin },
+      });
+      if (err) setError(err.message);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const emailAuth = async (isSignup) => {
+    if (!supabase) {
+      setError("Sign-in is not configured yet. Add SUPABASE_URL and SUPABASE_ANON_KEY on Vercel, then redeploy.");
+      return;
+    }
+    resetErr();
+    setBusy(true);
+    try {
+      if (isSignup) {
+        const { data, error: err } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { data: { full_name: displayName.trim() || undefined } },
+        });
+        if (err) throw err;
+        if (data.session) onAuthed(data.session);
+        else setError("Check your email to confirm your account, then log in.");
+      } else {
+        const { data, error: err } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (err) throw err;
+        if (data.session) onAuthed(data.session);
+      }
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (mode === "welcome") {
+    return (
+      <div className="auth-shell">
+        <div className="auth-card k-rise">
+          <span className="auth-brand"><Icon name="leaf" size={28} /></span>
+          <h1>Your personal gift concierge</h1>
+          <p>
+            Sign in so Kapruka remembers your gifting style, budget, and delivery
+            preferences — and finds better matches every time.
+          </p>
+          <div className="auth-actions">
+            <button type="button" className="auth-btn auth-btn--primary" onClick={() => { resetErr(); setMode("signup"); }}>
+              Sign up
+            </button>
+            <button type="button" className="auth-btn auth-btn--soft" onClick={() => { resetErr(); setMode("login"); }}>
+              Log in
+            </button>
+            <button type="button" className="auth-link" onClick={() => googleSignIn()} disabled={busy}>
+              Continue with Google
+            </button>
+            <button type="button" className="auth-ghost" onClick={onGuest}>
+              Continue without account
+            </button>
+          </div>
+          {error && <p className="auth-error">{error}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  const isSignup = mode === "signup";
+
+  return (
+    <div className="auth-shell">
+      <div className="auth-card k-rise">
+        <button type="button" className="auth-back" onClick={() => { resetErr(); setMode("welcome"); }}>
+          ← Back
+        </button>
+        <h1>{isSignup ? "Create your account" : "Welcome back"}</h1>
+        <p>{isSignup ? "A quick quiz after signup helps us learn your gifting personality." : "Log in to pick up where you left off."}</p>
+        <form
+          className="auth-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            emailAuth(isSignup);
+          }}
+        >
+          {isSignup && (
+            <label>
+              Name
+              <input
+                type="text"
+                placeholder="Your name"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                autoComplete="name"
+              />
+            </label>
+          )}
+          <label>
+            Email
+            <input
+              type="email"
+              required
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+            />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              required
+              minLength={6}
+              placeholder="At least 6 characters"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={isSignup ? "new-password" : "current-password"}
+            />
+          </label>
+          <button type="submit" className="auth-btn auth-btn--primary" disabled={busy}>
+            {busy ? "Please wait…" : isSignup ? "Sign up" : "Log in"}
+          </button>
+        </form>
+        <button type="button" className="auth-link" onClick={() => googleSignIn()} disabled={busy}>
+          Continue with Google
+        </button>
+        <button type="button" className="auth-ghost" onClick={onGuest}>
+          Continue without account
+        </button>
+        {error && <p className="auth-error">{error}</p>}
+      </div>
+    </div>
+  );
+}
+
+const ONBOARDING_STEPS = [
+  { key: "gift_priority", title: "What matters most in a gift?", options: [
+    { value: "thoughtfulness", label: "Thoughtfulness & meaning" },
+    { value: "surprise", label: "Surprise & delight" },
+    { value: "practicality", label: "Practical & useful" },
+    { value: "wow_factor", label: "Wow factor & premium feel" },
+  ]},
+  { key: "budget_band", title: "Your typical gift budget?", options: [
+    { value: "under_2000", label: "Under Rs 2,000" },
+    { value: "2000_5000", label: "Rs 2,000 – 5,000" },
+    { value: "5000_10000", label: "Rs 5,000 – 10,000" },
+    { value: "over_10000", label: "Rs 10,000+" },
+  ]},
+  { key: "shopping_style", title: "How do you usually shop for gifts?", options: [
+    { value: "weeks_ahead", label: "Weeks ahead — I plan early" },
+    { value: "few_days", label: "A few days before" },
+    { value: "last_minute", label: "Last minute — I need it fast" },
+  ]},
+  { key: "recipient_focus", title: "Who do you shop for most often?", options: [
+    { value: "family", label: "Family" },
+    { value: "partner", label: "Partner" },
+    { value: "colleagues", label: "Colleagues" },
+    { value: "kids", label: "Kids" },
+    { value: "mixed", label: "A mix of everyone" },
+  ]},
+  { key: "style_vibe", title: "Your gifting style vibe?", options: [
+    { value: "classic", label: "Classic & elegant" },
+    { value: "playful", label: "Fun & playful" },
+    { value: "minimalist", label: "Minimal & modern" },
+    { value: "traditional", label: "Traditional Sri Lankan" },
+  ]},
+  { key: "default_city", title: "Default delivery city?", type: "city", options: [
+    { value: "Colombo", label: "Colombo" },
+    { value: "Kandy", label: "Kandy" },
+    { value: "Galle", label: "Galle" },
+    { value: "other", label: "Other" },
+  ]},
+];
+
+function OnboardingWizard({ supabase, session, onComplete }) {
+  const computePersonality = (window.KaprukaPersonality && window.KaprukaPersonality.computePersonality) || (() => ({}));
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [cityOther, setCityOther] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const current = ONBOARDING_STEPS[step];
+  const progress = ((step + 1) / ONBOARDING_STEPS.length) * 100;
+
+  const pick = (key, value) => {
+    setAnswers((a) => ({ ...a, [key]: value }));
+    if (key !== "default_city" || value !== "other") {
+      setTimeout(() => setStep((s) => Math.min(s + 1, ONBOARDING_STEPS.length - 1)), 180);
+    }
+  };
+
+  const finish = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const finalAnswers = { ...answers };
+      if (finalAnswers.default_city === "other") {
+        finalAnswers.default_city = cityOther.trim() || "Colombo";
+      }
+      const computed = computePersonality(finalAnswers);
+      const patch = {
+        quiz_answers: finalAnswers,
+        gifting_personality: computed.gifting_personality,
+        personality_scores: computed.personality_scores,
+        default_budget: computed.default_budget,
+        preferences: computed.preferences,
+        default_city: finalAnswers.default_city,
+        display_name: session.user.user_metadata?.full_name || session.user.email?.split("@")[0],
+        onboarding_completed: true,
+      };
+      const { data, error: err } = await supabase
+        .from("profiles")
+        .update(patch)
+        .eq("id", session.user.id)
+        .select()
+        .single();
+      if (err) throw err;
+      onComplete(data);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const canFinish =
+    current.key === "default_city" &&
+    (answers.default_city === "other" ? cityOther.trim() : answers.default_city);
+
+  return (
+    <div className="auth-shell">
+      <div className="auth-card wizard-card k-rise">
+        <div className="wizard-progress">
+          <div className="wizard-progress-bar" style={{ width: `${progress}%` }} />
+        </div>
+        <p className="wizard-step">Step {step + 1} of {ONBOARDING_STEPS.length}</p>
+        <h1>{current.title}</h1>
+        <div className="wizard-options">
+          {current.options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={"wizard-opt" + (answers[current.key] === opt.value ? " wizard-opt--on" : "")}
+              onClick={() => pick(current.key, opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {current.type === "city" && answers.default_city === "other" && (
+          <label className="wizard-city">
+            City name
+            <input type="text" placeholder="e.g. Negombo" value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
+          </label>
+        )}
+        <div className="wizard-nav">
+          {step > 0 && (
+            <button type="button" className="auth-btn auth-btn--soft" onClick={() => setStep((s) => s - 1)}>Back</button>
+          )}
+          {step < ONBOARDING_STEPS.length - 1 && answers[current.key] && current.key !== "default_city" && (
+            <button type="button" className="auth-btn auth-btn--primary" onClick={() => setStep((s) => s + 1)}>Next</button>
+          )}
+          {step === ONBOARDING_STEPS.length - 1 && (
+            <button type="button" className="auth-btn auth-btn--primary" disabled={!canFinish || busy} onClick={finish}>
+              {busy ? "Saving…" : "Finish & start gifting"}
+            </button>
+          )}
+        </div>
+        {error && <p className="auth-error">{error}</p>}
+        <p className="wizard-hint">
+          <Icon name="sparkles" size={14} /> This helps the AI tailor picks to your style.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function ConciergeShell() {
   const [booting, setBooting] = useState(true);
   const [supabase, setSupabase] = useState(null);
@@ -819,16 +1122,8 @@ function ConciergeShell() {
   }
 
   if (showGate) {
-    const Gate = window.AuthGate;
-    if (!Gate) {
-      return (
-        <div className="boot-screen">
-          Auth UI failed to load. <button type="button" className="auth-ghost" onClick={continueAsGuest}>Continue as guest</button>
-        </div>
-      );
-    }
     return (
-      <Gate
+      <AuthGate
         supabase={supabase}
         initialMode={gateMode}
         onGuest={continueAsGuest}
@@ -838,17 +1133,11 @@ function ConciergeShell() {
   }
 
   if (session && profile && !profile.onboarding_completed) {
-    const Wizard = window.OnboardingWizard;
-    if (!Wizard) {
-      return <div className="boot-screen">Onboarding failed to load. Refresh the page.</div>;
-    }
     return (
-      <Wizard
+      <OnboardingWizard
         supabase={supabase}
         session={session}
-        onComplete={(updated) => {
-          setProfile(updated);
-        }}
+        onComplete={(updated) => setProfile(updated)}
       />
     );
   }
@@ -867,26 +1156,4 @@ function ConciergeShell() {
   );
 }
 
-function mountConcierge() {
-  ReactDOM.createRoot(document.getElementById("root")).render(<ConciergeShell />);
-}
-
-function waitForAuthModules() {
-  if (window.AuthGate && window.OnboardingWizard) {
-    mountConcierge();
-    return;
-  }
-  let attempts = 0;
-  const timer = setInterval(() => {
-    if (window.AuthGate && window.OnboardingWizard) {
-      clearInterval(timer);
-      mountConcierge();
-    } else if (attempts++ > 80) {
-      clearInterval(timer);
-      console.warn("Auth modules slow or missing; mounting with fallbacks");
-      mountConcierge();
-    }
-  }, 50);
-}
-
-waitForAuthModules();
+ReactDOM.createRoot(document.getElementById("root")).render(<ConciergeShell />);
