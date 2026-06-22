@@ -9,7 +9,7 @@ Pipeline:
   3. Execute Kapruka searches, cart actions, and clarifying questions.
   4. Return a warm conversational answer plus product cards for the UI.
 
-Requires NVIDIA_API_KEY. Standard library only.
+Requires NVIDIA_API_KEY. Standard library only — self-contained (no sibling module imports).
 """
 
 from __future__ import annotations
