@@ -491,6 +491,7 @@ function App({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [recipients, setRecipients] = useState([]);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const feedRef = useRef(null);
   const checkoutFormRef = useRef(null);
@@ -500,6 +501,7 @@ function App({
   const persistTimerRef = useRef(null);
   const personalityGreetedRef = useRef(false);
   const occasionNudgedRef = useRef(false);
+  const menuRef = useRef(null);
 
   const defaultCity = profile?.default_city || "";
   const displayName =
@@ -592,6 +594,21 @@ function App({
   const cartCount = cart.reduce((n, c) => n + c.qty, 0);
   const cartSubtotal = () => cart.reduce((s, c) => s + priceNum(c) * c.qty, 0);
   const uiText = (k) => (UI_TEXT[currentLang] || UI_TEXT.en)[k];
+  const closeMenu = () => setMenuOpen(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) closeMenu();
+    };
+    const onKey = (e) => { if (e.key === "Escape") closeMenu(); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     if (defaultCity) setCheckoutCity(defaultCity);
@@ -997,56 +1014,143 @@ function App({
             </div>
           </div>
           <div className="top-actions">
-            <button
-              type="button"
-              className={"account-chip" + (isGuest ? " guest" : "")}
-              title={isGuest ? "Sign in for personalized picks" : displayName}
-              onClick={() => { if (isGuest) onRequestSignIn(); }}
-            >
-              <Icon name={isGuest ? "heart" : "sparkles"} size={14} />
-              <span className="name">{isGuest ? "Sign in" : displayName}</span>
-            </button>
-            {!isGuest && session && (
-              <IconButton icon="x" title="Sign out" onClick={onSignOut} />
-            )}
-            {!isGuest && session && (
-              <IconButton icon="heart" title="My people" onClick={() => { setPeopleOpen(true); setSettingsOpen(false); setCartOpen(false); }} />
-            )}
-            {!isGuest && session && (
-              <IconButton icon="star" title="Gifting preferences" onClick={() => { setSettingsOpen(true); setPeopleOpen(false); setCartOpen(false); }} />
-            )}
-            <select
-              className="langsel"
-              value={currentLang}
-              aria-label="Language"
-              onChange={(e) => {
-                setCurrentLang(e.target.value);
-                if (recogRef.current) recogRef.current.lang = LANG_CODES[e.target.value] || "en-US";
-                toast(`Language: ${LANG_NAMES[e.target.value]}`, "globe");
-              }}
-            >
-              <option value="en">EN</option>
-              <option value="si">සිං</option>
-              <option value="ta">தமிழ்</option>
-            </select>
-            {ThemeToggle ? <ThemeToggle /> : null}
-            <IconButton
-              icon={ttsOn ? "volume-2" : "volume-x"}
-              title="Read replies aloud"
-              active={ttsOn}
-              onClick={() => {
-                setTtsOn((v) => !v);
-                if (!ttsOn) toast("Voice replies on", "volume-2");
-                else stopSpeaking();
-              }}
-            />
-            <IconButton
-              icon="shopping-cart"
-              title="View cart"
-              badge={cartCount}
-              onClick={() => { setCartOpen(true); setCheckoutView(false); }}
-              style={bump ? { transform: "scale(1.08)" } : undefined}
-            />
+            <div className={"top-menu" + (menuOpen ? " open" : "")} ref={menuRef}>
+              <button
+                type="button"
+                className="top-menu-trigger k-iconbtn"
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                title="Menu"
+                onClick={() => setMenuOpen((v) => !v)}
+                style={bump ? { transform: "scale(1.08)" } : undefined}
+              >
+                <span className="top-menu-bars" aria-hidden="true">
+                  <span /><span /><span />
+                </span>
+                {cartCount > 0 ? <span className="top-menu-badge">{cartCount}</span> : null}
+              </button>
+              {menuOpen ? (
+                <div className="top-menu-panel" role="menu">
+                  <button
+                    type="button"
+                    className={"top-menu-account" + (isGuest ? " guest" : "")}
+                    role="menuitem"
+                    onClick={() => {
+                      closeMenu();
+                      if (isGuest) onRequestSignIn();
+                    }}
+                  >
+                    <Icon name={isGuest ? "heart" : "sparkles"} size={16} />
+                    <span className="top-menu-account-text">
+                      <span className="top-menu-account-label">{isGuest ? "Sign in" : displayName}</span>
+                      {!isGuest ? <span className="top-menu-account-sub">Your account</span> : null}
+                    </span>
+                  </button>
+                  <div className="top-menu-divider" />
+                  {!isGuest && session ? (
+                    <button
+                      type="button"
+                      className="top-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        closeMenu();
+                        setPeopleOpen(true);
+                        setSettingsOpen(false);
+                        setCartOpen(false);
+                      }}
+                    >
+                      <Icon name="heart" size={18} />
+                      <span>My people</span>
+                    </button>
+                  ) : null}
+                  {!isGuest && session ? (
+                    <button
+                      type="button"
+                      className="top-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        closeMenu();
+                        setSettingsOpen(true);
+                        setPeopleOpen(false);
+                        setCartOpen(false);
+                      }}
+                    >
+                      <Icon name="star" size={18} />
+                      <span>Gifting preferences</span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="top-menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      closeMenu();
+                      setCartOpen(true);
+                      setCheckoutView(false);
+                    }}
+                  >
+                    <Icon name="shopping-cart" size={18} />
+                    <span>Cart{cartCount > 0 ? ` (${cartCount})` : ""}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={"top-menu-item" + (ttsOn ? " on" : "")}
+                    role="menuitem"
+                    onClick={() => {
+                      setTtsOn((v) => !v);
+                      if (!ttsOn) toast("Voice replies on", "volume-2");
+                      else stopSpeaking();
+                    }}
+                  >
+                    <Icon name="volume-2" size={18} />
+                    <span>{ttsOn ? "Voice replies on" : "Voice replies off"}</span>
+                  </button>
+                  <div className="top-menu-divider" />
+                  <div className="top-menu-row" role="none">
+                    <Icon name="globe" size={18} />
+                    <span>Language</span>
+                    <select
+                      className="top-menu-langsel"
+                      value={currentLang}
+                      aria-label="Language"
+                      onChange={(e) => {
+                        setCurrentLang(e.target.value);
+                        if (recogRef.current) recogRef.current.lang = LANG_CODES[e.target.value] || "en-US";
+                        toast(`Language: ${LANG_NAMES[e.target.value]}`, "globe");
+                      }}
+                    >
+                      <option value="en">EN</option>
+                      <option value="si">සිං</option>
+                      <option value="ta">தமிழ்</option>
+                    </select>
+                  </div>
+                  {ThemeToggle ? (
+                    <div className="top-menu-row" role="none">
+                      <Icon name="sun" size={18} />
+                      <span>Theme</span>
+                      <ThemeToggle size={36} />
+                    </div>
+                  ) : null}
+                  {!isGuest && session ? (
+                    <>
+                      <div className="top-menu-divider" />
+                      <button
+                        type="button"
+                        className="top-menu-item top-menu-item--danger"
+                        role="menuitem"
+                        onClick={() => {
+                          closeMenu();
+                          onSignOut();
+                        }}
+                      >
+                        <Icon name="x" size={18} />
+                        <span>Sign out</span>
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </header>
