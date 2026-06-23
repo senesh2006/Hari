@@ -84,6 +84,55 @@ const parseBudget = (text) => {
   }
   return null;
 };
+
+// --- Chat history persistence (localStorage) ------------------------------
+const CHAT_NS = "kapruka_chat";
+const chatScope = (session, isGuest) =>
+  isGuest || !session?.user?.id ? "guest" : session.user.id;
+const chatIndexKey = (scope) => `${CHAT_NS}:${scope}:index`;
+const oneChatKey = (scope, id) => `${CHAT_NS}:${scope}:${id}`;
+const loadChatIndex = (scope) => {
+  try { return JSON.parse(localStorage.getItem(chatIndexKey(scope))) || []; }
+  catch (_) { return []; }
+};
+const saveChatIndex = (scope, idx) => {
+  try { localStorage.setItem(chatIndexKey(scope), JSON.stringify(idx.slice(0, 30))); }
+  catch (_) {}
+};
+const loadChat = (scope, id) => {
+  try { return JSON.parse(localStorage.getItem(oneChatKey(scope, id))); }
+  catch (_) { return null; }
+};
+const saveChat = (scope, id, data) => {
+  try { localStorage.setItem(oneChatKey(scope, id), JSON.stringify(data)); }
+  catch (_) {}
+};
+const dropChat = (scope, id) => {
+  try { localStorage.removeItem(oneChatKey(scope, id)); } catch (_) {}
+};
+const chatTitleFrom = (messages) => {
+  const firstUser = (messages || []).find((m) => m.role === "user" && m.text);
+  return (firstUser?.text || "New chat").slice(0, 48);
+};
+const relTime = (ts) => {
+  const s = Math.max(1, Math.round((Date.now() - (ts || 0)) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+};
+
+// A product search is the common case; skip skeleton flash for obvious
+// non-product asks (greetings, cart/wishlist/orders, tracking).
+const NON_PRODUCT_RE =
+  /\b(hi|hii|hello|hey|thanks|thank you|what'?s? in (my )?(cart|wishlist|basket)|my (cart|wishlist|orders?)|show (me )?(my )?(cart|wishlist|orders?)|checkout|check ?out|empty (my )?cart|clear (the )?cart|track|order status|delivered yet|arrived yet)\b/i;
+const looksLikeProductRequest = (text) => {
+  const t = (text || "").trim();
+  return t.length > 0 && !NON_PRODUCT_RE.test(t);
+};
+
 const greetSub = () => {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -512,7 +561,12 @@ function App({
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [recipients, setRecipients] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [chatId, setChatId] = useState(() => nid());
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [chatList, setChatList] = useState([]);
+  const [expectProducts, setExpectProducts] = useState(false);
 
+  const restoredRef = useRef(false);
   const feedRef = useRef(null);
   const checkoutFormRef = useRef(null);
   const recogRef = useRef(null);
@@ -612,10 +666,87 @@ function App({
   }, [budget, instructions, currentLang, profileHydrated, isGuest, persistProfile]);
 
   const started = messages.some((m) => m.role === "user");
+  const lastProductMsgId = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].products && messages[i].products.length) return messages[i].id;
+    }
+    return null;
+  })();
+  const REFINE_CHIPS = [
+    { tx: "Cheaper", icon: "trending-down", prompt: "Show me cheaper options" },
+    { tx: "More premium", icon: "trending-up", prompt: "Show me something more premium" },
+    { tx: "Something different", icon: "shuffle", prompt: "Something different please — not these" },
+    { tx: "More like these", icon: "copy", prompt: "More like these" },
+  ];
   const cartCount = cart.reduce((n, c) => n + c.qty, 0);
   const cartSubtotal = () => cart.reduce((s, c) => s + priceNum(c) * c.qty, 0);
   const uiText = (k) => (UI_TEXT[currentLang] || UI_TEXT.en)[k];
   const closeMenu = () => setMenuOpen(false);
+
+  // --- Chat persistence: resume the last chat, keep a history list ----------
+  const scope = chatScope(session, isGuest);
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const idx = loadChatIndex(scope);
+    setChatList(idx);
+    if (idx.length) {
+      const last = loadChat(scope, idx[0].id);
+      if (last && Array.isArray(last.messages) && last.messages.some((m) => m.role === "user")) {
+        setChatId(idx[0].id);
+        setMessages(last.messages);
+        setConversation(last.conversation || []);
+        setLastSuggestions(last.lastSuggestions || []);
+      }
+    }
+  }, [scope]);
+
+  useEffect(() => {
+    if (!restoredRef.current) return;
+    if (!messages.some((m) => m.role === "user")) return;
+    const t = setTimeout(() => {
+      saveChat(scope, chatId, {
+        messages, conversation, lastSuggestions, ts: Date.now(),
+      });
+      const idx = loadChatIndex(scope).filter((c) => c.id !== chatId);
+      idx.unshift({ id: chatId, title: chatTitleFrom(messages), ts: Date.now() });
+      saveChatIndex(scope, idx);
+      setChatList(idx);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [messages, conversation, lastSuggestions, chatId, scope]);
+
+  const newChat = () => {
+    setChatId(nid());
+    setMessages([{ id: nid(), role: "bot", text: GREETING }]);
+    setConversation([]);
+    setLastSuggestions([]);
+    setAwaitingAnswers(false);
+    setMenuOpen(false);
+    setHistoryOpen(false);
+    setStatus("Tap the mic to talk, or type below");
+  };
+
+  const openChat = (id) => {
+    const data = loadChat(scope, id);
+    if (!data) return;
+    setChatId(id);
+    setMessages(data.messages && data.messages.length ? data.messages : [{ id: nid(), role: "bot", text: GREETING }]);
+    setConversation(data.conversation || []);
+    setLastSuggestions(data.lastSuggestions || []);
+    setAwaitingAnswers(false);
+    setHistoryOpen(false);
+    setMenuOpen(false);
+  };
+
+  const deleteChat = (id) => {
+    dropChat(scope, id);
+    const idx = loadChatIndex(scope).filter((c) => c.id !== id);
+    saveChatIndex(scope, idx);
+    setChatList(idx);
+    if (id === chatId) newChat();
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -859,6 +990,7 @@ function App({
     setAwaitingAnswers(false);
 
     const tid = nid();
+    setExpectProducts(looksLikeProductRequest(text));
     setMessages((m) => [...m, { id: tid, role: "bot", thinking: true }]);
     setStatus("Kapruka is thinking…");
 
@@ -886,6 +1018,7 @@ function App({
         throw new Error(data?.error || `Server error (${res.status})`);
       }
       setMessages((m) => m.filter((x) => x.id !== tid));
+      setExpectProducts(false);
 
       if (data.user_en) setLastUserEnglish(data.user_en);
 
@@ -933,6 +1066,7 @@ function App({
         setMessages((m) => [...m, { id: nid(), role: "bot", text: `Something went wrong: ${err}` }]);
       }
     } catch (err) {
+      setExpectProducts(false);
       setMessages((m) => m.filter((x) => x.id !== tid));
       setMessages((m) => [...m, { id: nid(), role: "bot", text: `Request failed: ${String(err)}` }]);
     }
@@ -1114,6 +1248,33 @@ function App({
                     </span>
                   </button>
                   <div className="top-menu-divider" />
+                  <button
+                    type="button"
+                    className="top-menu-item"
+                    role="menuitem"
+                    onClick={newChat}
+                  >
+                    <Icon name="plus" size={18} />
+                    <span>New chat</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="top-menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      closeMenu();
+                      setChatList(loadChatIndex(scope));
+                      setHistoryOpen(true);
+                      setPeopleOpen(false);
+                      setSettingsOpen(false);
+                      setCartOpen(false);
+                      setWishlistOpen(false);
+                    }}
+                  >
+                    <Icon name="clock" size={18} />
+                    <span>History{chatList.length ? ` (${chatList.length})` : ""}</span>
+                  </button>
+                  <div className="top-menu-divider" />
                   {!isGuest && session ? (
                     <button
                       type="button"
@@ -1239,6 +1400,17 @@ function App({
                 <Bubble role={m.role} thinking={m.thinking}>
                   {m.role === "bot" && m.text && !m.thinking ? <BotText text={m.text} /> : m.text}
                 </Bubble>
+                {m.thinking && expectProducts && (
+                  <div className="grid skel-grid" style={{ marginLeft: "2.4rem" }} aria-hidden="true">
+                    {[0, 1, 2, 3].map((i) => (
+                      <div className="skel-card" key={i}>
+                        <div className="skel-img" />
+                        <div className="skel-line" />
+                        <div className="skel-line short" />
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {m.products && (() => {
                   const groups = groupProducts(m.products);
                   const showHeaders = groups.length > 1;
@@ -1272,6 +1444,21 @@ function App({
                     </div>
                   );
                 })()}
+                {m.id === lastProductMsgId && (
+                  <div className="refine-chips" style={{ marginLeft: "2.4rem" }}>
+                    {REFINE_CHIPS.map((c) => (
+                      <button
+                        type="button"
+                        className="refine-chip"
+                        key={c.tx}
+                        onClick={() => send(c.prompt)}
+                      >
+                        <Icon name={c.icon} size={13} />
+                        <span>{c.tx}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1310,7 +1497,7 @@ function App({
         </div>
       </footer>
 
-      <div className={"scrim" + (cartOpen || wishlistOpen || settingsOpen || peopleOpen ? " open" : "")} onClick={() => { setCartOpen(false); setWishlistOpen(false); setSettingsOpen(false); setPeopleOpen(false); }} />
+      <div className={"scrim" + (cartOpen || wishlistOpen || settingsOpen || peopleOpen || historyOpen ? " open" : "")} onClick={() => { setCartOpen(false); setWishlistOpen(false); setSettingsOpen(false); setPeopleOpen(false); setHistoryOpen(false); }} />
       <aside className={"drawer" + (cartOpen ? " open" : "")} aria-label="Cart">
         <header>
           <Icon name="shopping-cart" size={20} />
@@ -1471,6 +1658,35 @@ function App({
                 <Icon name="shopping-cart" size={16} />
               </button>
               <button type="button" className="ci-rm" title="Remove from wishlist" onClick={() => toggleWishlist(w)}><Icon name="trash-2" size={16} /></button>
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      <aside className={"drawer" + (historyOpen ? " open" : "")} aria-label="Chat history">
+        <header>
+          <Icon name="clock" size={20} />
+          <h3>Your chats</h3>
+          <IconButton icon="x" title="Close" style={{ marginLeft: "auto" }} onClick={() => setHistoryOpen(false)} />
+        </header>
+        <div className="body">
+          <button type="button" className="hist-new" onClick={newChat}>
+            <Icon name="plus" size={16} /> New chat
+          </button>
+          {chatList.length === 0 ? (
+            <div className="empty">
+              <span className="ic"><Icon name="message-circle" size={40} strokeWidth={1.5} /></span>
+              No past chats yet.<br />Your conversations will show up here.
+            </div>
+          ) : chatList.map((c) => (
+            <div className={"citem hist-item" + (c.id === chatId ? " active" : "")} key={c.id}>
+              <button type="button" className="hist-open" onClick={() => openChat(c.id)}>
+                <div className="ci-main">
+                  <div className="ci-name">{c.title || "Chat"}</div>
+                  <div className="ci-price">{relTime(c.ts)}</div>
+                </div>
+              </button>
+              <button type="button" className="ci-rm" title="Delete chat" onClick={() => deleteChat(c.id)}><Icon name="trash-2" size={16} /></button>
             </div>
           ))}
         </div>

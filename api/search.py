@@ -710,6 +710,54 @@ def upcoming_occasions_message(recipients: list | None, within_days: int = 21) -
     return "\n".join(lines)
 
 
+def _soonest_occasion(recipients: list | None, within_days: int = 10):
+    """The nearest saved birthday/anniversary within the window: (name, label,
+    days, isodate) or None."""
+    if not recipients:
+        return None
+    today = date.today()
+    best = None
+    for r in recipients:
+        name = r.get("name") or "Someone"
+        for field, label in (("birthday", "birthday"), ("anniversary", "anniversary")):
+            raw = r.get(field)
+            if not raw:
+                continue
+            try:
+                d = datetime.strptime(str(raw)[:10], "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            try:
+                this_year = d.replace(year=today.year)
+            except ValueError:
+                this_year = date(today.year, d.month, min(d.day, 28))
+            if this_year < today:
+                try:
+                    this_year = d.replace(year=today.year + 1)
+                except ValueError:
+                    this_year = date(today.year + 1, d.month, min(d.day, 28))
+            days = (this_year - today).days
+            if 0 <= days <= within_days and (best is None or days < best[2]):
+                best = (name, label, days, this_year.isoformat())
+    return best
+
+
+def delivery_timing_message(recipients: list | None, within_days: int = 10) -> str | None:
+    """Nudge the agent to flag delivery timing when a saved occasion is near."""
+    occ = _soonest_occasion(recipients, within_days)
+    if not occ:
+        return None
+    name, label, days, iso = occ
+    when = "today" if days == 0 else ("tomorrow" if days == 1 else f"in {days} days")
+    urgency = "It's tight on time — " if days <= 3 else ""
+    return (
+        f"DELIVERY TIMING — {name}'s {label} is {when} ({iso}). {urgency}"
+        "When suggesting, prioritise items that can realistically arrive in time and gently flag the "
+        "timing (e.g. 'to land before the day, let's lock this in soon'). Do NOT invent exact delivery "
+        "dates or couriers — just nudge on timeliness and ordering promptly."
+    )
+
+
 _SESSION_BUDGET_RE = re.compile(
     r"(?:under|below|max|budget|rs\.?|lkr)\s*([0-9][0-9,]*)",
     re.I,
@@ -901,6 +949,8 @@ FOLLOW-UPS & CONTEXT
 - Honour budget and context from earlier turns.
 - For celebratory occasions, naturally offer complementary items (cake, flowers, card).
 - Never offer celebration items in sombre situations.
+- If a saved occasion is near (see DELIVERY TIMING), proactively flag delivery timing and lean toward \
+items that can arrive in time — but never fabricate exact courier ETAs.
 
 CART & SELECTIONS
 - add_to_cart: user picks from CURRENT SUGGESTIONS by 1-based number, name, or description.
@@ -3291,6 +3341,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         extra_ctx.append(account_intent_message(account_intent, cart, wishlist, orders))
     if more_request:
         extra_ctx.append(more_suggestions_message(suggestions, cart))
+    if not direct_request:
+        extra_ctx.append(delivery_timing_message(recipients))
     messages = _build_messages(
         conv,
         _context_message(suggestions, cart, instructions),
