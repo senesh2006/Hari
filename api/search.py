@@ -1595,6 +1595,88 @@ def _should_search_first(
 
     return False
 
+
+_BUDGET_WORD_RE = re.compile(r"\bbudget\b", re.I)
+_BUDGET_SKIP_RE = re.compile(
+    r"\b(no limit|any budget|doesn'?t matter|don'?t mind|whatever|the usual|"
+    r"usual|default|same as|stick with|go with|skip|surprise)\b",
+    re.I,
+)
+
+
+def _budget_already_handled(
+    conversation: list | None, current_text: str | None, profile: dict | None
+) -> bool:
+    """True once budget has come up in THIS chat — the user stated one, or we've
+    already asked about it. Ensures the budget question is asked at most once per
+    conversation, never for every item."""
+    if current_text and _SESSION_BUDGET_RE.search(current_text):
+        return True
+    for turn in conversation or []:
+        content = str(turn.get("content") or "")
+        role = turn.get("role")
+        if role == "user" and _SESSION_BUDGET_RE.search(content):
+            return True
+        # We already asked the budget question earlier in this chat.
+        if role == "assistant" and _BUDGET_WORD_RE.search(content):
+            return True
+    return False
+
+
+def _budget_intent(text: str) -> bool:
+    """A real shopping intent worth pricing (so we don't ask budget on a hello)."""
+    low = (text or "").lower().strip()
+    if not low:
+        return False
+    if detect_occasion(text) or _has_search_ready_context(text):
+        return True
+    if _RECIPIENT_RE.search(low) and re.search(
+        r"\b(gift|present|flowers?|cake|hamper|bouquet|something for|buy|get|shop)\b",
+        low,
+        re.I,
+    ):
+        return True
+    return False
+
+
+def _needs_budget_question(
+    text: str, profile: dict | None, conversation: list | None
+) -> bool:
+    """Ask about budget once, before the first real search of a chat."""
+    low = (text or "").lower().strip()
+    if not low or low in _SKIP_REPLIES or _BUDGET_SKIP_RE.search(low):
+        return False
+    # Never lead with budget when someone is emotional / making up after a fight.
+    if _is_repair_situation(text):
+        return False
+    if _budget_already_handled(conversation, text, profile):
+        return False
+    return _budget_intent(text)
+
+
+def _budget_ask(profile: dict | None) -> tuple[str, str]:
+    """Intro + question for the one-time budget check. Offers the saved default
+    vs. a new amount when we know their usual budget."""
+    budget = (profile or {}).get("default_budget")
+    amt = None
+    if budget:
+        try:
+            amt = f"LKR {float(budget):,.0f}"
+        except (TypeError, ValueError):
+            amt = None
+    intro = "Lovely choice 😊 Before I pull a few options —"
+    if amt:
+        question = (
+            f"want me to stick with your usual budget (around {amt}), "
+            "or are we setting a different one this time?"
+        )
+    else:
+        question = (
+            "roughly what budget are you thinking? A number's perfect, "
+            "or just say modest, mid-range, or no limit."
+        )
+    return intro, question
+
 # =============================================================================
 # Synthetic tools (not part of the MCP)
 # =============================================================================
@@ -2870,6 +2952,18 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     search_first = False if direct_request else _should_search_first(user_en, profile, recipients, conv)
     taste_question = False if direct_request else _needs_taste_question(user_en, profile, recipients)
     clarify_question = False if direct_request else _needs_clarification_question(user_en, conv)
+    # Ask the budget ONCE per chat before the first real search — offering the
+    # saved default vs. a new amount. Never re-ask it for later items, and never
+    # lead with it when the user is emotional.
+    budget_question = (
+        not direct_request
+        and not taste_question
+        and not clarify_question
+        and allow_questions
+        and _needs_budget_question(user_en, profile, conv)
+    )
+    if budget_question:
+        search_first = False
     repair_interests = _recipient_interests_for_repair(user_en, recipients)
     if search_first:
         allow_questions = False
@@ -2971,6 +3065,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
 
     if clarify_question:
         intro, question = _clarification_ask(user_en)
+        return ask([question], intro=intro)
+
+    if budget_question:
+        intro, question = _budget_ask(profile)
         return ask([question], intro=intro)
 
     reserve = 12 if target_lang else 0
