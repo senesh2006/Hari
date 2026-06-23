@@ -18,9 +18,11 @@ body { height: 100dvh; overflow: hidden; }
   margin-left: auto;
   display: flex;
   align-items: center;
+  gap: .4rem;
   flex-shrink: 0;
 }
 
+.top-cart { position: relative; }
 .top-menu { position: relative; }
 .top-menu-trigger {
   position: relative;

@@ -471,7 +471,9 @@ function App({
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState([]);
   const [fav, setFav] = useState({});
+  const [wishlist, setWishlist] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
+  const [wishlistOpen, setWishlistOpen] = useState(false);
   const [checkoutView, setCheckoutView] = useState(false);
   const [listening, setListening] = useState(false);
   const [status, setStatus] = useState("Tap the mic to talk, or type below");
@@ -567,6 +569,7 @@ function App({
       const map = {};
       items.forEach((w) => { map[w.name] = true; });
       setFav(map);
+      setWishlist(items || []);
     });
   }, [supabase, session, isGuest]);
 
@@ -760,6 +763,9 @@ function App({
   const toggleWishlist = async (p) => {
     const turningOn = !fav[p.name];
     setFav((f) => ({ ...f, [p.name]: turningOn }));
+    setWishlist((prev) => (turningOn
+      ? (prev.some((w) => w.name === p.name) ? prev : [{ ...p, product_id: String(p.id || idFromUrl(p.url) || p.name) }, ...prev])
+      : prev.filter((w) => w.name !== p.name)));
     if (turningOn) toast("Saved to wishlist", "heart");
     if (isGuest || !supabase || !session?.user?.id) return;
     try {
@@ -1048,6 +1054,19 @@ function App({
             </div>
           </div>
           <div className="top-actions">
+            <div className="top-cart">
+              <button
+                type="button"
+                className="top-menu-trigger k-iconbtn"
+                title="Cart"
+                aria-label="Cart"
+                onClick={() => { setCartOpen(true); setCheckoutView(false); setMenuOpen(false); }}
+                style={bump ? { transform: "scale(1.08)" } : undefined}
+              >
+                <Icon name="shopping-cart" size={20} />
+                {cartCount > 0 ? <span className="top-menu-badge">{cartCount}</span> : null}
+              </button>
+            </div>
             <div className={"top-menu" + (menuOpen ? " open" : "")} ref={menuRef}>
               <button
                 type="button"
@@ -1056,12 +1075,10 @@ function App({
                 aria-haspopup="menu"
                 title="Menu"
                 onClick={() => setMenuOpen((v) => !v)}
-                style={bump ? { transform: "scale(1.08)" } : undefined}
               >
                 <span className="top-menu-bars" aria-hidden="true">
                   <span /><span /><span />
                 </span>
-                {cartCount > 0 ? <span className="top-menu-badge">{cartCount}</span> : null}
               </button>
               {menuOpen ? (
                 <div className="top-menu-panel" role="menu">
@@ -1091,9 +1108,10 @@ function App({
                         setPeopleOpen(true);
                         setSettingsOpen(false);
                         setCartOpen(false);
+                        setWishlistOpen(false);
                       }}
                     >
-                      <Icon name="heart" size={18} />
+                      <Icon name="users" size={18} />
                       <span>My people</span>
                     </button>
                   ) : null}
@@ -1119,12 +1137,14 @@ function App({
                     role="menuitem"
                     onClick={() => {
                       closeMenu();
-                      setCartOpen(true);
-                      setCheckoutView(false);
+                      setWishlistOpen(true);
+                      setCartOpen(false);
+                      setPeopleOpen(false);
+                      setSettingsOpen(false);
                     }}
                   >
-                    <Icon name="shopping-cart" size={18} />
-                    <span>Cart{cartCount > 0 ? ` (${cartCount})` : ""}</span>
+                    <Icon name="heart" size={18} />
+                    <span>Wishlist{wishlist.length > 0 ? ` (${wishlist.length})` : ""}</span>
                   </button>
                   <button
                     type="button"
@@ -1260,7 +1280,7 @@ function App({
         </div>
       </footer>
 
-      <div className={"scrim" + (cartOpen || settingsOpen || peopleOpen ? " open" : "")} onClick={() => { setCartOpen(false); setSettingsOpen(false); setPeopleOpen(false); }} />
+      <div className={"scrim" + (cartOpen || wishlistOpen || settingsOpen || peopleOpen ? " open" : "")} onClick={() => { setCartOpen(false); setWishlistOpen(false); setSettingsOpen(false); setPeopleOpen(false); }} />
       <aside className={"drawer" + (cartOpen ? " open" : "")} aria-label="Cart">
         <header>
           <Icon name="shopping-cart" size={20} />
@@ -1395,6 +1415,34 @@ function App({
               <button type="button" className="btn-ghost" onClick={() => setCheckoutView(false)}>← Back to cart</button>
             </React.Fragment>
           )}
+        </div>
+      </aside>
+
+      <aside className={"drawer" + (wishlistOpen ? " open" : "")} aria-label="Wishlist">
+        <header>
+          <Icon name="heart" size={20} />
+          <h3>Your wishlist</h3>
+          <IconButton icon="x" title="Close" style={{ marginLeft: "auto" }} onClick={() => setWishlistOpen(false)} />
+        </header>
+        <div className="body">
+          {wishlist.length === 0 ? (
+            <div className="empty">
+              <span className="ic"><Icon name="heart" size={40} strokeWidth={1.5} /></span>
+              Nothing saved yet.<br />Tap the heart on any suggestion to keep it here.
+            </div>
+          ) : wishlist.map((w) => (
+            <div className="citem" key={w.product_id || w.name}>
+              {w.image ? <img className="ci-img" src={w.image} alt="" /> : <div className="ci-noimg"><Icon name="gift" size={20} /></div>}
+              <div className="ci-main">
+                <div className="ci-name">{w.name}</div>
+                {w.price != null && w.price !== "" ? <div className="ci-price">{`${w.currency || "LKR"} ${w.price}`}</div> : null}
+              </div>
+              <button type="button" className="k-iconbtn" title="Add to cart" aria-label="Add to cart" onClick={() => { addItems([normProduct({ ...w, id: w.id || w.product_id })]); }}>
+                <Icon name="shopping-cart" size={16} />
+              </button>
+              <button type="button" className="ci-rm" title="Remove from wishlist" onClick={() => toggleWishlist(w)}><Icon name="trash-2" size={16} /></button>
+            </div>
+          ))}
         </div>
       </aside>
 
