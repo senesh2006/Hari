@@ -133,6 +133,18 @@ const looksLikeProductRequest = (text) => {
   return t.length > 0 && !NON_PRODUCT_RE.test(t);
 };
 
+// Turns where the agent replies/asks rather than searching — show no skeletons.
+const REPLY_TURN_RE =
+  /\b(mad at|angry|upset|fight|make (it )?up|messed up|apolog|sorry|forgot (our|the|anniversary)|what do (you|u) think|not sure|thinking about|which (is|one|of these)|best (one|option|pick|choice)|you (choose|pick|decide)|recommend|your (pick|favou?rite|choice))\b/i;
+// Preference-rich categories that get a discovery question before searching.
+const PREF_RICH_HINT_RE =
+  /\b(flowers?|bouquet|roses?|orchids?|cake|cakes|hamper|chocolates?|ramen|noodles?|tea|coffee|wine|snacks?|dress|dresses|saree|sari|outfit|clothing|shirt|skirt|suit|jewell?ery|necklace|pendant|earrings?|bracelet|ring|watch|watches|perfume|fragrance|cologne|handbag|purse|wallet|shoes?|spa|wellness|toy|toys|plant|plants|book|books)\b/i;
+// A concrete taste/style/colour means we're ready to search, not ask.
+const HAS_PREF_RE =
+  /\b(elegant|casual|party|formal|evening|sporty|classic|trendy|minimal|chic|cute|fancy|vintage|boho|modern|traditional|ethnic|red|blue|black|white|pink|green|gold|silver|navy|maroon|beige|purple|yellow|grey|gray|cream|brown|teal|floral|pastel|spicy|sweet|savou?ry|dark|milk|woody|fresh|seafood|cheese|chicken)\b/i;
+const BUDGET_WORDS_RE =
+  /\b(no budget|no limit|any budget|unlimited|mid.?range|moderate|cheap(er)?|premium|expensive|affordable)\b/i;
+
 const greetSub = () => {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -967,6 +979,29 @@ function App({
     });
   };
 
+  // Decide whether THIS turn will actually fetch products (show skeletons) or
+  // the agent will reply/ask a question (no skeletons) — mirrors the backend gates.
+  const isBudgetAnswer = (text) => {
+    const s = (text || "").trim();
+    if (!s || s.length > 32) return false;
+    return !!parseBudget(s) || BUDGET_WORDS_RE.test(s) || /^\s*(rs\.?|lkr|rupees)?\s*\d[\d,]*\s*$/i.test(s);
+  };
+  const expectProductsFor = (text) => {
+    const t = (text || "").trim();
+    if (!looksLikeProductRequest(t)) return false;          // greetings, cart, tracking…
+    if (REPLY_TURN_RE.test(t)) return false;                // repair / opinion / pick-best → reply
+    // Once products are on screen, "cheaper/premium/more" are refine-searches, not budget answers.
+    if (!lastSuggestions.length && isBudgetAnswer(t)) return false;  // budget answer → follow-up question
+    const budgetGiven =
+      !!budget || !!parseBudget(t) ||
+      conversation.some((m) => m.role === "user" && !!parseBudget(m.content));
+    // First product turn with no budget yet → the budget question, not products.
+    if (!lastSuggestions.length && !budgetGiven) return false;
+    // A category named with no taste/style/colour yet, nothing on screen → discovery question.
+    if (!lastSuggestions.length && PREF_RICH_HINT_RE.test(t) && !HAS_PREF_RE.test(t)) return false;
+    return true;
+  };
+
   const send = async (text) => {
     text = (text || "").trim();
     if (!text) return;
@@ -990,7 +1025,7 @@ function App({
     setAwaitingAnswers(false);
 
     const tid = nid();
-    setExpectProducts(looksLikeProductRequest(text));
+    setExpectProducts(expectProductsFor(text));
     setMessages((m) => [...m, { id: tid, role: "bot", thinking: true }]);
     setStatus("Kapruka is thinking…");
 
