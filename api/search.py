@@ -468,6 +468,175 @@ def order_tracking_message(text: str, orders: list | None, recipients: list | No
     return "\n".join(lines)
 
 
+# --- Direct account/session workflows (cart, wishlist, orders, checkout) ---- #
+# The user is managing their own session ("what's in my cart", "show my
+# wishlist", "what did I order", "empty my cart", "checkout") rather than
+# shopping. These must break out of the gift-question script and answer from
+# data already in context, never trigger a product search.
+_VIEW_CUE_RE = re.compile(
+    r"\b(show|see|view|check|list|read|tell me|"
+    r"what(?:'?s| is| are| ?have| ?did)?|whats|how many|how much|"
+    r"anything|do i have|is there anything)\b",
+    re.I,
+)
+_CART_NOUN_RE = re.compile(r"\b(cart|basket|bag|trolley)\b", re.I)
+_WISHLIST_NOUN_RE = re.compile(
+    r"\b(wish ?list|saved (items?|gifts?|things?)|favou?rites?|hearted)\b", re.I
+)
+_ORDERS_STRONG_RE = re.compile(
+    r"\b(order history|purchase history|bought before|ordered before|"
+    r"past orders?|previous orders?|earlier orders?|my orders)\b",
+    re.I,
+)
+_ORDERS_WEAK_RE = re.compile(r"\b(orders?|purchases?)\b", re.I)
+_CLEAR_CART_RE = re.compile(
+    r"\b(empty|clear|wipe|reset|remove everything|delete everything|"
+    r"start over)\b[^.?!]{0,25}\b(cart|basket|bag)\b"
+    r"|\b(cart|basket|bag)\b[^.?!]{0,25}\b(empty|clear|wipe|reset)\b",
+    re.I,
+)
+_CHECKOUT_RE = re.compile(
+    r"\b(check ?out|place (?:my |the )?order|pay(?: now)?|payment|"
+    r"proceed to (?:pay|checkout)|complete (?:my |the )?order|buy now)\b",
+    re.I,
+)
+_CART_ADD_RE = re.compile(r"\b(add|put|drop|throw|place|save)\b", re.I)
+
+
+def _view_cue(low: str) -> bool:
+    return bool(_VIEW_CUE_RE.search(low) or re.search(r"\b(total|subtotal|cost)\b", low))
+
+
+def _account_intent(text: str) -> str | None:
+    """Direct session-management intent, or None. Order matters (most specific
+    first). Callers should only use this when it is NOT an order-tracking
+    request, which takes priority."""
+    low = (text or "").lower()
+    if not low.strip():
+        return None
+    if _CLEAR_CART_RE.search(low):
+        return "clear_cart"
+    if _CHECKOUT_RE.search(low):
+        return "checkout"
+    if _CART_NOUN_RE.search(low) and not _CART_ADD_RE.search(low) and _view_cue(low):
+        return "view_cart"
+    if _WISHLIST_NOUN_RE.search(low) and not re.search(
+        r"\b(add|save|put|remove|delete|take off)\b", low
+    ):
+        return "view_wishlist"
+    if _ORDERS_STRONG_RE.search(low):
+        return "view_orders"
+    if _ORDERS_WEAK_RE.search(low) and _view_cue(low):
+        return "view_orders"
+    return None
+
+
+def _format_cart_lines(cart: list) -> tuple[list, float, str]:
+    lines, subtotal, cur = [], 0.0, "LKR"
+    for p in cart:
+        qty = p.get("qty", 1) or 1
+        cur = p.get("currency") or cur
+        price = p.get("price")
+        try:
+            line_total = float(re.sub(r"[^0-9.]", "", str(price))) * qty
+        except (TypeError, ValueError):
+            line_total = 0.0
+        subtotal += line_total
+        ptxt = f" — {cur} {price} each" if price not in (None, "") else ""
+        lines.append(f"  • {p.get('name')} x{qty}{ptxt}")
+    return lines, subtotal, cur
+
+
+def account_intent_message(
+    intent: str, cart: list | None, wishlist: list | None, orders: list | None
+) -> str | None:
+    cart = cart or []
+    if intent == "view_cart":
+        head = [
+            "CART VIEW REQUEST — the user wants to know what's in their cart. "
+            "Do NOT search products and do NOT show cards. Read it back from the live cart."
+        ]
+        if not cart:
+            head.append("- The cart is currently EMPTY. Say so warmly and offer to find something.")
+        else:
+            lines, subtotal, cur = _format_cart_lines(cart)
+            head.append("- Items in the cart:")
+            head.extend(lines)
+            head.append(f"- Subtotal: {cur} {subtotal:,.0f}")
+            head.append("- List each item (name + qty) and the subtotal in a tidy, friendly reply.")
+        return "\n".join(head)
+    if intent == "view_wishlist":
+        head = [
+            "WISHLIST VIEW REQUEST — the user wants to see their saved/wishlisted items. "
+            "Do NOT search products and do NOT show cards."
+        ]
+        if not wishlist:
+            head.append(
+                "- Nothing is saved to the wishlist yet (or they're not signed in). "
+                "Say so gently and offer to find something they could save."
+            )
+        else:
+            head.append("- Saved items:")
+            for w in wishlist[:10]:
+                nm = w.get("name") or "item"
+                pr = w.get("price")
+                head.append(f"  • {nm}" + (f" ({pr})" if pr else ""))
+            head.append("- List them warmly; offer to add any to the cart.")
+        return "\n".join(head)
+    if intent == "view_orders":
+        head = [
+            "ORDER HISTORY REQUEST — the user wants to see what they've ordered before "
+            "(NOT live tracking). Do NOT search products."
+        ]
+        if not orders:
+            head.append("- No past orders on file (or not signed in). Say so gently.")
+        else:
+            head.append("- Past orders:")
+            for o in orders[:5]:
+                parts = []
+                if o.get("recipient_name"):
+                    parts.append(f"for {o['recipient_name']}")
+                if o.get("items_summary"):
+                    parts.append(str(o["items_summary"]))
+                if o.get("order_ref"):
+                    parts.append(f"ref {o['order_ref']}")
+                if o.get("ordered_at"):
+                    parts.append(str(o["ordered_at"])[:10])
+                if parts:
+                    head.append("  • " + " — ".join(parts))
+            head.append("- Summarise warmly; offer to reorder or find something similar.")
+        return "\n".join(head)
+    if intent == "clear_cart":
+        if not cart:
+            return (
+                "CLEAR CART REQUEST — but the cart is already EMPTY. Just tell them there's "
+                "nothing to clear, and offer to help find a gift. Do NOT call remove_from_cart."
+            )
+        return (
+            "CLEAR CART REQUEST — the user wants to empty their cart. Call remove_from_cart with "
+            "clear=true, then confirm warmly that the cart is now empty. Do NOT search products."
+        )
+    if intent == "checkout":
+        head = ["CHECKOUT REQUEST — the user wants to pay / place the order."]
+        if not cart:
+            head.append(
+                "- The cart is EMPTY, so there's nothing to check out. Gently say so and offer "
+                "to find something first. Do NOT search beyond that."
+            )
+        else:
+            lines, subtotal, cur = _format_cart_lines(cart)
+            head.append("- Cart ready to check out:")
+            head.extend(lines)
+            head.append(f"- Subtotal: {cur} {subtotal:,.0f}")
+            head.append(
+                "- Confirm the cart and subtotal, then tell them to open the cart and tap "
+                "Checkout in the app to enter delivery details and pay — there is no in-chat "
+                "payment step. Do NOT search products."
+            )
+        return "\n".join(head)
+    return None
+
+
 def trends_message(user_text: str, recipients: list | None = None, orders: list | None = None) -> str | None:
     """Soft trend bias: lean toward what's popular / in-style / their own patterns,
     but only when the user hasn't pinned down specifics. Never overrides a clear request."""
@@ -783,6 +952,13 @@ ORDER_TRACKING_NUDGE = (
     "tool is available, call it with the order reference to fetch live status; otherwise report the order "
     "details we have on file. Reply as a short, warm status report — what it is, who it's for, the reference, "
     "and where it stands."
+)
+
+ACCOUNT_ACTION_NUDGE = (
+    "IMPORTANT — this is a direct request about the user's OWN cart, wishlist, saved items, "
+    "past orders, or checkout (see the matching context block above). Do NOT call "
+    "kapruka_search_products and do NOT show product cards. Answer directly and warmly in plain "
+    "sentences from that context, then offer one helpful next step."
 )
 
 TASTE_QUESTION_NUDGE = (
@@ -2687,9 +2863,13 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
 
     track_request = _is_order_tracking_request(user_en)
-    search_first = False if track_request else _should_search_first(user_en, profile, recipients, conv)
-    taste_question = False if track_request else _needs_taste_question(user_en, profile, recipients)
-    clarify_question = False if track_request else _needs_clarification_question(user_en, conv)
+    account_intent = None if track_request else _account_intent(user_en)
+    # An order-tracking or account request breaks out of the gift-question
+    # script — never ask a taste/clarify question or force a product search.
+    direct_request = track_request or bool(account_intent)
+    search_first = False if direct_request else _should_search_first(user_en, profile, recipients, conv)
+    taste_question = False if direct_request else _needs_taste_question(user_en, profile, recipients)
+    clarify_question = False if direct_request else _needs_clarification_question(user_en, conv)
     repair_interests = _recipient_interests_for_repair(user_en, recipients)
     if search_first:
         allow_questions = False
@@ -2710,6 +2890,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     ]
     if track_request:
         extra_ctx.append(order_tracking_message(user_en, orders, recipients))
+    if account_intent:
+        extra_ctx.append(account_intent_message(account_intent, cart, wishlist, orders))
     messages = _build_messages(
         conv,
         _context_message(suggestions, cart, instructions),
@@ -2719,6 +2901,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     )
     if track_request:
         messages.append({"role": "system", "content": ORDER_TRACKING_NUDGE})
+    elif account_intent:
+        messages.append({"role": "system", "content": ACCOUNT_ACTION_NUDGE})
     elif repair_interests and search_first:
         messages.append({
             "role": "system",
