@@ -159,6 +159,9 @@ main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scro
 .feed { display: flex; flex-direction: column; gap: 1.4rem; }
 .msg-in { animation: k-rise .42s var(--ease-out) both; }
 .grid { display: grid; gap: .7rem; margin: .8rem 0 0; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); }
+.prod-group + .prod-group { margin-top: 1rem; }
+.prod-group-label { margin: .9rem 0 0; font-size: .82rem; font-weight: 700; letter-spacing: .01em; color: var(--primary, #6c4ad0); text-transform: capitalize; display: flex; align-items: center; gap: .4rem; }
+.prod-group-label::before { content: ""; width: .3rem; height: .3rem; border-radius: 50%; background: currentColor; flex: none; }
 
 /* ===== Composer ===== */
 .composer { flex: 0 0 auto; z-index: 40; position: relative; padding: .4rem 1rem 1.1rem; background: linear-gradient(to top, var(--bg) 52%, transparent); }

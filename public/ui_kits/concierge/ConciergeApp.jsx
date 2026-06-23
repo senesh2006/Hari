@@ -52,7 +52,23 @@ const normProduct = (p) => {
     url: p.url || "",
     customizable: !!p.customizable,
     customization_type: p.customization_type || null,
+    group: p.group || "",
   };
+};
+/** Group products by their `group` label, preserving first-seen order. Returns
+ *  [{ label, items }]. */
+const groupProducts = (products) => {
+  const order = [];
+  const byLabel = new Map();
+  for (const p of products) {
+    const label = p.group || "Suggestions";
+    if (!byLabel.has(label)) {
+      byLabel.set(label, []);
+      order.push(label);
+    }
+    byLabel.get(label).push(p);
+  }
+  return order.map((label) => ({ label, items: byLabel.get(label) }));
 };
 const cartKey = (p) => (p.url || "").trim().toLowerCase() || String(p.name || "").trim().toLowerCase();
 const parseBudget = (text) => {
@@ -1223,9 +1239,13 @@ function App({
                 <Bubble role={m.role} thinking={m.thinking}>
                   {m.role === "bot" && m.text && !m.thinking ? <BotText text={m.text} /> : m.text}
                 </Bubble>
-                {m.products && (
-                  <div className="grid" style={{ marginLeft: "2.4rem" }}>
-                    {m.products.map((p, i) => (
+                {m.products && (() => {
+                  const groups = groupProducts(m.products);
+                  const showHeaders = groups.length > 1;
+                  let n = 0;
+                  const renderCard = (p) => {
+                    const i = n++;
+                    return (
                       <div className="k-rise" key={p.name + i} style={{ position: "relative", animationDelay: `${Math.min(i, 8) * 70}ms` }}>
                         {p.customizable && (
                           <span style={{ position: "absolute", top: ".4rem", left: ".4rem", zIndex: 2, display: "inline-flex", alignItems: "center", gap: ".25rem", fontSize: ".68rem", fontWeight: 600, padding: ".2rem .45rem", borderRadius: ".5rem", background: "var(--accent, #e08aa0)", color: "#1a1a1f" }}>
@@ -1239,9 +1259,19 @@ function App({
                           onAdd={() => addItems([p])}
                         />
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  };
+                  return (
+                    <div style={{ marginLeft: "2.4rem" }}>
+                      {groups.map((g) => (
+                        <div key={g.label} className="prod-group">
+                          {showHeaders && <h4 className="prod-group-label">{g.label}</h4>}
+                          <div className="grid">{g.items.map(renderCard)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

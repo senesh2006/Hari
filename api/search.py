@@ -868,6 +868,8 @@ SEARCH RULES (mandatory)
 - Tailor to age and interests (cooking → cookware; reading → book).
 - When the recipient likes a SPECIFIC thing (ramen, cricket, skincare, coffee), search THAT thing or a close \
 match (q='ramen', q='instant noodles', q='Japanese snacks') — do NOT silently swap in a generic fruit/gift basket.
+- If the user names SEVERAL different things ("ramen and chocolates and a card"), run a SEPARATE search for \
+EACH one and show them all — don't collapse them into a single query.
 - Do NOT pass a category filter unless you got the exact name from kapruka_list_categories.
 
 UI PRESENTATION
@@ -955,6 +957,8 @@ DISCOVERY_NUDGE = (
     "IMPORTANT — you could search, but you don't yet know the recipient's taste, so the picks would be "
     "a guess. Ask exactly ONE warm, friend-like question to sharpen them — tailored to what they asked "
     "for, never a form, and NOT about budget (already handled). Examples by category: "
+    "food/snacks (ramen, chocolate, tea) → the flavour they like — e.g. ramen → spicy, cheese, "
+    "seafood, or chicken; chocolate → dark or milk; tea → green or black; "
     "flowers → roses, mixed, or orchids, and a colour or romantic-vs-cheerful vibe; "
     "cake → flavour and roughly how many people (or eggless); "
     "clothing → casual/party/formal, plus a colour or size; "
@@ -963,6 +967,12 @@ DISCOVERY_NUDGE = (
     "hamper → sweet, savoury, or wellness. "
     "Use ask_user with that single question in your warm voice. If they answer, are unsure, or say "
     "'you pick' / 'surprise me', search right away — never ask a second round."
+)
+
+MORE_SUGGESTIONS_NUDGE = (
+    "IMPORTANT — the user asked for MORE / other ideas. Do NOT repeat anything already shown or in "
+    "the cart (see MORE SUGGESTIONS REQUEST). Run fresh searches for different, complementary items "
+    "and present only NEW products. Reply in 1–2 warm sentences, no product names."
 )
 
 ORDER_TRACKING_NUDGE = (
@@ -1710,10 +1720,11 @@ def _budget_ask(profile: dict | None) -> tuple[str, str]:
 # category-aware question before the first search instead of guessing.
 _PREF_RICH_RE = re.compile(
     r"\b(flowers?|bouquet|roses?|orchids?|lilies|cake|cakes|hamper|gift basket|"
-    r"chocolates?|dress|dresses|saree|sari|outfit|clothing|clothes|shirt|skirt|"
+    r"chocolates?|chocolate|ramen|noodles?|tea|coffee|wine|snacks?|"
+    r"dress|dresses|saree|sari|outfit|clothing|clothes|shirt|skirt|"
     r"suit|jewell?ery|jewelry|necklace|pendant|earrings?|bracelet|ring|watch|"
     r"perfume|fragrance|cologne|handbag|purse|wallet|shoes?|spa|wellness|"
-    r"toy|toys|soft toy|plant|plants|wine|tea|coffee|book|books)\b",
+    r"toy|toys|soft toy|plant|plants|book|books)\b",
     re.I,
 )
 
@@ -1793,6 +1804,49 @@ def _should_discover_first(
     if _assistant_question_count(conversation) >= 2:
         return False
     return True
+
+
+# --- "Show me more / something else" --------------------------------------- #
+_MORE_RE = re.compile(
+    r"\b(what else|anything else|something else|"
+    r"other (options|suggestions|ideas|ones|gifts?)|"
+    r"more (options|suggestions|ideas|gifts?|stuff|like (this|that|these))|"
+    r"any other|some more|show (me )?more|give me more|"
+    r"(else|other) (can|do|would|could) (you|u)|"
+    r"different (options|ideas|ones|suggestions))\b",
+    re.I,
+)
+
+
+def _is_more_request(text: str) -> bool:
+    return bool(_MORE_RE.search(text or ""))
+
+
+def _shown_names(suggestions: list | None, cart: list | None) -> list[str]:
+    names: list[str] = []
+    for p in (suggestions or []):
+        nm = (p.get("name") or "").strip()
+        if nm and nm not in names:
+            names.append(nm)
+    for c in (cart or []):
+        nm = (c.get("name") or "").strip()
+        if nm and nm not in names:
+            names.append(nm)
+    return names
+
+
+def more_suggestions_message(suggestions: list | None, cart: list | None) -> str | None:
+    names = _shown_names(suggestions, cart)
+    if not names:
+        return None
+    return (
+        "MORE SUGGESTIONS REQUEST — the user wants DIFFERENT ideas. They have already been shown or "
+        "added the items below, so do NOT suggest any of these again:\n"
+        + "; ".join(names[:20])
+        + "\nSearch COMPLEMENTARY or adjacent items instead (e.g. if they picked ramen: kimchi, Korean "
+        "snacks, sauces, drinks, a snack hamper to bundle, chopsticks). Run fresh searches with "
+        "different queries and present only genuinely new products."
+    )
 
 # =============================================================================
 # Synthetic tools (not part of the MCP)
@@ -2381,12 +2435,34 @@ def _norm_text(t) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(t).lower()).strip()
 
 
+_GROUP_FILLER_RE = re.compile(
+    r"\b(gift|gifts|present|for|her|him|them|the|a|an|best|nice|good|to|of|with|"
+    r"buy|some|any)\b",
+    re.I,
+)
+
+
+def _group_label(query: str) -> str:
+    """Turn a search query into a tidy section label for grouped display."""
+    q = _GROUP_FILLER_RE.sub(" ", str(query or ""))
+    q = re.sub(r"\s+", " ", q).strip()
+    if not q:
+        return "Suggestions"
+    return " ".join(w.capitalize() for w in q.split())[:40]
+
+
 def extract_products(results: list) -> list:
     found = []
     for r in results:
         data = _coerce_json(r.get("output", ""))
-        if data is not None:
-            _walk_products(data, found)
+        if data is None:
+            continue
+        group = _group_label((r.get("arguments") or {}).get("q") or "")
+        before = len(found)
+        _walk_products(data, found)
+        for p in found[before:]:
+            if not p.get("group"):
+                p["group"] = group
 
     seen_urls, seen_names, unique = set(), set(), []
     for p in found:
@@ -3147,14 +3223,25 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # An order-tracking or account request breaks out of the gift-question
     # script — never ask a taste/clarify question or force a product search.
     direct_request = track_request or bool(account_intent)
+    # "What else / show me more" — search fresh, complementary items and never
+    # repeat what's already on screen or in the cart.
+    more_request = (
+        not direct_request
+        and _is_more_request(user_en)
+        and bool(_shown_names(suggestions, cart))
+    )
     search_first = False if direct_request else _should_search_first(user_en, profile, recipients, conv)
     taste_question = False if direct_request else _needs_taste_question(user_en, profile, recipients)
     clarify_question = False if direct_request else _needs_clarification_question(user_en, conv)
+    if more_request:
+        # They want more — just search, don't gate behind a question.
+        search_first, taste_question, clarify_question = True, False, False
     # Ask the budget ONCE per chat before the first real search — offering the
     # saved default vs. a new amount. Never re-ask it for later items, and never
     # lead with it when the user is emotional.
     budget_question = (
         not direct_request
+        and not more_request
         and not taste_question
         and not clarify_question
         and allow_questions
@@ -3167,9 +3254,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # just asked (e.g. their budget reply) — but we don't yet know the
     # recipient's taste, let the model ask ONE targeted question before guessing.
     # Once taste is known (or they say "you pick"), search instead of stalling.
+    repair_interests = _recipient_interests_for_repair(user_en, recipients)
     discover_first = False
     force_search = False
-    if allow_questions and not direct_request and not budget_question:
+    if allow_questions and not direct_request and not budget_question and not more_request \
+            and not repair_interests:
         momentum = search_first or _last_assistant_was_question(conv)
         pref_rich = bool(_PREF_RICH_RE.search(_recent_user_blob(conv, user_en)))
         if momentum and pref_rich:
@@ -3179,7 +3268,6 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 force_search = True
     if force_search:
         search_first = True
-    repair_interests = _recipient_interests_for_repair(user_en, recipients)
     if search_first and not discover_first:
         allow_questions = False
 
@@ -3201,6 +3289,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         extra_ctx.append(order_tracking_message(user_en, orders, recipients))
     if account_intent:
         extra_ctx.append(account_intent_message(account_intent, cart, wishlist, orders))
+    if more_request:
+        extra_ctx.append(more_suggestions_message(suggestions, cart))
     messages = _build_messages(
         conv,
         _context_message(suggestions, cart, instructions),
@@ -3212,15 +3302,17 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         messages.append({"role": "system", "content": ORDER_TRACKING_NUDGE})
     elif account_intent:
         messages.append({"role": "system", "content": ACCOUNT_ACTION_NUDGE})
+    elif more_request:
+        messages.append({"role": "system", "content": MORE_SUGGESTIONS_NUDGE})
     elif repair_interests and search_first:
         messages.append({
             "role": "system",
             "content": REPAIR_INTERESTS_NUDGE.format(interests=", ".join(repair_interests)),
         })
-    elif _is_repair_follow_up(conv, user_en) and search_first:
-        messages.append({"role": "system", "content": REPAIR_FOLLOWUP_NUDGE})
     elif discover_first:
         messages.append({"role": "system", "content": DISCOVERY_NUDGE})
+    elif _is_repair_follow_up(conv, user_en) and search_first:
+        messages.append({"role": "system", "content": REPAIR_FOLLOWUP_NUDGE})
     elif search_first:
         messages.append({"role": "system", "content": SEARCH_FIRST_NUDGE})
 
@@ -3231,11 +3323,15 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         valid_names.add("ask_user")
 
     # Concrete interests the result should actually be about (e.g. "ramen").
-    salient_terms = _salient_want_terms(conv, user_en)
+    # For "show me more" we want DIFFERENT items, so skip interest grounding.
+    salient_terms = set() if more_request else _salient_want_terms(conv, user_en)
     grounding_warned = False
+    already_shown = {_norm_text(n) for n in _shown_names(suggestions, cart)} if more_request else set()
 
     def finalize(answer: str) -> dict:
         products = extract_products(results)
+        if already_shown:
+            products = [p for p in products if _norm_text(p.get("name")) not in already_shown]
         if products:
             answer = _strip_catalog_from_answer(answer, products)
             if not (answer or "").strip():
