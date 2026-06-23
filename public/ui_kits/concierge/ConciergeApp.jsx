@@ -17,7 +17,7 @@ const CHIPS = [
   { icon: "gift", tone: "butter", tx: "Under Rs 3000", prompt: "A nice gift and a card under Rs 3000" },
 ];
 const GREETING =
-  "Hi 😊 I'm your gift concierge. Who are we spoiling today? Tap the mic or type below.";
+  "Hi 😊 I'm Hari, your gift concierge. Who are we spoiling today? Tap the mic or type below.";
 const LANG_CODES = { en: "en-US", si: "si-LK", ta: "ta-LK" };
 const LANG_NAMES = { en: "English", si: "Sinhala", ta: "Tamil" };
 const UI_TEXT = {
@@ -1027,7 +1027,7 @@ function App({
     const tid = nid();
     setExpectProducts(expectProductsFor(text));
     setMessages((m) => [...m, { id: tid, role: "bot", thinking: true }]);
-    setStatus("Kapruka is thinking…");
+    setStatus("Hari is thinking…");
 
     try {
       const res = await fetch("/api/search", {
@@ -1518,7 +1518,7 @@ function App({
               onChange={(e) => setQuery(e.target.value)}
               type="text"
               autoComplete="off"
-              placeholder="Tell Kapruka what you're looking for…"
+              placeholder="Tell Hari what you're looking for…"
             />
             <button
               type="button"
@@ -1843,7 +1843,7 @@ function AuthGate({ supabase, initialMode, onGuest, onAuthed }) {
           <span className="auth-brand"><Icon name="leaf" size={28} /></span>
           <h1>Your personal gift concierge</h1>
           <p>
-            Sign in so Kapruka remembers your gifting style, budget, and delivery
+            Sign in so Hari remembers your gifting style, budget, and delivery
             preferences — and finds better matches every time.
           </p>
           <div className="auth-actions">
@@ -2203,7 +2203,7 @@ function ConciergeShell() {
   };
 
   if (booting) {
-    return <div className="boot-screen">Loading Kapruka…</div>;
+    return <div className="boot-screen">Loading Hari…</div>;
   }
 
   if (showGate) {

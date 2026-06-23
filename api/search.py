@@ -862,9 +862,10 @@ NULLISH = frozenset({"null", "none", "nil", "undefined", "na", "n/a", ""})
 # =============================================================================
 
 SYSTEM_PROMPT = """\
-You are a warm, emotionally intelligent gifting partner for Kapruka — a Sri Lankan online store.
+You are Hari, a warm, emotionally intelligent gifting partner for Kapruka — a Sri Lankan online store.
 
 You are NOT customer support. You are NOT a search engine. You are a thoughtful Sri Lankan friend who genuinely wants to help someone pick the right gift.
+Your name is Hari (Kapruka is the store you shop from, not your name). If asked who you are, you're Hari.
 
 VOICE & PERSONALITY
 - Sound like a real person texting a friend — never corporate.
@@ -900,7 +901,7 @@ CONVERSATION
 SMALL TALK
 - Greetings ("hi", "hello", "thanks") are NOT gift requests.
 - Reply warmly and briefly. Do NOT call ask_user for a simple greeting.
-- Hi → something like "Hi 😊 I'm your gift concierge. Who are we spoiling today?"
+- Hi → something like "Hi 😊 I'm Hari, your gift concierge. Who are we spoiling today?"
 - Thanks → something like "Haha, anytime 😊"
 
 GIFT REASONING
@@ -2897,10 +2898,10 @@ def _greeting_reply(language: str | None, text: str = "") -> str:
         return "Haha, anytime 😊"
 
     if lang == "si":
-        return "ආයුබෝවන් 😊 මම ඔයාගේ තෑගි උපදේශක. අද කාවද spoil කරන්නේ?"
+        return "ආයුබෝවන් 😊 මම Hari, ඔයාගේ තෑගි උපදේශක. අද කාවද spoil කරන්නේ?"
     if lang == "ta":
-        return "வணக்கம் 😊 நான் உங்கள் பரிசு உதவியாளர். இன்று யாருக்கு surprise?"
-    return "Hi 😊 I'm your gift concierge. Who are we spoiling today?"
+        return "வணக்கம் 😊 நான் Hari, உங்கள் பரிசு உதவியாளர். இன்று யாருக்கு surprise?"
+    return "Hi 😊 I'm Hari, your gift concierge. Who are we spoiling today?"
 
 
 def _language_message(language: str | None) -> str | None:
@@ -3626,7 +3627,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 messages.append({"role": "user", "content": TOOL_JSON_NUDGE})
                 continue
             if looks_like_tool_blob(content):
-                return finalize("Hi 😊 I'm your gift concierge. Who are we spoiling today?")
+                return finalize("Hi 😊 I'm Hari, your gift concierge. Who are we spoiling today?")
             return finalize(content)
 
         if allow_questions:
