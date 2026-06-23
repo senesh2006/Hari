@@ -22,6 +22,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 
@@ -844,7 +845,7 @@ MAX_TOOL_ROUNDS = int(os.environ.get("SEARCH_MAX_ROUNDS", "5"))
 SEARCH_BUDGET = float(os.environ.get("SEARCH_BUDGET", "55"))
 MIN_ROUND_SECONDS = float(os.environ.get("SEARCH_MIN_ROUND_SECONDS", "8"))
 
-TRANSLATE_TIMEOUT = float(os.environ.get("TRANSLATE_TIMEOUT", "18"))
+TRANSLATE_TIMEOUT = float(os.environ.get("TRANSLATE_TIMEOUT", "9"))
 LANGBLY_API_KEY = os.environ.get("LANGBLY_API_KEY")
 LANGBLY_URL = os.environ.get("LANGBLY_URL", "https://api.langbly.com/language/translate/v2")
 
@@ -3304,6 +3305,11 @@ def _execute_tool_calls(
 def search(conversation, allow_questions: bool = True, context: dict | None = None) -> dict:
     global _TOOLS_CACHE
 
+    # Anchor the whole-request budget here so translation, context loading and
+    # MCP setup all count against it — the loop then can't overrun the platform
+    # limit, and translated (si/ta) sessions degrade gracefully instead of 502.
+    t0 = time.monotonic()
+
     if isinstance(conversation, str):
         conversation = [{"role": "user", "content": conversation}]
     last_user = next(
@@ -3353,15 +3359,21 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
 
     conv = [dict(t) for t in conversation]
     user_en = last_user
+    access_token = context.get("access_token")
     if target_lang:
-        user_en = _translate(last_user, target_lang, "en")
+        # Inbound translation and the Supabase context load are independent IO —
+        # run them together so translation latency overlaps the DB round-trips.
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            f_tr = ex.submit(_translate, last_user, target_lang, "en")
+            f_ctx = ex.submit(_load_user_context, access_token)
+            user_en = f_tr.result() or last_user
+            profile, uid, recipients, wishlist, orders = f_ctx.result()
         for t in reversed(conv):
             if t.get("role") == "user":
                 t["content"] = user_en
                 break
-
-    access_token = context.get("access_token")
-    profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
+    else:
+        profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
 
     track_request = _is_order_tracking_request(user_en)
     account_intent = None if track_request else _account_intent(user_en)
@@ -3497,6 +3509,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     recipient_gender = _recipient_gender(conv, recipients, user_en)
     gender_warned = False
 
+    def _tr_timeout() -> float:
+        # Cap outbound translation by the time left in the whole-request budget,
+        # so a slow Langbly call can never push the function past the platform limit.
+        return max(3.0, min(TRANSLATE_TIMEOUT, t0 + SEARCH_BUDGET - time.monotonic()))
+
     def finalize(answer: str) -> dict:
         products = extract_products(results)
         if already_shown:
@@ -3512,7 +3529,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             missed = _uncovered_terms_in_answer(salient_terms, products, answer)
             if missed:
                 answer = HONEST_NO_MATCH_FALLBACK.format(terms=", ".join(sorted(missed)))
-        local = _translate(answer, "en", target_lang) if (target_lang and answer) else answer
+        local = _translate(answer, "en", target_lang, _tr_timeout()) if (target_lang and answer) else answer
         if uid and profile and answer:
             _persist_session_facts(access_token, uid, profile, conv, user_en, answer)
         return {
@@ -3533,13 +3550,13 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         qs = questions[:3]
         local_qs = qs
         if target_lang and qs:
-            joined = _translate("\n".join(qs), "en", target_lang)
+            joined = _translate("\n".join(qs), "en", target_lang, _tr_timeout())
             parts = [p.strip() for p in joined.split("\n") if p.strip()]
             local_qs = parts if len(parts) == len(qs) else qs
         intro_en = (intro or "").strip()
         intro_local = intro_en
         if target_lang and intro_en:
-            intro_local = _translate(intro_en, "en", target_lang) or intro_en
+            intro_local = _translate(intro_en, "en", target_lang, _tr_timeout()) or intro_en
         return {
             "ok": True,
             "needs_input": True,
@@ -3564,8 +3581,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         intro, question = _budget_ask(profile)
         return ask([question], intro=intro)
 
-    reserve = 12 if target_lang else 0
-    deadline = time.monotonic() + max(20.0, SEARCH_BUDGET - reserve)
+    # Reserve a little tail for the outbound translation; anchor to t0 so any
+    # time already spent on translation/context shortens the loop, not the
+    # platform budget.
+    reserve = 8 if target_lang else 0
+    deadline = t0 + max(20.0, SEARCH_BUDGET - reserve)
     json_corrections = 0
     max_json_corrections = 2
 
