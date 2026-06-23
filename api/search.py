@@ -1028,6 +1028,13 @@ MORE_SUGGESTIONS_NUDGE = (
     "and present only NEW products. Reply in 1–2 warm sentences, no product names."
 )
 
+PICK_BEST_NUDGE = (
+    "IMPORTANT — the user wants you to pick the best from the CURRENT SUGGESTIONS already on screen "
+    "(see that list in context). Do NOT search again and do NOT show new products. Recommend ONE (or "
+    "the top two) and — unlike normal replies — DO name the specific item(s) you're recommending, with "
+    "a short, concrete reason it fits the recipient, occasion and budget. Offer to add it to the cart."
+)
+
 ORDER_TRACKING_NUDGE = (
     "IMPORTANT — this is an ORDER TRACKING request, not shopping. Use the ORDER TRACKING REQUEST context. "
     "Do NOT call kapruka_search_products and do NOT show product cards. If a Kapruka order-status/tracking "
@@ -1873,6 +1880,24 @@ _MORE_RE = re.compile(
 
 def _is_more_request(text: str) -> bool:
     return bool(_MORE_RE.search(text or ""))
+
+
+# --- "Pick the best of what's already shown" ------------------------------- #
+_PICK_BEST_RE = re.compile(
+    r"\b(best (option|one|pick|choice|gift|of these)|"
+    r"which (one |is )?(is )?(best|better)|"
+    r"which (one |do you |would you )?(recommend|suggest|pick|choose|prefer)|"
+    r"pick (the |one |me )?(best|one)|choose (the |one )?(best|one|for me)|"
+    r"you (choose|pick|decide|recommend)|"
+    r"your (favou?rite|pick|recommendation|choice|best)|"
+    r"what'?s the best|recommend (one|me one|the best|your|something)|"
+    r"which should i (get|pick|choose|buy)|which of these)\b",
+    re.I,
+)
+
+
+def _is_pick_best_request(text: str) -> bool:
+    return bool(_PICK_BEST_RE.search(text or ""))
 
 
 def _shown_names(suggestions: list | None, cart: list | None) -> list[str]:
@@ -3343,10 +3368,17 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # An order-tracking or account request breaks out of the gift-question
     # script — never ask a taste/clarify question or force a product search.
     direct_request = track_request or bool(account_intent)
+    # "Pick the best for me" — recommend from what's already on screen, no new search.
+    pick_best = (
+        not direct_request
+        and bool(suggestions)
+        and _is_pick_best_request(user_en)
+    )
     # "What else / show me more" — search fresh, complementary items and never
     # repeat what's already on screen or in the cart.
     more_request = (
         not direct_request
+        and not pick_best
         and _is_more_request(user_en)
         and bool(_shown_names(suggestions, cart))
     )
@@ -3356,12 +3388,16 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if more_request:
         # They want more — just search, don't gate behind a question.
         search_first, taste_question, clarify_question = True, False, False
+    if pick_best:
+        # Recommend from current suggestions — no search, no question.
+        search_first, taste_question, clarify_question = False, False, False
     # Ask the budget ONCE per chat before the first real search — offering the
     # saved default vs. a new amount. Never re-ask it for later items, and never
     # lead with it when the user is emotional.
     budget_question = (
         not direct_request
         and not more_request
+        and not pick_best
         and not taste_question
         and not clarify_question
         and allow_questions
@@ -3378,7 +3414,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     discover_first = False
     force_search = False
     if allow_questions and not direct_request and not budget_question and not more_request \
-            and not repair_interests:
+            and not pick_best and not repair_interests:
         momentum = search_first or _last_assistant_was_question(conv)
         pref_rich = bool(_PREF_RICH_RE.search(_recent_user_blob(conv, user_en)))
         if momentum and pref_rich:
@@ -3394,6 +3430,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     openai_tools = mcp_tools_to_openai(tools) + CART_TOOLS
     if allow_questions:
         openai_tools = openai_tools + [ASK_USER_TOOL]
+    if pick_best:
+        # Force a recommendation from the on-screen suggestions: no search tools.
+        openai_tools = CART_TOOLS
 
     extra_ctx = [
         playbook_message(user_en, conv),
@@ -3424,6 +3463,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         messages.append({"role": "system", "content": ORDER_TRACKING_NUDGE})
     elif account_intent:
         messages.append({"role": "system", "content": ACCOUNT_ACTION_NUDGE})
+    elif pick_best:
+        messages.append({"role": "system", "content": PICK_BEST_NUDGE})
     elif more_request:
         messages.append({"role": "system", "content": MORE_SUGGESTIONS_NUDGE})
     elif repair_interests and search_first:
@@ -3443,6 +3484,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     valid_names = set(tool_names) | CART_TOOL_NAMES
     if allow_questions:
         valid_names.add("ask_user")
+    if pick_best:
+        # No searching when recommending from on-screen suggestions.
+        valid_names = set(CART_TOOL_NAMES)
 
     # Concrete interests the result should actually be about (e.g. "ramen").
     # For "show me more" we want DIFFERENT items, so skip interest grounding.
