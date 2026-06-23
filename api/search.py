@@ -866,6 +866,8 @@ SEARCH RULES (mandatory)
 - Turn each idea into a short, specific product noun and run a SEPARATE kapruka_search_products call \
 (e.g. q='flower bouquet', q='fruit basket', q='cookware'). Never search vague phrases like 'gift' or 'birthday gift'.
 - Tailor to age and interests (cooking → cookware; reading → book).
+- When the recipient likes a SPECIFIC thing (ramen, cricket, skincare, coffee), search THAT thing or a close \
+match (q='ramen', q='instant noodles', q='Japanese snacks') — do NOT silently swap in a generic fruit/gift basket.
 - Do NOT pass a category filter unless you got the exact name from kapruka_list_categories.
 
 UI PRESENTATION
@@ -916,9 +918,12 @@ BUDGET CHECK
 
 DATA RULES
 - Rely ONLY on tool data from this conversation — never invent products or prices.
+- NEVER describe a product as something it is not. If they wanted ramen but the search returned fruit \
+baskets, do NOT call one a "ramen basket" — say honestly you couldn't find ramen and offer what you found \
+as alternatives, described accurately. A mismatch the user can see destroys trust faster than "no match".
 - Never say "prices may change, check the website".
 - Never duplicate the same product. Omit unset optional params — never pass "null" placeholders.
-- If a search returns nothing, try a different concrete idea.
+- If a search returns nothing relevant, try a different concrete idea before settling.
 
 When USER PROFILE context is provided, bias searches and suggestions toward their gifting personality, \
 style, typical budget, and default city — without ignoring their current request."""
@@ -2474,6 +2479,87 @@ _EMPTY_CATALOG_FALLBACK = (
 )
 
 
+# --- Result grounding ------------------------------------------------------- #
+# Guard against the model claiming a search found what the user asked for when it
+# didn't (e.g. user says she likes ramen, search returns fruit baskets, and the
+# model calls one a "ramen gift basket"). We compare the recipient's concrete
+# stated interests against what the products actually are.
+_GENERIC_WANT_WORDS = frozenset({
+    "gift", "gifts", "present", "presents", "basket", "baskets", "hamper",
+    "hampers", "something", "anything", "stuff", "things", "thing", "item",
+    "items", "set", "food", "snack", "snacks", "treat", "treats", "eat",
+    "eating", "drink", "stuff", "nice", "good", "best", "love", "loves",
+})
+
+
+def _salient_want_terms(conversation: list | None, current_text: str | None) -> set[str]:
+    """Concrete interest words the user named (e.g. 'ramen', 'cricket') — the
+    things a relevant result should actually be about."""
+    blob = _recent_user_blob(conversation, current_text, n=3)
+    terms: set[str] = set()
+    for phrase in _interest_phrases(blob):
+        for w in re.findall(r"[a-z]+", phrase.lower()):
+            if len(w) >= 4 and w not in _INTEREST_STOP and w not in _GENERIC_WANT_WORDS:
+                terms.add(w)
+    return terms
+
+
+def _term_in_blob(term: str, blob: str) -> bool:
+    if term in blob:
+        return True
+    stem = term[:-1] if term.endswith("s") and len(term) > 4 else term
+    return stem in blob
+
+
+def _results_cover_terms(terms: set[str], products: list) -> bool:
+    """True if at least one stated interest actually shows up in the products."""
+    if not terms:
+        return True
+    blob = " ".join(
+        _norm_text(f"{p.get('name') or ''} {p.get('description') or ''}") for p in products
+    )
+    if not blob.strip():
+        return False
+    return any(_term_in_blob(t, blob) for t in terms)
+
+
+_HONEST_MISS_RE = re.compile(
+    r"\b(could ?n'?t find|could not find|did ?n'?t find|did not find|can'?t find|"
+    r"cannot find|do ?n'?t have|does ?n'?t have|not available|no exact|"
+    r"unfortunately|was ?n'?t able|were ?n'?t any|instead of|as an alternative|"
+    r"alternative|closest i|nothing exactly)\b",
+    re.I,
+)
+
+
+def _uncovered_terms_in_answer(terms: set[str], products: list, answer: str) -> list[str]:
+    """Interest terms the answer asserts as a match but no product supports — i.e.
+    claims the model made up. If the reply already admits it couldn't find the
+    thing, trust it and leave the wording alone."""
+    if not terms or _results_cover_terms(terms, products):
+        return []
+    if _HONEST_MISS_RE.search(answer or ""):
+        return []
+    low = _norm_text(answer)
+    return [t for t in terms if _term_in_blob(t, low)]
+
+
+GROUNDING_NUDGE = (
+    "GROUNDING CHECK — the search results do NOT actually match what the recipient likes "
+    "({terms}). Do NOT describe these products as {terms} or claim they're what she wanted — "
+    "that would be a lie the user will instantly catch. Either run another kapruka_search_products "
+    "with a closer term (e.g. the exact food/interest, a synonym, or a fitting category), OR, if "
+    "Kapruka genuinely doesn't carry it, tell the user honestly that you couldn't find {terms} and "
+    "offer what you DID find as alternative ideas — described accurately for what they are."
+)
+
+
+HONEST_NO_MATCH_FALLBACK = (
+    "I couldn't find {terms} itself on Kapruka, but I've pulled a few thoughtful "
+    "options that still suit her below 😊 Want me to keep hunting for something closer to {terms}?"
+)
+
+
 # =============================================================================
 # NVIDIA NIM
 # =============================================================================
@@ -3144,12 +3230,22 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if allow_questions:
         valid_names.add("ask_user")
 
+    # Concrete interests the result should actually be about (e.g. "ramen").
+    salient_terms = _salient_want_terms(conv, user_en)
+    grounding_warned = False
+
     def finalize(answer: str) -> dict:
         products = extract_products(results)
         if products:
             answer = _strip_catalog_from_answer(answer, products)
             if not (answer or "").strip():
                 answer = _EMPTY_CATALOG_FALLBACK
+            # Honesty backstop: if the reply still claims an interest the products
+            # don't actually match ("ramen gift basket" over fruit baskets),
+            # replace the false claim with an honest framing.
+            missed = _uncovered_terms_in_answer(salient_terms, products, answer)
+            if missed:
+                answer = HONEST_NO_MATCH_FALLBACK.format(terms=", ".join(sorted(missed)))
         local = _translate(answer, "en", target_lang) if (target_lang and answer) else answer
         if uid and profile and answer:
             _persist_session_facts(access_token, uid, profile, conv, user_en, answer)
@@ -3287,6 +3383,18 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 )
             chunks.append("Do NOT call tools again; reply to the user now.")
             messages.append({"role": "user", "content": "\n\n".join(chunks)})
+
+        # Grounding: if the search didn't return anything matching the recipient's
+        # stated interest, tell the model once — so it re-searches or stays honest
+        # instead of relabelling unrelated products.
+        if not grounding_warned and salient_terms and results:
+            prods = extract_products(results)
+            if prods and not _results_cover_terms(salient_terms, prods):
+                grounding_warned = True
+                messages.append({
+                    "role": "system",
+                    "content": GROUNDING_NUDGE.format(terms=", ".join(sorted(salient_terms))),
+                })
 
     if results:
         return finalize("Pulled together some options — take a look below 😊")
