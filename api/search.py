@@ -918,6 +918,9 @@ SEARCH RULES (mandatory)
 match (q='ramen', q='instant noodles', q='Japanese snacks') — do NOT silently swap in a generic fruit/gift basket.
 - If the user names SEVERAL different things ("ramen and chocolates and a card"), run a SEPARATE search for \
 EACH one and show them all — don't collapse them into a single query.
+- MATCH THE RECIPIENT'S GENDER: for a woman (mom, wife, girlfriend, sister, daughter, grandmother…) search \
+'ladies'/'women's' variants (q='ladies watch', q='women's perfume'); for a man, 'men's'/'gents'. NEVER show \
+men's items for a female recipient or women's items for a male one.
 - Do NOT pass a category filter unless you got the exact name from kapruka_list_categories.
 
 UI PRESENTATION
@@ -2686,6 +2689,73 @@ HONEST_NO_MATCH_FALLBACK = (
 )
 
 
+# --- Recipient gender grounding -------------------------------------------- #
+# Don't show men's items for a woman (or vice versa). Works across the chat's
+# languages — kinship/pronoun cues in English, Sinhala and Tamil.
+_FEMALE_CUES_EN = re.compile(
+    r"\b(mom|mother|mum|mummy|amma|wife|girlfriend|gf|sister|akka|nangi|daughter|"
+    r"grandma|grandmother|granny|aunt|auntie|niece|lady|ladies|woman|women|girl|"
+    r"her|she|hers|mrs|miss|bride|queen)\b",
+    re.I,
+)
+_MALE_CUES_EN = re.compile(
+    r"\b(dad|father|daddy|thaththa|husband|boyfriend|bf|brother|aiya|malli|son|"
+    r"grandpa|grandfather|uncle|nephew|man|men|gentleman|gents|boy|guy|him|his|he|"
+    r"mr|groom|king)\b",
+    re.I,
+)
+_FEMALE_CUES_INTL = ("අම්මා", "ඇය", "අක්කා", "නංගි", "බිරිඳ", "දුව", "ආච්චි",
+                     "அம்மா", "அவள்", "அக்கா", "தங்கை", "மனைவி", "மகள்", "பாட்டி")
+_MALE_CUES_INTL = ("තාත්තා", "ඔහු", "අයියා", "මල්ලි", "සැමියා", "පුතා", "සීයා",
+                   "அப்பா", "அவன்", "அண்ணா", "தம்பி", "கணவன்", "மகன்", "தாத்தா")
+
+_FEMALE_PROD_RE = re.compile(r"\b(ladies|lady'?s?|women'?s?|woman|female|girls?|girl'?s)\b", re.I)
+_MALE_PROD_RE = re.compile(r"\b(men'?s?|gents?|gentlemen|gentleman|male|boys?|boy'?s)\b", re.I)
+
+
+def _recipient_gender(
+    conversation: list | None, recipients: list | None, current_text: str | None = None
+) -> str | None:
+    """'f', 'm', or None — inferred from kinship/pronoun cues anywhere in the chat."""
+    parts = [str(t.get("content") or "") for t in (conversation or []) if t.get("role") == "user"]
+    if current_text:
+        parts.append(current_text)
+    blob = " ".join(parts)
+    low = blob.lower()
+    f = len(_FEMALE_CUES_EN.findall(low)) + sum(blob.count(w) for w in _FEMALE_CUES_INTL)
+    m = len(_MALE_CUES_EN.findall(low)) + sum(blob.count(w) for w in _MALE_CUES_INTL)
+    if f > m and f > 0:
+        return "f"
+    if m > f and m > 0:
+        return "m"
+    return None
+
+
+def _product_gender(p: dict) -> str | None:
+    blob = f"{p.get('name') or ''} {p.get('description') or ''}".lower()
+    if _FEMALE_PROD_RE.search(blob):
+        return "f"
+    if _MALE_PROD_RE.search(blob):
+        return "m"
+    return None
+
+
+def _drop_wrong_gender(products: list, recipient_gender: str | None) -> list:
+    """Remove clearly opposite-gender items — but never empty the list."""
+    if recipient_gender not in ("f", "m"):
+        return products
+    opp = "f" if recipient_gender == "m" else "m"
+    kept = [p for p in products if _product_gender(p) != opp]
+    return kept if kept else products
+
+
+GENDER_NUDGE = (
+    "GENDER CHECK — this gift is for {who}, but several results are the wrong gender. "
+    "Re-run kapruka_search_products with a gendered query (e.g. q='{qword} watch', "
+    "q='{qword} perfume') and show ONLY {who}'s items — never the opposite gender's."
+)
+
+
 # =============================================================================
 # NVIDIA NIM
 # =============================================================================
@@ -3379,11 +3449,15 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     salient_terms = set() if more_request else _salient_want_terms(conv, user_en)
     grounding_warned = False
     already_shown = {_norm_text(n) for n in _shown_names(suggestions, cart)} if more_request else set()
+    # Don't show the wrong gender's items (works across the chat's languages).
+    recipient_gender = _recipient_gender(conv, recipients, user_en)
+    gender_warned = False
 
     def finalize(answer: str) -> dict:
         products = extract_products(results)
         if already_shown:
             products = [p for p in products if _norm_text(p.get("name")) not in already_shown]
+        products = _drop_wrong_gender(products, recipient_gender)
         if products:
             answer = _strip_catalog_from_answer(answer, products)
             if not (answer or "").strip():
@@ -3542,6 +3616,22 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 messages.append({
                     "role": "system",
                     "content": GROUNDING_NUDGE.format(terms=", ".join(sorted(salient_terms))),
+                })
+
+        # Gender grounding: if the gift is for a woman but the results are
+        # mostly men's items (or vice versa), nudge a gendered re-search once.
+        if not gender_warned and recipient_gender and results:
+            prods = extract_products(results)
+            opp = "f" if recipient_gender == "m" else "m"
+            wrong = [p for p in prods if _product_gender(p) == opp]
+            if prods and len(wrong) * 2 >= len(prods):
+                gender_warned = True
+                messages.append({
+                    "role": "system",
+                    "content": GENDER_NUDGE.format(
+                        who="a woman" if recipient_gender == "f" else "a man",
+                        qword="ladies" if recipient_gender == "f" else "men's",
+                    ),
                 })
 
     if results:
