@@ -946,6 +946,20 @@ SEARCH_FIRST_NUDGE = (
     "Your reply: 1–2 warm sentences max, NO product names, NO numbered lists — cards show everything below."
 )
 
+DISCOVERY_NUDGE = (
+    "IMPORTANT — you could search, but you don't yet know the recipient's taste, so the picks would be "
+    "a guess. Ask exactly ONE warm, friend-like question to sharpen them — tailored to what they asked "
+    "for, never a form, and NOT about budget (already handled). Examples by category: "
+    "flowers → roses, mixed, or orchids, and a colour or romantic-vs-cheerful vibe; "
+    "cake → flavour and roughly how many people (or eggless); "
+    "clothing → casual/party/formal, plus a colour or size; "
+    "jewellery → gold or silver, and classic vs trendy; "
+    "perfume → fresh, floral, or woody; "
+    "hamper → sweet, savoury, or wellness. "
+    "Use ask_user with that single question in your warm voice. If they answer, are unsure, or say "
+    "'you pick' / 'surprise me', search right away — never ask a second round."
+)
+
 ORDER_TRACKING_NUDGE = (
     "IMPORTANT — this is an ORDER TRACKING request, not shopping. Use the ORDER TRACKING REQUEST context. "
     "Do NOT call kapruka_search_products and do NOT show product cards. If a Kapruka order-status/tracking "
@@ -1623,12 +1637,19 @@ def _budget_already_handled(
     return False
 
 
+_NON_GIFT_OCCASIONS = frozenset({"thank_you", "condolence", "get_well"})
+
+
 def _budget_intent(text: str) -> bool:
-    """A real shopping intent worth pricing (so we don't ask budget on a hello)."""
+    """A real shopping intent worth pricing (so we don't ask budget on a hello,
+    a thank-you, or a condolence)."""
     low = (text or "").lower().strip()
-    if not low:
+    if not low or _is_greeting(text) or _is_thanks(text):
         return False
-    if detect_occasion(text) or _has_search_ready_context(text):
+    occ = detect_occasion(text)
+    if occ and occ not in _NON_GIFT_OCCASIONS:
+        return True
+    if occ is None and _has_search_ready_context(text):
         return True
     if _RECIPIENT_RE.search(low) and re.search(
         r"\b(gift|present|flowers?|cake|hamper|bouquet|something for|buy|get|shop)\b",
@@ -1676,6 +1697,97 @@ def _budget_ask(profile: dict | None) -> tuple[str, str]:
             "or just say modest, mid-range, or no limit."
         )
     return intro, question
+
+
+# --- Smart preference discovery -------------------------------------------- #
+# Categories where a quick taste question genuinely sharpens the picks (flowers,
+# cake, clothing, jewellery...). For these, let the model ask ONE warm,
+# category-aware question before the first search instead of guessing.
+_PREF_RICH_RE = re.compile(
+    r"\b(flowers?|bouquet|roses?|orchids?|lilies|cake|cakes|hamper|gift basket|"
+    r"chocolates?|dress|dresses|saree|sari|outfit|clothing|clothes|shirt|skirt|"
+    r"suit|jewell?ery|jewelry|necklace|pendant|earrings?|bracelet|ring|watch|"
+    r"perfume|fragrance|cologne|handbag|purse|wallet|shoes?|spa|wellness|"
+    r"toy|toys|soft toy|plant|plants|wine|tea|coffee|book|books)\b",
+    re.I,
+)
+
+
+def _recent_user_blob(conversation: list | None, current_text: str | None, n: int = 4) -> str:
+    parts: list[str] = []
+    for turn in (conversation or [])[-(n * 2):]:
+        if turn.get("role") == "user":
+            parts.append(str(turn.get("content") or ""))
+    if current_text:
+        parts.append(current_text)
+    return " ".join(parts)
+
+
+def _assistant_question_count(conversation: list | None) -> int:
+    """How many questions we've already put to the user this chat — used to cap
+    discovery so it never becomes an interrogation."""
+    n = 0
+    for turn in conversation or []:
+        if turn.get("role") == "assistant" and "?" in str(turn.get("content") or ""):
+            n += 1
+    return n
+
+
+def _last_assistant_was_question(conversation: list | None) -> bool:
+    """True when the most recent assistant turn asked something — i.e. the user's
+    current message is likely answering us (e.g. the budget reply)."""
+    for turn in reversed(conversation or []):
+        if turn.get("role") == "assistant":
+            return "?" in str(turn.get("content") or "")
+    return False
+
+
+def _has_known_preferences(
+    text: str, profile: dict | None, recipients: list | None, conversation: list | None
+) -> bool:
+    """True when we already know enough about taste/style to pick well — from the
+    message, this chat's memory, or the saved recipient profile."""
+    if _message_has_taste_hints(text):
+        return True
+    if _COLOR_WORDS_RE.search(text or "") or _STYLE_WORDS_RE.search(text or ""):
+        return True
+    mem = _extract_session_memory(conversation, text)
+    # A taste entry that just echoes the product category ("flowers", "cake")
+    # is not a real preference — we still don't know which kind / colour / vibe.
+    real_taste = [t for t in (mem.get("taste") or []) if not _PREF_RICH_RE.search(str(t))]
+    if mem.get("style") or mem.get("color") or real_taste:
+        return True
+    prefs = (profile or {}).get("preferences") or {}
+    if isinstance(prefs, dict) and prefs.get("styles"):
+        return True
+    rp = _persisted_recipient_profile(profile)
+    if isinstance(rp, dict) and any(rp.get(k) for k in ("style", "color", "taste")):
+        return True
+    return False
+
+
+def _should_discover_first(
+    text: str, profile: dict | None, recipients: list | None, conversation: list | None
+) -> bool:
+    """True when we're ready to search a preference-rich category but don't yet
+    know the recipient's taste — so the model should ask ONE smart question
+    first. Only consulted when a search was otherwise about to happen."""
+    low = (text or "").lower().strip()
+    if not low or low in _SKIP_REPLIES or _BUDGET_SKIP_RE.search(low):
+        return False
+    if _is_greeting(text) or _is_thanks(text):
+        return False
+    # Repair/apology already has its own taste flow; don't double up.
+    if _is_repair_situation(text):
+        return False
+    if not _PREF_RICH_RE.search(_recent_user_blob(conversation, text)):
+        return False
+    if _has_known_preferences(text, profile, recipients, conversation):
+        return False
+    # Cap total questions per chat (budget counts) so we never interrogate.
+    if _assistant_question_count(conversation) >= 2:
+        return False
+    return True
 
 # =============================================================================
 # Synthetic tools (not part of the MCP)
@@ -2964,8 +3076,25 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     )
     if budget_question:
         search_first = False
+    # Smart preference discovery. When there's an active preference-rich shopping
+    # intent — a fresh search-ready message OR the user answering a question we
+    # just asked (e.g. their budget reply) — but we don't yet know the
+    # recipient's taste, let the model ask ONE targeted question before guessing.
+    # Once taste is known (or they say "you pick"), search instead of stalling.
+    discover_first = False
+    force_search = False
+    if allow_questions and not direct_request and not budget_question:
+        momentum = search_first or _last_assistant_was_question(conv)
+        pref_rich = bool(_PREF_RICH_RE.search(_recent_user_blob(conv, user_en)))
+        if momentum and pref_rich:
+            if _should_discover_first(user_en, profile, recipients, conv):
+                discover_first = True
+            elif not search_first:
+                force_search = True
+    if force_search:
+        search_first = True
     repair_interests = _recipient_interests_for_repair(user_en, recipients)
-    if search_first:
+    if search_first and not discover_first:
         allow_questions = False
 
     openai_tools = mcp_tools_to_openai(tools) + CART_TOOLS
@@ -3004,6 +3133,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         })
     elif _is_repair_follow_up(conv, user_en) and search_first:
         messages.append({"role": "system", "content": REPAIR_FOLLOWUP_NUDGE})
+    elif discover_first:
+        messages.append({"role": "system", "content": DISCOVERY_NUDGE})
     elif search_first:
         messages.append({"role": "system", "content": SEARCH_FIRST_NUDGE})
 
