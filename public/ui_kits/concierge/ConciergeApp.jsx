@@ -145,6 +145,18 @@ const HAS_PREF_RE =
 const BUDGET_WORDS_RE =
   /\b(no budget|no limit|any budget|unlimited|mid.?range|moderate|cheap(er)?|premium|expensive|affordable)\b/i;
 
+// Mirrors the backend recipient-discovery gate: a recipient is named but we know
+// neither their gender, taste, occasion, nor a concrete product — so the agent
+// asks "guy or girl, what are they into?" rather than presenting products.
+const RECIPIENT_CUE_RE =
+  /\b(mom|mother|mum|mummy|dad|father|wife|husband|girlfriend|boyfriend|partner|gf|bf|fiance|fiancee|sister|brother|daughter|son|friend|firend|freind|frnd|bestie|boss|colleague|grandma|grandpa|granny|aunt|uncle|cousin|hubby)\b/i;
+const GENDER_CUE_RE =
+  /\b(she|her|hers|girl|woman|lady|ladies|mom|mother|mum|wife|girlfriend|gf|sister|daughter|grandma|granny|aunt|niece|he|him|his|boy|guy|man|men|gent|dad|father|husband|boyfriend|bf|brother|son|grandpa|uncle|nephew)\b/i;
+const OCCASION_CUE_RE =
+  /\b(birthday|anniversary|wedding|valentine|christmas|new ?year|graduation|farewell|housewarming|baby shower|engagement|get ?well|condolence|funeral|promotion|retirement|mother'?s day|father'?s day|deepavali|diwali|avurudu)\b/i;
+const TASTE_CUE_RE =
+  /\b(likes?|loves?|enjoys?|into|favou?rite|fan of|prefers?|hobby|hobbies|obsessed|passionate)\b/i;
+
 const greetSub = () => {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -573,6 +585,7 @@ function App({
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [recipients, setRecipients] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
   const [chatId, setChatId] = useState(() => nid());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [chatList, setChatList] = useState([]);
@@ -588,6 +601,7 @@ function App({
   const personalityGreetedRef = useRef(false);
   const occasionNudgedRef = useRef(false);
   const menuRef = useRef(null);
+  const langRef = useRef(null);
 
   const defaultCity = profile?.default_city || "";
   const displayName =
@@ -765,6 +779,20 @@ function App({
       document.removeEventListener("keydown", onKey);
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!langOpen) return;
+    const onDoc = (e) => {
+      if (langRef.current && !langRef.current.contains(e.target)) setLangOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setLangOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [langOpen]);
 
   useEffect(() => {
     if (defaultCity) setCheckoutCity(defaultCity);
@@ -991,6 +1019,26 @@ function App({
     if (!lastSuggestions.length && !budgetGiven) return false;
     // A category named with no taste/style/colour yet, nothing on screen → discovery question.
     if (!lastSuggestions.length && PREF_RICH_HINT_RE.test(t) && !HAS_PREF_RE.test(t)) return false;
+    // Recipient named but gender/taste/occasion/product all unknown → the agent asks
+    // "guy or girl, what are they into?" first, so no products this turn.
+    if (!lastSuggestions.length) {
+      const recentUser = conversation
+        .filter((m) => m.role === "user")
+        .slice(-4)
+        .map((m) => m.content)
+        .join(" ");
+      const blob = `${recentUser} ${t}`;
+      if (
+        RECIPIENT_CUE_RE.test(blob) &&
+        !GENDER_CUE_RE.test(blob) &&
+        !TASTE_CUE_RE.test(blob) &&
+        !HAS_PREF_RE.test(blob) &&
+        !OCCASION_CUE_RE.test(blob) &&
+        !PREF_RICH_HINT_RE.test(blob)
+      ) {
+        return false;
+      }
+    }
     return true;
   };
 
@@ -1231,6 +1279,43 @@ function App({
             </div>
           </div>
           <div className="top-actions">
+            <div className={"top-lang" + (langOpen ? " open" : "")} ref={langRef}>
+              <button
+                type="button"
+                className="top-menu-trigger k-iconbtn"
+                title="Language"
+                aria-label="Language"
+                aria-expanded={langOpen}
+                aria-haspopup="menu"
+                onClick={() => { setLangOpen((v) => !v); setMenuOpen(false); }}
+              >
+                <Icon name="globe" size={20} />
+                <span className="top-lang-tag">{(currentLang || "en").toUpperCase()}</span>
+              </button>
+              {langOpen ? (
+                <div className="top-lang-panel" role="menu">
+                  {[["en", "English"], ["si", "සිංහල"], ["ta", "தமிழ்"]].map(([code, label]) => (
+                    <button
+                      key={code}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={currentLang === code}
+                      className={"top-lang-opt" + (currentLang === code ? " on" : "")}
+                      onClick={() => {
+                        setCurrentLang(code);
+                        if (recogRef.current) recogRef.current.lang = LANG_CODES[code] || "en-US";
+                        if (!isGuest) persistProfile({ default_language: code });
+                        toast(`Language: ${LANG_NAMES[code]}`, "globe");
+                        setLangOpen(false);
+                      }}
+                    >
+                      <span>{label}</span>
+                      {currentLang === code ? <Icon name="check" size={16} /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <div className="top-cart">
               <button
                 type="button"
@@ -1644,7 +1729,7 @@ function App({
                 }
               }} />
               <div className="row">
-                <Button variant="soft" size="sm" icon="trash-2" onClick={() => { if (cart.length) { setCart([]); toast("Cart cleared", "trash-2"); } }}>Clear</Button>
+                <Button variant="soft" size="sm" icon="trash-2" disabled={!cart.length} onClick={() => { const had = cart.length; setCart([]); setCheckoutView(false); if (had) toast("Cart cleared", "trash-2"); }}>Clear</Button>
               </div>
               <Button variant="primary" full iconRight="arrow-right" disabled={!cart.length} onClick={openCheckout}>
                 Proceed to checkout
