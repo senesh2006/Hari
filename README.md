@@ -106,6 +106,30 @@ Environment Variables**, then redeploy:
 
 The Kapruka MCP itself needs no key.
 
+#### Gift strategy layer (optional second model)
+
+Before searching, a dedicated **strategy model** turns the gathered context
+(occasion, relationship, personality, constraints, budget) into an explicit
+*gifting strategy* — an angle, 2–5 concrete search queries, and a reject rule —
+which the shopping agent then executes and filters against. This is what turns
+*"watch enthusiast + reunion + open budget"* into *"a collector-grade watch + a
+sentimental add-on"* instead of a literal `watch` search.
+
+By default it reuses the main NIM model/key, so it works with no extra setup.
+Point it at a **separate (e.g. second 70B) deployment** to split the load:
+
+| Env var               | Default                | Purpose                                            |
+| --------------------- | ---------------------- | -------------------------------------------------- |
+| `STRATEGY_ENABLED`    | `1`                    | Set `0` to disable the strategy layer entirely.    |
+| `STRATEGY_NIM_MODEL`  | = `NVIDIA_NIM_MODEL`   | Model that synthesizes the strategy (e.g. a 70B).  |
+| `STRATEGY_NIM_BASE_URL` | = `NVIDIA_NIM_BASE_URL` | Endpoint for the strategy model.                 |
+| `STRATEGY_NIM_API_KEY`  | = `NVIDIA_API_KEY`     | Key for the strategy model's endpoint.           |
+| `STRATEGY_TIMEOUT`    | `18`                   | Max seconds for the strategy call (shares the request budget). |
+
+The strategy call runs only on real search turns (never on greetings, questions,
+cart/tracking) and **degrades silently** to the normal flow on any timeout or
+error, so it can't break search.
+
 ### Performance
 
 Each query runs an agentic tool-calling loop, so latency is dominated by the

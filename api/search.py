@@ -884,6 +884,19 @@ MAX_TOOL_ROUNDS = int(os.environ.get("SEARCH_MAX_ROUNDS", "5"))
 SEARCH_BUDGET = float(os.environ.get("SEARCH_BUDGET", "55"))
 MIN_ROUND_SECONDS = float(os.environ.get("SEARCH_MIN_ROUND_SECONDS", "8"))
 
+# Strategy layer — a dedicated model that turns the gathered context (occasion,
+# relationship, personality, constraints, budget) into an explicit gifting
+# STRATEGY (angle + concrete search queries + a reject rule) BEFORE the search
+# loop runs. Defaults to the main NIM model/key so it works out of the box;
+# point STRATEGY_NIM_MODEL at a separate (e.g. second 70B) deployment to split it.
+STRATEGY_ENABLED = os.environ.get("STRATEGY_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+STRATEGY_NIM_BASE_URL = os.environ.get("STRATEGY_NIM_BASE_URL", NIM_BASE_URL)
+STRATEGY_NIM_MODEL = os.environ.get("STRATEGY_NIM_MODEL", NIM_MODEL)
+STRATEGY_NIM_API_KEY = os.environ.get("STRATEGY_NIM_API_KEY", NIM_API_KEY)
+STRATEGY_TIMEOUT = float(os.environ.get("STRATEGY_TIMEOUT", "18"))
+STRATEGY_MAX_TOKENS = int(os.environ.get("STRATEGY_MAX_TOKENS", "420"))
+STRATEGY_TEMPERATURE = float(os.environ.get("STRATEGY_TEMPERATURE", "0.4"))
+
 TRANSLATE_TIMEOUT = float(os.environ.get("TRANSLATE_TIMEOUT", "9"))
 LANGBLY_API_KEY = os.environ.get("LANGBLY_API_KEY")
 LANGBLY_URL = os.environ.get("LANGBLY_URL", "https://api.langbly.com/language/translate/v2")
@@ -3232,6 +3245,128 @@ def nim_chat(messages: list, tools: list, timeout: float | None = None) -> dict:
 
 
 # =============================================================================
+# Gift strategy layer (dedicated model)
+# =============================================================================
+
+STRATEGY_SYSTEM_PROMPT = """\
+You are the STRATEGY brain behind Hari, a Sri Lankan gift concierge. You do NOT talk to the user and you do NOT \
+search. You read everything known about this gift — the occasion, the relationship, the recipient's personality \
+and interests, the constraints (budget, things to avoid, tone), and the conversation — and you produce a single \
+GIFTING STRATEGY that the shopping agent will then execute.
+
+Think like a thoughtful friend, not a search box. Turn "watch enthusiast + childhood reunion + open budget" into \
+an ANGLE ("a collector-grade watch, plus a small sentimental touch"), not the literal word "watch". Respect every \
+constraint: a budget ceiling, "no nuts", a sombre tone (no cake/balloons for grief/illness), and gender (a woman \
+gets ladies' items, a man gets men's).
+
+Reply with ONLY a JSON object, no prose, no markdown, in exactly this shape:
+{
+  "angle": "one sentence describing the gifting strategy and why it fits",
+  "recipient_read": "short read on who they are / what they'd value",
+  "constraints": ["budget ceiling if any", "things to avoid", "tone"],
+  "search_queries": ["2-5 SHORT concrete product nouns to search, each tailored to the angle, e.g. 'mens automatic watch', 'leather watch box'"],
+  "reject_rule": "one sentence: what to DROP from results because it's off-strategy (e.g. 'no kids toys; not a birthday so no birthday-themed items; nothing women's')",
+  "explain_hint": "one warm sentence the agent can use to justify the pick, no product names"
+}
+Keep queries specific and gendered/occasion-appropriate. Never include adult/intimate items. If you truly lack \
+enough to strategise, return {"insufficient": true}."""
+
+
+def strategy_chat(messages: list, timeout: float | None = None) -> dict:
+    if not STRATEGY_NIM_API_KEY:
+        raise PermissionError("Strategy model key not set.")
+    payload = {
+        "model": STRATEGY_NIM_MODEL,
+        "messages": messages,
+        "temperature": STRATEGY_TEMPERATURE,
+        "max_tokens": STRATEGY_MAX_TOKENS,
+    }
+    req = urllib.request.Request(
+        f"{STRATEGY_NIM_BASE_URL}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {STRATEGY_NIM_API_KEY}",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout or STRATEGY_TIMEOUT) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def build_gift_strategy(conv: list, context_blocks: list, last_user: str, timeout: float) -> dict | None:
+    """Run the strategy model and return a parsed strategy dict, or None on any
+    failure / insufficiency so the search degrades to its normal behaviour."""
+    if not STRATEGY_ENABLED or not STRATEGY_NIM_API_KEY:
+        return None
+    context = "\n\n".join([b for b in (context_blocks or []) if b])
+    convo_tail = []
+    for turn in conv[-8:]:
+        role, content = turn.get("role"), str(turn.get("content") or "").strip()
+        if role in ("user", "assistant") and content:
+            convo_tail.append(f"{role.upper()}: {content}")
+    user_payload = (
+        "CONTEXT KNOWN ABOUT THIS GIFT:\n"
+        + (context or "(little structured context — infer from the conversation)")
+        + "\n\nCONVERSATION:\n"
+        + "\n".join(convo_tail)
+        + f"\n\nLATEST USER MESSAGE: {last_user}\n\nProduce the gifting strategy JSON now."
+    )
+    messages = [
+        {"role": "system", "content": STRATEGY_SYSTEM_PROMPT},
+        {"role": "user", "content": user_payload},
+    ]
+    try:
+        completion = strategy_chat(messages, timeout=timeout)
+    except Exception:
+        return None
+    content = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+    data = _coerce_json(content)
+    if not isinstance(data, dict) or data.get("insufficient"):
+        return None
+    queries = data.get("search_queries")
+    if not (isinstance(queries, list) and any(str(q).strip() for q in queries)):
+        return None
+    data["search_queries"] = [str(q).strip() for q in queries if str(q).strip()][:5]
+    return data
+
+
+def strategy_message(strategy: dict | None) -> str | None:
+    """Render the strategy as a hard directive for the shopping agent."""
+    if not strategy:
+        return None
+    lines = [
+        "GIFTING STRATEGY (decided by the strategy brain — FOLLOW IT this turn; do NOT free-associate):",
+    ]
+    if strategy.get("angle"):
+        lines.append(f"- Angle: {strategy['angle']}")
+    if strategy.get("recipient_read"):
+        lines.append(f"- Recipient: {strategy['recipient_read']}")
+    cons = strategy.get("constraints")
+    if isinstance(cons, list) and cons:
+        kept = [str(c).strip() for c in cons if str(c).strip()]
+        if kept:
+            lines.append(f"- Constraints (honour strictly): {'; '.join(kept)}")
+    queries = strategy.get("search_queries") or []
+    if queries:
+        lines.append(
+            "- Run a SEPARATE kapruka_search_products call for EACH of these exact queries, and ONLY these: "
+            + "; ".join(f"q='{q}'" for q in queries)
+        )
+    if strategy.get("reject_rule"):
+        lines.append(
+            f"- Reject rule: {strategy['reject_rule']} — silently DROP any returned product that breaks it; "
+            "never show it as a card."
+        )
+    lines.append(
+        "- Then present only the on-strategy items. Your reply stays 1–2 warm sentences (cards show details); "
+        "you may name the single best pick and why it fits the angle."
+    )
+    return "\n".join(lines)
+
+
+# =============================================================================
 # Greeting / language / cart context
 # =============================================================================
 
@@ -4109,6 +4244,31 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if budget_question:
         intro, question = _budget_ask(profile)
         return ask([question], intro=intro)
+
+    # === Gift strategy layer ====================================================
+    # Before searching, synthesize the gathered context (occasion, relationship,
+    # personality, constraints, budget) into an explicit ANGLE + concrete queries
+    # + a reject rule, so the agent searches to a strategy instead of free-
+    # associating. Runs only on real search turns; degrades silently on failure.
+    will_strategize = (
+        STRATEGY_ENABLED
+        and not direct_request and not pick_best and not hamper_request and not more_request
+        and (search_first or bool(repair_interests) or _is_repair_follow_up(conv, user_en))
+    )
+    if will_strategize:
+        budget_left = t0 + SEARCH_BUDGET - time.monotonic()
+        strat_timeout = min(
+            STRATEGY_TIMEOUT,
+            budget_left - (MIN_ROUND_SECONDS + (8 if target_lang else 0)),
+        )
+        if strat_timeout >= 5:
+            strategy = build_gift_strategy(
+                conv, [profile_message(profile)] + extra_ctx, user_en, timeout=strat_timeout
+            )
+            strat_msg = strategy_message(strategy)
+            if strat_msg:
+                messages.append({"role": "system", "content": strat_msg})
+                trace.append({"tool": "gift_strategy", "arguments": strategy})
 
     # Reserve a little tail for the outbound translation; anchor to t0 so any
     # time already spent on translation/context shortens the loop, not the
