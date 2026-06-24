@@ -982,6 +982,12 @@ as alternatives, described accurately. A mismatch the user can see destroys trus
 - Never duplicate the same product. Omit unset optional params — never pass "null" placeholders.
 - Only recommend items that are in stock; if the catalogue marks something out of stock / sold out / \
 unavailable, don't suggest it — pick an available one instead.
+- NEVER suggest adult / sexual / intimate-hygiene products (sex toys, lubricants, intimate washes, etc.) \
+as gifts, even if a fuzzy search returns them — silently skip them.
+- kapruka_list_categories returns CATEGORY names (e.g. "Books", "Jewellery"), NOT products. Use them only \
+to refine a search; never present a category name as a product to add to cart.
+- If a query is a typo or nonsense (e.g. "beofre"), don't dump random matches — ask what they meant or \
+re-read the conversation for what they actually want.
 - If a search returns nothing relevant, try a different concrete idea before settling.
 - ALWAYS ACT: never promise or describe gift options without actually calling kapruka_search_products in \
 the SAME turn. "Let me find", "here are some options" or "what do you think of these" are only honest once \
@@ -2580,9 +2586,39 @@ def _group_label(query: str) -> str:
     return " ".join(w.capitalize() for w in q.split())[:40]
 
 
+# Taxonomy/category tools return category labels, not buyable products.
+_NON_PRODUCT_TOOL_RE = re.compile(r"categor|taxonom|facet|departments?", re.I)
+# Never surface adult / NSFW items as gift suggestions.
+_ADULT_RE = re.compile(
+    r"\b(adult\s*products?|adultproducts?|sex\s*toys?|sextoys?|sex\s*toy|dildos?|"
+    r"vibrators?|penis|vagina|vaginal|erotic|eroticaccessor|g[\s-]?spot|"
+    r"strap[\s-]?on|strapon|anal\b|bdsm|bondage|fleshlight|masturbat|"
+    r"lubricants?|\blube\b|condoms?|intimate\s*wash|intimatewash|"
+    r"delay\s*(tissue|spray|gel|wet)|delaywet|peniswiping|sensory\s*play|"
+    r"sensoryplay|aphrodisiac)\b",
+    re.I,
+)
+
+
+def _is_adult(p: dict) -> bool:
+    blob = f"{p.get('name') or ''} {p.get('description') or ''}".lower()
+    return bool(_ADULT_RE.search(blob))
+
+
+def _is_facet(p: dict) -> bool:
+    """A catalogue category/facet that slipped through as a 'product' — it has a
+    name but no price and no real description (e.g. 'Automobile', 'Books')."""
+    price = p.get("price")
+    desc = (p.get("description") or "").strip()
+    return price in (None, "") and len(desc) < 12
+
+
 def extract_products(results: list) -> list:
     found = []
     for r in results:
+        # Skip taxonomy/category listings — those are filters, not products.
+        if _NON_PRODUCT_TOOL_RE.search(r.get("tool") or ""):
+            continue
         data = _coerce_json(r.get("output", ""))
         if data is None:
             continue
@@ -2595,6 +2631,9 @@ def extract_products(results: list) -> list:
 
     seen_urls, seen_names, unique = set(), set(), []
     for p in found:
+        # Never surface adult/NSFW items; drop category facets that slipped in.
+        if _is_adult(p) or _is_facet(p):
+            continue
         url_key = _norm_url(p.get("url"))
         name_key = _norm_text(p.get("name")) + "|" + _norm_text(p.get("price"))
         if url_key and url_key in seen_urls:
