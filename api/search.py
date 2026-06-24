@@ -998,6 +998,10 @@ CART & SELECTIONS
 - add_all_suggestions_to_cart: user wants everything suggested.
 - remove_from_cart: drop items or clear the cart.
 - add_instruction: save gift-wrapping, hamper requests, delivery notes, card messages verbatim.
+- build_hamper: when the user asks to build/make/put together a hamper, drive it from the SENDER'S preferences — \
+reuse their stored USER PROFILE preferences (style, budget, dietary, avoid) when present and pass them straight in; \
+only ask ONE warm question for their hamper preference (sweet/savoury/wellness, budget, anything to avoid) if nothing \
+is on file. Then search the catalogue separately for each preference to fill the hamper with real items.
 - set_customization: for items marked CUSTOMIZABLE in context, ask for the name/message to print or \
 engrave (for a photo item, tell them they can attach a photo in the app), then record it with the item's number. \
 Do this before or right as you add a customizable item to the cart — don't let it go to checkout blank.
@@ -2102,6 +2106,52 @@ CART_TOOLS = [
                     "wants_photo": {"type": "boolean", "description": "True if they want to attach a photo."},
                 },
                 "required": ["item"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "build_hamper",
+            "description": (
+                "Build a custom gift hamper for the user (the sender). Call this when they ask to "
+                "'build a hamper', 'make a hamper', or 'put together a hamper'. Drive the hamper from "
+                "the SENDER'S preferences: first reuse what's on file in USER PROFILE (style, typical "
+                "budget, dietary needs, things to avoid) — pass those as preferences without re-asking. "
+                "Only when NO preference is stored, ask the user ONE warm question for their hamper "
+                "preferences (sweet, savoury, or wellness; budget; anything to avoid) before calling this. "
+                "After recording the brief, run separate kapruka_search_products calls for each "
+                "preference to fill the hamper with real items."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "preferences": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "The sender's preferences driving the hamper — favourite foods/items, theme "
+                            "leanings, and anything to avoid. Use the stored profile preferences when available."
+                        ),
+                    },
+                    "theme": {
+                        "type": "string",
+                        "description": "Overall hamper theme/style, e.g. sweet, savoury, wellness, luxury.",
+                    },
+                    "budget": {
+                        "type": "string",
+                        "description": "Optional target budget for the hamper, e.g. 'LKR 5000'.",
+                    },
+                    "recipient": {
+                        "type": "string",
+                        "description": "Optional recipient the hamper is for.",
+                    },
+                    "from_stored_preferences": {
+                        "type": "boolean",
+                        "description": "True when the preferences came from the sender's stored profile rather than a fresh answer.",
+                    },
+                },
+                "required": ["preferences"],
             },
         },
     },
@@ -3387,6 +3437,24 @@ def _resolve_cart_action(name: str, args: dict, suggestions: list):
             "text": str(args.get("text") or "").strip() or None,
             "wants_photo": bool(args.get("wants_photo")),
         }
+    if name == "build_hamper":
+        prefs = args.get("preferences")
+        if isinstance(prefs, str):
+            prefs = [prefs]
+        prefs = [str(p).strip() for p in (prefs or []) if str(p).strip()]
+        theme = str(args.get("theme") or "").strip()
+        budget = str(args.get("budget") or "").strip()
+        recipient = str(args.get("recipient") or "").strip()
+        if not (prefs or theme):
+            return None
+        return {
+            "action": "hamper",
+            "theme": theme or None,
+            "preferences": prefs,
+            "budget": budget or None,
+            "recipient": recipient or None,
+            "from_stored_preferences": bool(args.get("from_stored_preferences")),
+        }
     return None
 
 
@@ -3411,6 +3479,22 @@ def _cart_confirmation(action) -> str:
             bits.append("photo to be attached in the app")
         detail = ", ".join(bits) if bits else "noted"
         return f"Saved customisation for item {action.get('item')}: {detail}."
+    if kind == "hamper":
+        bits = []
+        if action.get("theme"):
+            bits.append(f"{action['theme']} theme")
+        if action.get("preferences"):
+            bits.append("prefs: " + ", ".join(action["preferences"]))
+        if action.get("budget"):
+            bits.append(f"budget {action['budget']}")
+        if action.get("recipient"):
+            bits.append(f"for {action['recipient']}")
+        detail = "; ".join(bits) if bits else "noted"
+        source = "stored profile preferences" if action.get("from_stored_preferences") else "the preferences given"
+        return (
+            f"Hamper brief saved ({detail}) using {source}. "
+            "Now run separate kapruka_search_products calls for each preference to fill the hamper with real items."
+        )
     return "Cart updated."
 
 
