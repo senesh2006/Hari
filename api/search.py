@@ -1110,6 +1110,9 @@ _RECIPIENT_RE = re.compile(
     r"grandma|grandpa|granny|aunt|uncle|cousin|hubby|babe|baby)\b",
     re.I,
 )
+# A pronoun referring to the recipient ("she likes…", "he wants…") — means we
+# already know who the gift is for, even when the noun was a typo or earlier turn.
+_RECIPIENT_PRONOUN_RE = re.compile(r"\b(she|he|her|him|hers|his|they|them|their)\b", re.I)
 _EMOTIONAL_URGENCY_RE = re.compile(
     r"\b(mad|angry|angr\w*|upset|furious|annoyed|cross|hurt|fight|fighting|forgot|forgotten|"
     r"sorry|apolog|make up|make it up|panic|help me|save this|mess up|messed up|"
@@ -1561,12 +1564,26 @@ def _needs_clarification_question(
         return False
     if _is_repair_situation(text):
         return False
+    # The user is answering a question we just asked, with real taste/colour/style.
+    # Use it — don't throw another canned clarification (that reads as forgetting).
+    if _last_assistant_was_question(conversation) and (
+        _message_has_taste_hints(text)
+        or _COLOR_WORDS_RE.search(text or "")
+        or _STYLE_WORDS_RE.search(text or "")
+    ):
+        return False
     has_brainstorm = bool(_BRAINSTORM_RE.search(text))
     has_vague_product = bool(_VAGUE_PRODUCT_RE.search(text))
     # Fold in temporary chat memory: a recipient or specifics named earlier in
     # the conversation count just as much as in the current message.
     mem = _extract_session_memory(conversation, text)
-    has_recipient = bool(_RECIPIENT_RE.search(low)) or bool(mem.get("recipient"))
+    # A recipient pronoun ("she likes…") means we already know who it's for, even
+    # if the noun was a typo ("wifeee") or only appeared earlier in the chat.
+    has_recipient = (
+        bool(_RECIPIENT_RE.search(low))
+        or bool(mem.get("recipient"))
+        or bool(_RECIPIENT_PRONOUN_RE.search(low))
+    )
     specified = _vague_product_is_specified(text) or _session_has_specifics(mem)
     # A vague product needs BOTH who it's for AND real specifics before we
     # search. "my gf wants a dress" names the recipient but tells us nothing
