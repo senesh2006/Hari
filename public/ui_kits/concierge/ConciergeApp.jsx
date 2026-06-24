@@ -701,17 +701,9 @@ function App({
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
-    const idx = loadChatIndex(scope);
-    setChatList(idx);
-    if (idx.length) {
-      const last = loadChat(scope, idx[0].id);
-      if (last && Array.isArray(last.messages) && last.messages.some((m) => m.role === "user")) {
-        setChatId(idx[0].id);
-        setMessages(last.messages);
-        setConversation(last.conversation || []);
-        setLastSuggestions(last.lastSuggestions || []);
-      }
-    }
+    // Always open on a fresh chat. Past chats are kept and reachable from the
+    // History menu — we just load the list here, not the conversation itself.
+    setChatList(loadChatIndex(scope));
   }, [scope]);
 
   useEffect(() => {
