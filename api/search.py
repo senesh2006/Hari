@@ -1160,7 +1160,7 @@ _PRODUCT_SPECIFIC_RE = re.compile(
 
 _RECIPIENT_RE = re.compile(
     r"\b(mom|mother|mum|mummy|dad|father|wife|husband|girlfriend|boyfriend|partner|gf|bf|"
-    r"fiance|fiancee|her|him|sister|brother|daughter|son|friend|bestie|boss|colleague|"
+    r"fiance|fiancee|her|him|sister|brother|daughter|son|friend|firend|freind|frnd|bestie|boss|colleague|"
     r"grandma|grandpa|granny|aunt|uncle|cousin|hubby|babe|baby)\b",
     re.I,
 )
@@ -1699,6 +1699,82 @@ def _needs_taste_question(
     if not _is_repair_situation(text):
         return False
     return True
+
+
+# --- Recipient discovery (who is it for, really?) -------------------------- #
+# When we know there IS a recipient but not their gender, taste, occasion, or any
+# concrete product, asking ONE warm question ("guy or girl, and what are they
+# into?") beats blurting random gendered items.
+_RECIPIENT_DISCOVERY_MARKER_RE = re.compile(r"guy or a girl|a guy or a girl", re.I)
+
+
+def _last_assistant_asked_recipient_discovery(conversation: list | None) -> bool:
+    for turn in reversed(conversation or []):
+        if turn.get("role") == "assistant":
+            return bool(_RECIPIENT_DISCOVERY_MARKER_RE.search(str(turn.get("content") or "")))
+    return False
+
+
+def _recipient_has_known_interests(blob: str, recipients: list | None) -> bool:
+    low = (blob or "").lower()
+    for r in recipients or []:
+        ints = r.get("interests")
+        if not (isinstance(ints, list) and ints):
+            continue
+        name = (r.get("name") or "").lower()
+        rel = (r.get("relationship") or "").lower()
+        if (name and name in low) or (rel and rel in low):
+            return True
+    return False
+
+
+def _needs_recipient_discovery_question(
+    text: str,
+    conversation: list | None,
+    profile: dict | None,
+    recipients: list | None,
+) -> bool:
+    """Ask who the recipient is (guy/girl + interests) before guessing — when we
+    have a recipient but no gender, taste, occasion, or concrete product yet."""
+    low = (text or "").lower().strip()
+    if not low or low in _SKIP_REPLIES:
+        return False
+    if _is_repair_situation(text):
+        return False  # the repair flow runs its own taste question
+    if _last_assistant_asked_recipient_discovery(conversation):
+        return False  # already asked — don't loop, let it search
+    blob = _recent_user_blob(conversation, text)
+    mem = _extract_session_memory(conversation, text)
+    has_recipient = (
+        bool(_RECIPIENT_RE.search(blob))
+        or bool(mem.get("recipient"))
+        or bool(_RECIPIENT_PRONOUN_RE.search(blob))
+    )
+    if not has_recipient:
+        return False
+    # Only when gender is genuinely unknown across the whole chat.
+    if _recipient_gender(conversation, recipients, text) is not None:
+        return False
+    # Already know their taste / interests / specifics? Then just search.
+    if _has_taste_context(text, profile) or _message_has_taste_hints(blob):
+        return False
+    if _recipient_has_known_interests(blob, recipients) or _session_has_specifics(mem):
+        return False
+    # A concrete occasion, product, or category means we can search instead.
+    if detect_occasion(blob) or _has_search_ready_context(blob):
+        return False
+    if _VAGUE_PRODUCT_RE.search(blob) or _PREF_RICH_RE.search(blob):
+        return False
+    return True
+
+
+def _recipient_discovery_ask(text: str) -> tuple[str, str]:
+    intro = "Happy to help you pick 😊 One quick thing so I don't throw random stuff at you —"
+    question = (
+        "is it a guy or a girl, and what are they usually into? "
+        "Even a hobby or two helps me find something they'll actually love."
+    )
+    return intro, question
 
 
 def _should_search_first(
@@ -3825,6 +3901,21 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if hamper_request and not hamper_question:
         # Preferences are known — build now; don't divert to taste/clarify questions.
         search_first, taste_question, clarify_question = True, False, False
+    # Recipient discovery: we know WHO it's for but not their gender/taste/occasion
+    # and they gave no concrete product — ask one warm question instead of blurting
+    # random (often wrong-gender) items.
+    recipient_discovery = (
+        not direct_request
+        and not more_request
+        and not pick_best
+        and not hamper_request
+        and not taste_question
+        and not clarify_question
+        and allow_questions
+        and _needs_recipient_discovery_question(user_en, conv, profile, recipients)
+    )
+    if recipient_discovery:
+        search_first = False
     # Ask the budget ONCE per chat before the first real search — offering the
     # saved default vs. a new amount. Never re-ask it for later items, and never
     # lead with it when the user is emotional.
@@ -3835,6 +3926,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         and not taste_question
         and not clarify_question
         and not hamper_request
+        and not recipient_discovery
         and allow_questions
         and _needs_budget_question(user_en, profile, conv)
     )
@@ -3849,7 +3941,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     discover_first = False
     force_search = False
     if allow_questions and not direct_request and not budget_question and not more_request \
-            and not pick_best and not repair_interests and not hamper_request:
+            and not pick_best and not repair_interests and not hamper_request and not recipient_discovery:
         momentum = search_first or _last_assistant_was_question(conv)
         pref_rich = bool(_PREF_RICH_RE.search(_recent_user_blob(conv, user_en)))
         if momentum and pref_rich:
@@ -4008,6 +4100,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
 
     if clarify_question:
         intro, question = _clarification_ask(user_en)
+        return ask([question], intro=intro)
+
+    if recipient_discovery:
+        intro, question = _recipient_discovery_ask(user_en)
         return ask([question], intro=intro)
 
     if budget_question:
