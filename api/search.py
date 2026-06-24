@@ -2867,9 +2867,11 @@ MISSING_ITEMS_NUDGE = (
 # these?") without ever calling search, so the user sees nothing.
 _PROMISES_RESULTS_RE = re.compile(
     r"\b(here are|take a look|have a look|what do you think of (these|those)|these options|"
-    r"those options|let me (find|search|look|pull|get|grab)|i'?ll (find|search|look|pull|get|grab)|"
-    r"i (?:have |'?ve )?(found|pulled|got)|pulled (together|up)|check (these|them) out|"
-    r"options? (below|for you)|some (?:great |lovely |nice |beautiful )?(options|picks|ideas|gifts))\b",
+    r"those options|i (?:have |'?ve )?(found|pulled|got)|pulled (together|up)|check (these|them) out|"
+    r"options? (below|for you)|some (?:great |lovely |nice |beautiful )?(options|picks|ideas|gifts)|"
+    # "let me / I'll / let me try again to … find/search/look/pull" (words between)
+    r"(let me|i'?ll|i will|i'?m going to|going to|let'?s|let me try)\s+(?:\w+\s+){0,5}?"
+    r"(find|search|look|pull|get|grab|track down|hunt|dig up))\b",
     re.I,
 )
 

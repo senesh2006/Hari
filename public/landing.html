@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hari — AI Gift Concierge</title>
+<meta name="description" content="Hari is a multilingual, voice-enabled AI gift concierge that finds, recommends and checks out the perfect gift through natural conversation." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ff8a72' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z'/><path d='M2 21c0-3 1.85-5.36 5.08-6'/></svg>">
+<style>
+  :root{
+    --bg:#141019; --bg2:#1b1622; --surface:#221a2b; --surface2:#2a2034;
+    --border:#352a42; --text:#efe9f4; --muted:#b3a6c2; --faint:#8a7c9c;
+    --coral:#ff8a72; --coral2:#e0769a; --violet:#8d6cf0; --violet2:#6c4ad0;
+    --ok:#5fd0a0;
+    --grad:linear-gradient(120deg,var(--coral),var(--violet));
+    --radius:18px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    background:radial-gradient(1200px 600px at 80% -10%,rgba(141,108,240,.18),transparent 60%),
+               radial-gradient(900px 500px at -10% 10%,rgba(255,138,114,.14),transparent 55%),
+               var(--bg);
+    color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 22px}
+  .grad-text{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* Nav */
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);
+      background:rgba(20,16,25,.72);border-bottom:1px solid var(--border)}
+  .nav-in{display:flex;align-items:center;gap:18px;height:64px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.15rem}
+  .leaf{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;
+        background:var(--grad);box-shadow:0 6px 18px rgba(141,108,240,.35)}
+  .nav-links{margin-left:auto;display:flex;gap:26px;align-items:center}
+  .nav-links a{color:var(--muted);font-size:.92rem;font-weight:500}
+  .nav-links a:hover{color:var(--text)}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;border-radius:999px;
+       padding:11px 22px;background:var(--grad);color:#1a1422;border:none;cursor:pointer;
+       box-shadow:0 8px 22px rgba(224,118,154,.32);transition:transform .15s ease,box-shadow .15s ease}
+  .btn:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(224,118,154,.42)}
+  .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border);box-shadow:none}
+  .btn.ghost:hover{border-color:var(--violet)}
+
+  /* Hero */
+  .hero{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;padding:72px 0 56px}
+  .pill{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;font-weight:600;color:var(--muted);
+        border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:6px 14px;margin-bottom:22px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px rgba(95,208,160,.18)}
+  h1{font-size:3.2rem;line-height:1.08;font-weight:800;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:1.12rem;margin:20px 0 30px;max-width:30ch}
+  .cta-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .langs{margin-top:26px;display:flex;gap:10px;color:var(--faint);font-size:.86rem;align-items:center}
+  .langs b{color:var(--text)}
+
+  /* Mock chat */
+  .device{background:linear-gradient(180deg,var(--bg2),var(--surface));border:1px solid var(--border);
+          border-radius:26px;padding:18px;box-shadow:0 30px 70px rgba(0,0,0,.45)}
+  .d-head{display:flex;align-items:center;gap:10px;padding:4px 6px 14px;border-bottom:1px solid var(--border)}
+  .d-head .leaf{width:30px;height:30px;border-radius:9px}
+  .d-head small{color:var(--faint);display:block;font-size:.7rem}
+  .d-head strong{font-size:.92rem}
+  .msgs{display:flex;flex-direction:column;gap:12px;padding:16px 6px 6px}
+  .bubble{max-width:82%;padding:11px 15px;border-radius:16px;font-size:.92rem}
+  .bot{background:var(--surface2);border:1px solid var(--border);border-top-left-radius:5px;align-self:flex-start}
+  .me{background:linear-gradient(120deg,rgba(255,138,114,.92),rgba(224,118,154,.92));color:#241a22;
+      border-top-right-radius:5px;align-self:flex-end;font-weight:600}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-self:flex-start;width:100%;margin-top:2px}
+  .pcard{background:var(--surface);border:1px solid var(--border);border-radius:13px;overflow:hidden}
+  .pimg{height:74px;background:linear-gradient(135deg,var(--violet2),var(--coral2))}
+  .pcard .pb{padding:9px 10px}
+  .pcard .pn{font-size:.74rem;font-weight:600;line-height:1.25}
+  .pcard .pp{font-size:.74rem;color:var(--coral);font-weight:700;margin-top:3px}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
+  .chip{font-size:.72rem;font-weight:600;color:var(--text);background:rgba(141,108,240,.16);
+        border:1px solid rgba(141,108,240,.32);border-radius:999px;padding:5px 11px}
+
+  /* Sections */
+  section{padding:64px 0}
+  .eyebrow{color:var(--coral);font-weight:700;font-size:.8rem;letter-spacing:.14em;text-transform:uppercase}
+  h2{font-size:2.15rem;font-weight:800;letter-spacing:-.02em;margin:10px 0 12px}
+  .lead{color:var(--muted);max-width:60ch;font-size:1.05rem}
+  .center{text-align:center}
+  .center .lead{margin:0 auto}
+
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:40px}
+  .feat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;
+        transition:transform .18s ease,border-color .18s ease}
+  .feat:hover{transform:translateY(-4px);border-color:var(--violet)}
+  .feat .ic{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-size:1.4rem;
+            background:rgba(141,108,240,.14);border:1px solid rgba(141,108,240,.28);margin-bottom:16px}
+  .feat h3{font-size:1.1rem;margin-bottom:7px}
+  .feat p{color:var(--muted);font-size:.94rem}
+
+  /* Steps */
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:40px}
+  .step{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;position:relative}
+  .step .num{font-size:.8rem;font-weight:800;color:var(--violet);background:rgba(141,108,240,.14);
+             width:30px;height:30px;border-radius:9px;display:grid;place-items:center;margin-bottom:14px}
+  .step h4{font-size:1rem;margin-bottom:5px}
+  .step p{color:var(--muted);font-size:.9rem}
+
+  /* Technical */
+  .tech{background:linear-gradient(180deg,transparent,rgba(141,108,240,.05))}
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;margin-top:38px}
+  .node{flex:1;min-width:150px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px}
+  .node .t{font-size:.72rem;color:var(--coral);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+  .node .d{font-size:.86rem;color:var(--muted);margin-top:6px}
+  .arrow{align-self:center;color:var(--faint);font-size:1.3rem}
+
+  .stack{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+  .tag{font-size:.82rem;font-weight:600;color:var(--text);background:var(--surface);
+       border:1px solid var(--border);border-radius:10px;padding:8px 13px}
+  .tag b{color:var(--coral);font-weight:700;margin-right:6px}
+  .stack-group{margin-top:26px}
+  .stack-group .lbl{font-size:.78rem;color:var(--faint);font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:40px}
+  .eng{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px}
+  .eng h4{font-size:1.02rem;margin-bottom:7px;display:flex;gap:9px;align-items:center}
+  .eng h4 .e{font-size:1.15rem}
+  .eng p{color:var(--muted);font-size:.92rem}
+  .eng code{background:rgba(141,108,240,.16);border:1px solid rgba(141,108,240,.28);
+            padding:1px 6px;border-radius:6px;font-size:.82rem;color:#d9ccff}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:34px}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;text-align:center}
+  .stat .n{font-size:1.7rem;font-weight:800}
+  .stat .l{color:var(--muted);font-size:.84rem;margin-top:2px}
+
+  /* CTA + footer */
+  .cta-band{margin:30px 0;background:var(--grad);border-radius:26px;padding:54px 40px;text-align:center;color:#1a1422}
+  .cta-band h2{color:#1a1422}
+  .cta-band p{color:#3a2630;max-width:50ch;margin:8px auto 24px;font-weight:500}
+  .cta-band .btn{background:#1a1422;color:#fff;box-shadow:0 10px 26px rgba(0,0,0,.3)}
+  footer{border-top:1px solid var(--border);padding:30px 0;color:var(--faint);font-size:.86rem;
+         display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+
+  @media (max-width:880px){
+    .hero{grid-template-columns:1fr;gap:34px;padding:44px 0}
+    h1{font-size:2.4rem}.sub{max-width:none}
+    .grid3,.steps,.stats{grid-template-columns:1fr 1fr}
+    .grid2{grid-template-columns:1fr}
+    .nav-links a:not(.btn){display:none}
+  }
+  @media (max-width:520px){.grid3,.steps,.stats{grid-template-columns:1fr}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-in">
+    <a class="brand" href="#top">
+      <span class="leaf"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1422" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg></span>
+      Hari
+    </a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#tech">Under the hood</a>
+      <a class="btn" href="/">Try Hari →</a>
+    </div>
+  </div>
+</nav>
+
+<header id="top" class="wrap hero">
+  <div>
+    <span class="pill"><span class="dot"></span> AI Gift Concierge · Sri Lanka</span>
+    <h1>The gift assistant that actually <span class="grad-text">finishes the job.</span></h1>
+    <p class="sub">Chat or talk to Hari. It understands who the gift is for and why, finds the right products, and takes you all the way to a paid order.</p>
+    <div class="cta-row">
+      <a class="btn" href="/">Try Hari free →</a>
+      <a class="btn ghost" href="#tech">See the tech</a>
+    </div>
+    <div class="langs">Speaks <b>English</b> · <b>සිංහල</b> · <b>தமிழ்</b> &nbsp;•&nbsp; voice in &amp; out</div>
+  </div>
+
+  <div class="device" aria-hidden="true">
+    <div class="d-head">
+      <span class="leaf"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1422" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg></span>
+      <div><strong>Hari</strong><small>Good evening · What can I find for you?</small></div>
+    </div>
+    <div class="msgs">
+      <div class="bubble bot">Hi 😊 I'm Hari, your gift concierge. Who are we spoiling today?</div>
+      <div class="bubble me">a birthday gift for my mum, she loves spa stuff</div>
+      <div class="bubble bot">Lovely 😊 Want to stick with your usual budget, or set a new one for this?</div>
+      <div class="bubble me">around 4000, something relaxing</div>
+      <div class="bubble bot">The spa hamper feels like the thoughtful pick ✨</div>
+      <div class="cards">
+        <div class="pcard"><div class="pimg"></div><div class="pb"><div class="pn">Spa Ceylon Relax Gift Set</div><div class="pp">LKR 3,950</div></div></div>
+        <div class="pcard"><div class="pimg"></div><div class="pb"><div class="pn">Aromatherapy Hamper</div><div class="pp">LKR 4,200</div></div></div>
+      </div>
+      <div class="chips"><span class="chip">Cheaper</span><span class="chip">More premium</span><span class="chip">Something different</span></div>
+    </div>
+  </div>
+</header>
+
+<!-- FEATURES -->
+<section id="features" class="wrap">
+  <div class="center">
+    <span class="eyebrow">What Hari does</span>
+    <h2>A concierge, not a search box</h2>
+    <p class="lead">Hari reasons about the recipient and occasion, asks one smart question instead of a form, and never bluffs about what it found.</p>
+  </div>
+  <div class="grid3">
+    <div class="feat"><div class="ic">💬</div><h3>Natural conversation</h3><p>Understands occasion, recipient and feeling — by text or voice — in English, Sinhala or Tamil.</p></div>
+    <div class="feat"><div class="ic">🎯</div><h3>One smart question</h3><p>Asks your budget once, then a single taste question (roses or mixed? spicy or cheese?) — never an interrogation.</p></div>
+    <div class="feat"><div class="ic">🛡️</div><h3>Honest by design</h3><p>Grounds every reply in real results — it won't call a fruit basket "ramen," and filters out anything off-target.</p></div>
+    <div class="feat"><div class="ic">🧠</div><h3>Remembers people</h3><p>Saves recipients with interests, birthdays and anniversaries, learns your gifting style, and flags delivery timing.</p></div>
+    <div class="feat"><div class="ic">🛒</div><h3>Real checkout</h3><p>Cart, wishlist and a genuine end-to-end order with delivery details and a secure pay link — not a mockup.</p></div>
+    <div class="feat"><div class="ic">💙</div><h3>Emotionally aware</h3><p>Handles apologies, condolences and get-well moments with warmth — and resumes your past chats.</p></div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section id="how" class="wrap">
+  <div class="center">
+    <span class="eyebrow">How it works</span>
+    <h2>From "her birthday's coming up" to a paid order</h2>
+  </div>
+  <div class="steps">
+    <div class="step"><div class="num">1</div><h4>Tell Hari</h4><p>Who it's for and the occasion — type or talk, any language.</p></div>
+    <div class="step"><div class="num">2</div><h4>One question</h4><p>Budget, then a single taste cue to sharpen the picks.</p></div>
+    <div class="step"><div class="num">3</div><h4>See curated gifts</h4><p>Real products as cards, grouped by category, refine with a tap.</p></div>
+    <div class="step"><div class="num">4</div><h4>Checkout</h4><p>Delivery details and a secure pay link — done.</p></div>
+  </div>
+</section>
+
+<!-- TECHNICAL -->
+<section id="tech" class="tech">
+  <div class="wrap">
+    <div class="center">
+      <span class="eyebrow">Under the hood</span>
+      <h2>An agent built on guardrails, not vibes</h2>
+      <p class="lead">The hard part of agents isn't capability — it's discipline: knowing when to ask, refusing to bluff, respecting a strict time budget, and staying graceful in three languages on serverless infrastructure.</p>
+    </div>
+
+    <!-- architecture flow -->
+    <div class="flow">
+      <div class="node"><div class="t">Client</div><div class="d">No-build React (JSX) on Vercel — chat, voice, cards, skeletons, history.</div></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="t">Intent layer</div><div class="d">Lightweight detectors route each turn: budget, taste, cart, "best", "more", tracking.</div></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="t">Agent loop</div><div class="d">Llama 3.3 70B (NVIDIA NIM) calls tools, with a time-budgeted, self-correcting loop.</div></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="t">MCP tools</div><div class="d">Kapruka catalogue search, cart and order actions over Model Context Protocol.</div></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="t">Guardrails</div><div class="d">Grounding, gender &amp; stock filters, NSFW/category stripping — then product cards.</div></div>
+    </div>
+
+    <!-- stack -->
+    <div class="stack-group">
+      <div class="lbl">AI &amp; Agent</div>
+      <div class="stack">
+        <span class="tag"><b>LLM</b>NVIDIA NIM · Llama 3.3 70B</span>
+        <span class="tag"><b>Protocol</b>Model Context Protocol (MCP)</span>
+        <span class="tag"><b>Pattern</b>Agentic tool-calling loop</span>
+        <span class="tag"><b>Safety</b>RAG-style result grounding</span>
+      </div>
+    </div>
+    <div class="stack-group">
+      <div class="lbl">Voice &amp; Languages</div>
+      <div class="stack">
+        <span class="tag"><b>STT</b>AssemblyAI (Universal)</span>
+        <span class="tag"><b>TTS</b>CAMB.AI · AssemblyAI voice agent</span>
+        <span class="tag"><b>Translate</b>EN · සිංහල · தமிழ்</span>
+      </div>
+    </div>
+    <div class="stack-group">
+      <div class="lbl">Backend &amp; Infra</div>
+      <div class="stack">
+        <span class="tag"><b>Runtime</b>Vercel serverless (Python)</span>
+        <span class="tag"><b>Data/Auth</b>Supabase (Postgres)</span>
+        <span class="tag"><b>Trends</b>Tavily + scheduled cron</span>
+        <span class="tag"><b>Frontend</b>React (JSX) · design tokens</span>
+      </div>
+    </div>
+
+    <!-- engineering highlights -->
+    <div class="grid2">
+      <div class="eng"><h4><span class="e">🧪</span> Result grounding</h4><p>Extracts the recipient's interests and the items explicitly requested, then verifies the results actually contain them — re-searching or admitting the miss instead of relabelling. No more "ramen gift basket" over fruit baskets.</p></div>
+      <div class="eng"><h4><span class="e">⚧</span> Gender &amp; safety filters</h4><p>Infers recipient gender across all three languages to drop opposite-gender items, hides out-of-stock products, and strips NSFW &amp; category-facet noise — deterministically, never emptying the list.</p></div>
+      <div class="eng"><h4><span class="e">⏱️</span> Serverless-safe i18n</h4><p>Anchors one request-wide time budget so translation + DB loads can't blow the 60s limit, runs inbound translation <code>concurrently</code> with the Supabase load, and degrades gracefully instead of 502-ing.</p></div>
+      <div class="eng"><h4><span class="e">🚦</span> Intent guardrails</h4><p>Budget asked <code>once per chat</code>, one taste question max, "pick the best" recommends without re-searching, and the agent is forced to actually search when it only <em>promises</em> options.</p></div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="n grad-text">3</div><div class="l">languages, voice in &amp; out</div></div>
+      <div class="stat"><div class="n grad-text">70B</div><div class="l">parameter agent over MCP</div></div>
+      <div class="stat"><div class="n grad-text">100%</div><div class="l">serverless · zero-build front end</div></div>
+      <div class="stat"><div class="n grad-text">E2E</div><div class="l">discovery → real paid checkout</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="wrap">
+  <div class="cta-band">
+    <h2>Meet Hari.</h2>
+    <p>The warmest way to find a gift — and the most disciplined agent behind the curtain.</p>
+    <a class="btn" href="/">Start a chat →</a>
+  </div>
+</section>
+
+<footer class="wrap">
+  <span>Hari · AI Gift Concierge — shops the Kapruka catalogue.</span>
+  <span>Built with NVIDIA NIM · MCP · Supabase · Vercel</span>
+</footer>
+
+</body>
+</html>
