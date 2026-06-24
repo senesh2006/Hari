@@ -1079,6 +1079,7 @@ function App({
           suggestions: lastSuggestions,
           cart: cart.map((c) => ({ name: c.name, qty: c.qty, price: c.rawPrice ?? c.price, currency: c.currency, image: c.image, url: c.url, id: c.id })),
           instructions,
+          budget: budget ?? undefined,
           language: currentLang,
           access_token: accessToken || undefined,
         }),

@@ -3250,26 +3250,46 @@ def nim_chat(messages: list, tools: list, timeout: float | None = None) -> dict:
 
 STRATEGY_SYSTEM_PROMPT = """\
 You are the STRATEGY brain behind Hari, a Sri Lankan gift concierge. You do NOT talk to the user and you do NOT \
-search. You read everything known about this gift — the occasion, the relationship, the recipient's personality \
-and interests, the constraints (budget, things to avoid, tone), and the conversation — and you produce a single \
-GIFTING STRATEGY that the shopping agent will then execute.
+search. You read everything known about this gift and produce ONE gifting strategy the shopping agent then executes.
 
-Think like a thoughtful friend, not a search box. Turn "watch enthusiast + childhood reunion + open budget" into \
-an ANGLE ("a collector-grade watch, plus a small sentimental touch"), not the literal word "watch". Respect every \
-constraint: a budget ceiling, "no nuts", a sombre tone (no cake/balloons for grief/illness), and gender (a woman \
-gets ladies' items, a man gets men's).
+Reason through these steps in your head before answering:
+1. RELATIONSHIP — who is the recipient to the sender (crush, girlfriend, wife, childhood friend, boss, client, \
+parent, colleague…) and HOW CLOSE are they really? "Barely know her", "talked a few times", "a girl from uni" = \
+NOT close.
+2. OCCASION — birthday, anniversary, reunion, apology, condolence, just-because…
+3. BUDGET — the ceiling. It is HARD. Pick queries that return items at or under it.
+4. PERSONALITY / INTERESTS — what the recipient actually likes.
+5. GIFTING GOAL — what feeling should this create? (delight, comfort, romance, respect, low-pressure friendliness.)
+6. RISK ASSESSMENT — is the gift too romantic, too expensive, too intimate, or socially/culturally awkward for \
+THIS relationship? A near-stranger or a crush is HIGH risk: avoid couple gifts, jewellery, expensive watches, \
+perfume, and anything romantic — prefer small, casual, low-pressure picks. A boss/client is PROFESSIONAL: neutral, \
+tasteful, never personal. Sombre occasions: never cake/balloons/celebration.
+7. GIFT CATEGORY — first pick the TYPE that fits, then the product: experience, accessory, personalized, luxury, \
+practical, sentimental, tech, fashion, or food. Don't go straight from a keyword to a search.
 
-Reply with ONLY a JSON object, no prose, no markdown, in exactly this shape:
+Then turn it into an ANGLE, not a literal keyword: "watch enthusiast + reunion + open budget" → "a collector-grade \
+watch plus a small sentimental touch", NOT just "watch". Match gender (a woman gets ladies' items, a man gets men's).
+
+ASK ONE QUESTION FIRST when a single answer would materially change the gift and you can't infer it — e.g. a broad \
+interest ("likes watches" → luxury, smart, or fashion?; "perfume" → fresh, floral, or woody?), or an unknown that \
+matters. Put it in "clarify_question". If you have enough to choose well, leave it empty and just strategise. Never \
+ask more than one, and never ask about budget here.
+
+Reply with ONLY a JSON object, no prose, no markdown, exactly this shape:
 {
-  "angle": "one sentence describing the gifting strategy and why it fits",
+  "relationship": "crush | girlfriend | wife | childhood friend | boss | client | parent | colleague | unknown",
+  "risk_level": "high | normal | formal",
+  "category": "experience | accessory | personalized | luxury | practical | sentimental | tech | fashion | food",
+  "clarify_question": "ONE warm question to sharpen the gift, or empty string if none needed",
+  "angle": "one sentence: the gifting strategy and why it fits THIS relationship and occasion",
   "recipient_read": "short read on who they are / what they'd value",
-  "constraints": ["budget ceiling if any", "things to avoid", "tone"],
-  "search_queries": ["2-5 SHORT concrete product nouns to search, each tailored to the angle, e.g. 'mens automatic watch', 'leather watch box'"],
-  "reject_rule": "one sentence: what to DROP from results because it's off-strategy (e.g. 'no kids toys; not a birthday so no birthday-themed items; nothing women's')",
-  "explain_hint": "one warm sentence the agent can use to justify the pick, no product names"
+  "constraints": ["hard budget ceiling if any", "things to avoid", "tone"],
+  "search_queries": ["2-5 SHORT concrete product nouns tailored to the angle AND the budget, e.g. 'mens leather wallet', 'ceramic mug'"],
+  "reject_rule": "one sentence: what to DROP from results (off-strategy, wrong gender, over budget, too romantic/expensive for this relationship)",
+  "explain_hint": "one warm sentence the agent can say to justify the pick AND, if relevant, why it avoided something risky (e.g. 'since you've only spoken a few times, I kept it light rather than too personal')"
 }
-Keep queries specific and gendered/occasion-appropriate. Never include adult/intimate items. If you truly lack \
-enough to strategise, return {"insufficient": true}."""
+Keep queries specific, gendered, occasion- and budget-appropriate. Never include adult/intimate items. If you truly \
+lack enough to strategise, return {"insufficient": true}."""
 
 
 def strategy_chat(messages: list, timeout: float | None = None) -> dict:
@@ -3339,6 +3359,17 @@ def strategy_message(strategy: dict | None) -> str | None:
     lines = [
         "GIFTING STRATEGY (decided by the strategy brain — FOLLOW IT this turn; do NOT free-associate):",
     ]
+    rel = strategy.get("relationship")
+    risk = str(strategy.get("risk_level") or "").lower()
+    if rel and rel != "unknown":
+        lines.append(f"- Relationship: {rel}.")
+    if risk == "high":
+        lines.append(
+            "- RISK: HIGH — keep it small, inexpensive and low-pressure. Do NOT show couple gifts, jewellery, "
+            "expensive watches, perfume, or anything romantic."
+        )
+    elif risk == "formal":
+        lines.append("- RISK: PROFESSIONAL — keep it neutral and tasteful, nothing personal or romantic.")
     if strategy.get("angle"):
         lines.append(f"- Angle: {strategy['angle']}")
     if strategy.get("recipient_read"):
@@ -3359,11 +3390,195 @@ def strategy_message(strategy: dict | None) -> str | None:
             f"- Reject rule: {strategy['reject_rule']} — silently DROP any returned product that breaks it; "
             "never show it as a card."
         )
+    if strategy.get("explain_hint"):
+        lines.append(f"- Explain like this: {strategy['explain_hint']}")
     lines.append(
-        "- Then present only the on-strategy items. Your reply stays 1–2 warm sentences (cards show details); "
-        "you may name the single best pick and why it fits the angle."
+        "- CURATE, don't dump: present only the best 1–3 on-strategy items, not everything returned. It's good to "
+        "say you filtered (e.g. 'found a bunch but these two fit best') and to name your top pick with a one-line "
+        "reason it suits them — and, when it matters, why you skipped something (too personal, too pricey). "
+        "Keep it warm and short; the cards show the details and prices."
     )
     return "\n".join(lines)
+
+
+# =============================================================================
+# Relationship intelligence + risk assessment (steps 1, 4, 5)
+# =============================================================================
+
+# How close are they? Low-closeness cues raise the social risk of a gift.
+_LOW_CLOSENESS_RE = re.compile(
+    r"\b(barely know|hardly know|don'?t (really )?know (her|him|them)|"
+    r"don'?t know (her|him|them) (well|that well|very well)|not (that )?close|"
+    r"just met|recently met|only met|met (her|him|them)? ?(once|twice)|"
+    r"(talked|spoke|chatted|messaged) (to (her|him|them) )?(only )?(once|twice|a (couple|few) times)|"
+    r"(only )?(talked|spoken|chatted) (a few|a couple)|few times|couple of times|"
+    r"new (friend|girl|guy|colleague)|from (uni|university|class|college|work)|classmate)\b",
+    re.I,
+)
+_CRUSH_RE = re.compile(
+    r"\b(crush|girl i like|guy i like|someone i like|like (this|a) (girl|guy)|"
+    r"this girl i|interested in (her|this girl|a girl))\b",
+    re.I,
+)
+
+# Relationship -> how a thoughtful Sri Lankan friend would pitch the gift.
+RELATIONSHIP_PLAYBOOK = {
+    "crush": (
+        "Small, casual, low-pressure. AVOID couple gifts, jewellery, expensive watches, perfume, "
+        "anything romantic or intimate. PREFER inexpensive thoughtful picks — nice chocolates, a book, "
+        "a plant, a quirky mug, good stationery."
+    ),
+    "partner": (
+        "Romantic and personal is welcome — flowers, perfume, jewellery, a date-night treat."
+    ),
+    "spouse": (
+        "Premium and romantic — a special piece of jewellery, a luxury hamper, something meaningful."
+    ),
+    "friend": (
+        "Meaningful or practical over romantic — tie it to their interests; no romantic or couple items."
+    ),
+    "boss": (
+        "Professional and restrained — no romantic or personal items; tasteful and neutral "
+        "(a quality desk piece, gourmet hamper, plant)."
+    ),
+    "client": (
+        "Corporate and safe — neutral, gender-neutral, no romantic or personal items; gourmet hampers, "
+        "premium stationery, plants."
+    ),
+    "colleague": (
+        "Friendly but professional — modest and neutral; avoid anything personal or romantic."
+    ),
+    "family": (
+        "Thoughtful and family-oriented — comfort and care, something they'd use and feel loved by."
+    ),
+}
+
+# Items that are socially risky for a low-closeness / professional relationship.
+HIGH_RISK_AVOID = "couple gifts, jewellery, rings, expensive watches, perfume, lingerie, romantic or intimate items"
+
+
+def _classify_relationship(text: str, conversation: list | None) -> str | None:
+    blob = _recent_user_blob(conversation, text).lower()
+    if _CRUSH_RE.search(blob):
+        return "crush"
+    if re.search(r"\b(wife|husband|hubby)\b", blob):
+        return "spouse"
+    if re.search(r"\b(girlfriend|boyfriend|gf|bf|fiance|fiancee)\b", blob):
+        return "partner"
+    if re.search(r"\b(boss|manager|supervisor)\b", blob):
+        return "boss"
+    if re.search(r"\b(client|customer)\b", blob):
+        return "client"
+    if re.search(r"\b(colleague|co-?worker|coworker)\b", blob):
+        return "colleague"
+    if re.search(r"\b(mom|mother|mum|dad|father|parent|grandma|grandpa|granny|aunt|uncle|sister|brother|cousin|son|daughter)\b", blob):
+        return "family"
+    if re.search(r"\b(childhood friend|old friend|best friend|bestie|friend|firend|freind|frnd)\b", blob):
+        return "friend"
+    return None
+
+
+def _gift_risk(relationship: str | None, text: str, conversation: list | None) -> str:
+    """high (socially risky), formal (professional), or normal."""
+    blob = _recent_user_blob(conversation, text).lower()
+    low_closeness = bool(_LOW_CLOSENESS_RE.search(blob))
+    if relationship == "crush" or low_closeness:
+        return "high"
+    if relationship in ("boss", "client", "colleague"):
+        return "formal"
+    return "normal"
+
+
+def relationship_message(relationship: str | None, risk: str) -> str | None:
+    """Hard guidance so gifts match the relationship and don't overstep (e.g. no
+    couple watches for someone barely known)."""
+    if not relationship and risk == "normal":
+        return None
+    lines = ["RELATIONSHIP & RISK READ (honour this over generic ideas — it overrides 'trending' picks):"]
+    if relationship:
+        rel_label = relationship.replace("_", " ")
+        lines.append(f"- Relationship: {rel_label}.")
+        play = RELATIONSHIP_PLAYBOOK.get(relationship)
+        if play:
+            lines.append(f"- Fit: {play}")
+    if risk == "high":
+        lines.append(
+            f"- RISK: HIGH (low closeness / early days). AVOID: {HIGH_RISK_AVOID}. "
+            "Keep it small, inexpensive and low-pressure — a gift that's easy to receive without it feeling like too much."
+        )
+    elif risk == "formal":
+        lines.append(
+            "- RISK: PROFESSIONAL. Keep it neutral and tasteful — no romantic, intimate, or overly personal items."
+        )
+    return "\n".join(lines)
+
+
+# =============================================================================
+# Budget enforcement (hard filter — step 6/8/9)
+# =============================================================================
+
+def _coerce_budget(raw) -> float | None:
+    if raw in (None, "", False):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw) if raw > 0 else None
+    s = str(raw).strip().lower().replace(",", "")
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(k)?", s)
+    if not m:
+        return None
+    try:
+        val = float(m.group(1))
+    except ValueError:
+        return None
+    if m.group(2):  # "5k" -> 5000
+        val *= 1000
+    return val if val > 0 else None
+
+
+def _effective_budget(context: dict, conv: list, profile: dict | None) -> float | None:
+    """The active budget ceiling: explicit from the client, else the most recent
+    amount stated in chat, else the profile default."""
+    val = _coerce_budget((context or {}).get("budget"))
+    if val:
+        return val
+    for turn in reversed(conv or []):
+        if turn.get("role") == "user":
+            m = _SESSION_BUDGET_RE.search(str(turn.get("content") or ""))
+            if m:
+                val = _coerce_budget(m.group(1))
+                if val:
+                    return val
+    return _coerce_budget((profile or {}).get("default_budget"))
+
+
+def _product_price_num(p: dict) -> float | None:
+    return _coerce_budget(p.get("price"))
+
+
+def _apply_budget_ceiling(products: list, ceiling: float | None):
+    """Drop products over the budget ceiling. Returns (kept, dropped_count,
+    all_over). Items with an unknown price are kept (can't judge them). If
+    EVERYTHING is over budget, keep the cheapest two so the reply can be honest
+    about it rather than showing nothing."""
+    if not ceiling:
+        return products, 0, False
+    within, over = [], []
+    for p in products:
+        pr = _product_price_num(p)
+        if pr is not None and pr > ceiling:
+            over.append(p)
+        else:
+            within.append(p)
+    if within:
+        return within, len(over), False
+    over_sorted = sorted(over, key=lambda x: _product_price_num(x) or 1e12)
+    return over_sorted[:2], len(over), bool(over)
+
+
+OVER_BUDGET_FALLBACK = (
+    "Heads up — everything close to what you wanted lands over your LKR {budget:,.0f} budget. "
+    "I've shown the nearest couple, but want me to hunt for cheaper options or nudge the budget up a touch? 😊"
+)
 
 
 # =============================================================================
@@ -3884,6 +4099,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     )
 
     context = context or {}
+    # Whether we may ask a question this turn (false once the user is answering a
+    # pending one). Captured before the search gates can flip allow_questions, so
+    # the strategy can still ask ONE sharpening question even on a search turn.
+    ask_allowed = allow_questions
     suggestions = context.get("suggestions") or []
     cart = context.get("cart") or []
     instructions = context.get("instructions") or []
@@ -3941,6 +4160,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 break
     else:
         profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
+
+    # Active budget ceiling (client > stated-in-chat > profile default). Used to
+    # hard-filter over-budget products before they ever reach the user.
+    budget_ceiling = _effective_budget(context, conv, profile)
 
     track_request = _is_order_tracking_request(user_en)
     account_intent = None if track_request else _account_intent(user_en)
@@ -4096,16 +4319,25 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         # Force a recommendation from the on-screen suggestions: no search tools.
         openai_tools = CART_TOOLS
 
+    relationship = None if direct_request else _classify_relationship(user_en, conv)
+    gift_risk = "normal" if direct_request else _gift_risk(relationship, user_en, conv)
     extra_ctx = [
         playbook_message(user_en, conv),
         conversation_memory_message(conv, user_en, profile),
         session_facts_message(profile),
+        relationship_message(relationship, gift_risk),
         recipients_message(recipients),
         wishlist_message(wishlist),
         order_history_message(orders),
         trends_message(user_en, recipients, orders),
         upcoming_occasions_message(recipients),
     ]
+    if budget_ceiling and not direct_request:
+        extra_ctx.append(
+            f"BUDGET CEILING — the user's budget is LKR {budget_ceiling:,.0f}. Every product you suggest MUST cost "
+            f"LKR {budget_ceiling:,.0f} or less. Never show a single item priced above it. If nothing fits, say so "
+            "honestly and offer cheaper options or to raise the budget — do NOT pad with over-budget items."
+        )
     if track_request:
         extra_ctx.append(order_tracking_message(user_en, orders, recipients))
     if account_intent:
@@ -4175,6 +4407,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         if already_shown:
             products = [p for p in products if _norm_text(p.get("name")) not in already_shown]
         products = _drop_wrong_gender(products, recipient_gender)
+        # Hard budget filter — over-budget items never reach the user (step 8/9).
+        products, _over_dropped, _all_over = _apply_budget_ceiling(products, budget_ceiling)
+        if _all_over and budget_ceiling:
+            answer = OVER_BUDGET_FALLBACK.format(budget=budget_ceiling)
         if products:
             answer = _strip_catalog_from_answer(answer, products)
             if not (answer or "").strip():
@@ -4265,10 +4501,16 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             strategy = build_gift_strategy(
                 conv, [profile_message(profile)] + extra_ctx, user_en, timeout=strat_timeout
             )
-            strat_msg = strategy_message(strategy)
-            if strat_msg:
-                messages.append({"role": "system", "content": strat_msg})
-                trace.append({"tool": "gift_strategy", "arguments": strategy})
+            if strategy:
+                # The strategy may want ONE sharpening question before searching
+                # (e.g. "luxury, smart, or fashion watches?") — ask it if allowed.
+                clarify = str(strategy.get("clarify_question") or "").strip()
+                if clarify and ask_allowed and not _last_assistant_was_question(conv):
+                    return ask([clarify])
+                strat_msg = strategy_message(strategy)
+                if strat_msg:
+                    messages.append({"role": "system", "content": strat_msg})
+                    trace.append({"tool": "gift_strategy", "arguments": strategy})
 
     # Reserve a little tail for the outbound translation; anchor to t0 so any
     # time already spent on translation/context shortens the loop, not the
