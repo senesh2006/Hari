@@ -311,5 +311,17 @@
   <span>Built with NVIDIA NIM · MCP · Supabase · Vercel</span>
 </footer>
 
+<script>
+  // When this page is shown inside the app (before sign-in), the "Try Hari"
+  // CTAs enter the app instead of reloading; standalone they just navigate to /.
+  (function () {
+    var embedded = window.self !== window.top;
+    document.addEventListener("click", function (e) {
+      var a = e.target.closest('a[href="/"]');
+      if (!a) return;
+      if (embedded) { e.preventDefault(); window.parent.postMessage("hari:enter", "*"); }
+    });
+  })();
+</script>
 </body>
 </html>

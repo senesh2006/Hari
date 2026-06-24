@@ -2102,7 +2102,17 @@ function ConciergeShell() {
   const [profile, setProfile] = useState(null);
   const [isGuest, setIsGuest] = useState(false);
   const [showGate, setShowGate] = useState(false);
+  const [showLanding, setShowLanding] = useState(false);
   const [gateMode, setGateMode] = useState("welcome");
+
+  // The landing page (in an iframe) posts this when "Try Hari" is clicked.
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (e.data === "hari:enter") { setShowLanding(false); setShowGate(true); }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
 
   const loadProfileForSession = async (client, sess) => {
     const p = await window.KaprukaSupabase.ensureProfile(client, sess);
@@ -2129,7 +2139,7 @@ function ConciergeShell() {
             setIsGuest(false);
             await loadProfileForSession(client, sess);
           } else if (!guestFlag) {
-            setShowGate(true);
+            setShowLanding(true);
           } else {
             setIsGuest(true);
           }
@@ -2146,13 +2156,13 @@ function ConciergeShell() {
             }
           });
         } else if (!guestFlag) {
-          setShowGate(true);
+          setShowLanding(true);
         } else {
           setIsGuest(true);
         }
       } catch (err) {
         console.warn("Boot failed", err);
-        if (!localStorage.getItem("kapruka_guest")) setShowGate(true);
+        if (!localStorage.getItem("kapruka_guest")) setShowLanding(true);
         else setIsGuest(true);
       } finally {
         if (alive) setBooting(false);
@@ -2196,6 +2206,16 @@ function ConciergeShell() {
 
   if (booting) {
     return <div className="boot-screen">Loading Hari…</div>;
+  }
+
+  if (showLanding) {
+    return (
+      <iframe
+        title="Hari — welcome"
+        src="/landing.html"
+        style={{ position: "fixed", inset: 0, width: "100%", height: "100%", border: "none" }}
+      />
+    );
   }
 
   if (showGate) {
