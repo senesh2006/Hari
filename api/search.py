@@ -2727,6 +2727,33 @@ GROUNDING_NUDGE = (
 )
 
 
+def _requested_product_terms(text: str) -> set[str]:
+    """Product types the user explicitly asked for in THIS message (e.g. a 'cake'
+    in 'i want a cake also') — the results should actually contain them."""
+    return {w.lower() for w in _PRODUCT_NOUN_RE.findall(text or "")}
+
+
+def _uncovered_terms(terms: set[str], products: list) -> list[str]:
+    """Which of the terms no product actually covers (per-term, so a multi-item
+    request flags each missing item)."""
+    if not terms:
+        return []
+    blob = " ".join(
+        _norm_text(f"{p.get('name') or ''} {p.get('description') or ''}") for p in products
+    )
+    if not blob.strip():
+        return list(terms)
+    return [t for t in terms if not _term_in_blob(t, blob)]
+
+
+MISSING_ITEMS_NUDGE = (
+    "GROUNDING CHECK — the user asked for {terms}, but NONE of the current results are that. "
+    "Do NOT claim you found {terms}. Run another kapruka_search_products for it (these are common "
+    "categories, so try a plain query like q='cake'); if it truly returns nothing, keep the items you "
+    "DID find and tell the user honestly you couldn't find a {terms} — never imply it's there when it isn't."
+)
+
+
 HONEST_NO_MATCH_FALLBACK = (
     "I couldn't find {terms} itself on Kapruka, but I've pulled a few thoughtful "
     "options that still suit her below 😊 Want me to keep hunting for something closer to {terms}?"
@@ -3522,6 +3549,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # For "show me more" we want DIFFERENT items, so skip interest grounding.
     salient_terms = set() if more_request else _salient_want_terms(conv, user_en)
     grounding_warned = False
+    # Product types explicitly requested this turn (e.g. "a cake also") must
+    # actually appear in the results — don't claim a category we didn't return.
+    requested_terms = set() if more_request else _requested_product_terms(user_en)
+    items_warned = False
     already_shown = {_norm_text(n) for n in _shown_names(suggestions, cart)} if more_request else set()
     # Don't show the wrong gender's items (works across the chat's languages).
     recipient_gender = _recipient_gender(conv, recipients, user_en)
@@ -3698,6 +3729,18 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 messages.append({
                     "role": "system",
                     "content": GROUNDING_NUDGE.format(terms=", ".join(sorted(salient_terms))),
+                })
+
+        # Requested-item grounding: an item the user explicitly asked for ("a cake
+        # also") that no result actually is — nudge a re-search or honest wording.
+        if not items_warned and requested_terms and results:
+            prods = extract_products(results)
+            missing = _uncovered_terms(requested_terms, prods)
+            if prods and missing:
+                items_warned = True
+                messages.append({
+                    "role": "system",
+                    "content": MISSING_ITEMS_NUDGE.format(terms=", ".join(sorted(missing))),
                 })
 
         # Gender grounding: if the gift is for a woman but the results are
