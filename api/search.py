@@ -980,7 +980,12 @@ baskets, do NOT call one a "ramen basket" — say honestly you couldn't find ram
 as alternatives, described accurately. A mismatch the user can see destroys trust faster than "no match".
 - Never say "prices may change, check the website".
 - Never duplicate the same product. Omit unset optional params — never pass "null" placeholders.
+- Only recommend items that are in stock; if the catalogue marks something out of stock / sold out / \
+unavailable, don't suggest it — pick an available one instead.
 - If a search returns nothing relevant, try a different concrete idea before settling.
+- ALWAYS ACT: never promise or describe gift options without actually calling kapruka_search_products in \
+the SAME turn. "Let me find", "here are some options" or "what do you think of these" are only honest once \
+real products were returned this turn — otherwise the user sees an empty reply.
 
 When USER PROFILE context is provided, bias searches and suggestions toward their gifting personality, \
 style, typical budget, and default city — without ignoring their current request."""
@@ -2391,6 +2396,32 @@ URL_KEYS = (
 DESC_KEYS = ("description", "desc", "summary", "details", "short_description")
 CURRENCY_KEYS = ("currency", "currency_code", "currencyCode")
 ID_KEYS = ("id", "product_id", "productId", "productid", "sku", "product_code")
+# Availability — only used to hide items the catalogue clearly marks unavailable.
+STOCK_TRUE_KEYS = ("in_stock", "instock", "is_available", "available", "availability", "stock_status", "stock")
+STOCK_FALSE_KEYS = ("out_of_stock", "outofstock", "sold_out", "soldout", "is_sold_out")
+_OUT_OF_STOCK_RE = re.compile(r"\b(out[\s-]?of[\s-]?stock|sold[\s-]?out|unavailable|not available|discontinued)\b", re.I)
+
+
+def _in_stock(d: dict) -> bool:
+    """False only when the catalogue clearly flags the item unavailable; otherwise
+    assume it's buyable (most products carry no stock field)."""
+    for k in STOCK_FALSE_KEYS:
+        v = _first(d, (k,))
+        if v is True or (isinstance(v, (int, float)) and v) or \
+           (isinstance(v, str) and v.strip().lower() in ("true", "yes", "1", "y")):
+            return False
+    for k in STOCK_TRUE_KEYS:
+        v = _first(d, (k,))
+        if v is None:
+            continue
+        if v is False or (isinstance(v, (int, float)) and v == 0):
+            return False
+        if isinstance(v, str):
+            if _OUT_OF_STOCK_RE.search(v):
+                return False
+            if v.strip().lower() in ("false", "no", "0", "n"):
+                return False
+    return True
 
 
 def _id_from_url(url):
@@ -2485,6 +2516,7 @@ def _normalize_product(d: dict) -> dict:
         "description": description,
         "customizable": bool(custom),
         "customization_type": custom,
+        "in_stock": _in_stock(d),
     }
 
 
@@ -2573,7 +2605,10 @@ def extract_products(results: list) -> list:
             seen_urls.add(url_key)
         seen_names.add(name_key)
         unique.append(p)
-    return unique
+    # Hide items the catalogue clearly marks unavailable — but never end up with
+    # nothing because of it (if every result is flagged, show them anyway).
+    in_stock = [p for p in unique if p.get("in_stock", True)]
+    return in_stock if in_stock else unique
 
 
 # =============================================================================
@@ -2751,6 +2786,28 @@ MISSING_ITEMS_NUDGE = (
     "Do NOT claim you found {terms}. Run another kapruka_search_products for it (these are common "
     "categories, so try a plain query like q='cake'); if it truly returns nothing, keep the items you "
     "DID find and tell the user honestly you couldn't find a {terms} — never imply it's there when it isn't."
+)
+
+# The model sometimes narrates options ("let me find…", "what do you think of
+# these?") without ever calling search, so the user sees nothing.
+_PROMISES_RESULTS_RE = re.compile(
+    r"\b(here are|take a look|have a look|what do you think of (these|those)|these options|"
+    r"those options|let me (find|search|look|pull|get|grab)|i'?ll (find|search|look|pull|get|grab)|"
+    r"i (?:have |'?ve )?(found|pulled|got)|pulled (together|up)|check (these|them) out|"
+    r"options? (below|for you)|some (?:great |lovely |nice |beautiful )?(options|picks|ideas|gifts))\b",
+    re.I,
+)
+
+
+def _promises_results(text: str) -> bool:
+    return bool(_PROMISES_RESULTS_RE.search(text or ""))
+
+
+FORCE_SEARCH_NUDGE = (
+    "You described or promised gift options but never called kapruka_search_products, so the user sees "
+    "NOTHING below. Search NOW with concrete queries for the recipient, occasion and any stated style/"
+    "colour, then give a one-line warm intro. Do NOT say 'let me find', 'here are options' or 'what do "
+    "you think of these' unless real products were returned this turn."
 )
 
 
@@ -3637,6 +3694,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     deadline = t0 + max(20.0, SEARCH_BUDGET - reserve)
     json_corrections = 0
     max_json_corrections = 2
+    search_retries = 0
+    max_search_retries = 2
 
     def degrade(partial: str | None = None) -> dict:
         if partial:
@@ -3676,14 +3735,28 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 continue
             if looks_like_tool_blob(content):
                 return finalize("Hi 😊 I'm Hari, your gift concierge. Who are we spoiling today?")
+            # Promised options but never searched -> make it actually search.
+            if (not results and not cart_actions and _promises_results(content)
+                    and search_retries < max_search_retries):
+                search_retries += 1
+                messages.append({"role": "user", "content": FORCE_SEARCH_NUDGE})
+                continue
             return finalize(content)
 
         if allow_questions:
-            for c in norm:
-                if c["name"] == "ask_user":
-                    questions = _normalize_questions((c.get("arguments") or {}).get("questions"))
-                    if questions:
-                        return ask(questions)
+            ask_call = next((c for c in norm if c["name"] == "ask_user"), None)
+            if ask_call is not None:
+                questions = _normalize_questions((ask_call.get("arguments") or {}).get("questions"))
+                if questions:
+                    # Don't ask "what do you think of these options?" when there are
+                    # none — search for real products instead.
+                    if (not results and not suggestions
+                            and any(_promises_results(q) for q in questions)
+                            and search_retries < max_search_retries):
+                        search_retries += 1
+                        messages.append({"role": "user", "content": FORCE_SEARCH_NUDGE})
+                        continue
+                    return ask(questions)
 
         if not allow_questions and any(c.get("name") == "ask_user" for c in norm):
             norm = [c for c in norm if c.get("name") != "ask_user"]
