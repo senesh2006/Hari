@@ -796,7 +796,10 @@ def delivery_timing_message(recipients: list | None, within_days: int = 10) -> s
 
 
 _SESSION_BUDGET_RE = re.compile(
-    r"(?:under|below|max|budget|rs\.?|lkr)\s*([0-9][0-9,]*)",
+    # A budget cue (under/budget/around/rs/lkr…) followed by a number, allowing a
+    # few filler words in between ("budget around 5000", "around 5k", "rs. 2,000").
+    r"(?:under|below|max|budget|around|about|approx(?:imately)?|roughly|rs\.?|lkr)"
+    r"[^\d]{0,10}([0-9][0-9,]*\s*k?)",
     re.I,
 )
 
@@ -1844,7 +1847,97 @@ def _budget_ask(profile: dict | None) -> tuple[str, str]:
     return intro, question
 
 
-# --- Smart preference discovery -------------------------------------------- #
+# --- Hamper build flow ----------------------------------------------------- #
+# "Build me a hamper" is its own intent: assemble a multi-item gift basket from
+# the SENDER'S preferences — use their stored profile preferences when present,
+# otherwise ask once for them, then fill the hamper with real catalogue items.
+_HAMPER_BUILD_RE = re.compile(
+    r"\b(build|make|put together|create|assemble|curate|prepare|design|do|arrange)\b"
+    r"[^.?!]{0,30}\bhamper\b"
+    r"|\bhamper\b[^.?!]{0,20}\bfor\b"
+    r"|\b(custom|gift)\s+hamper\b",
+    re.I,
+)
+# Concrete hamper preferences the user might state (theme or specific contents).
+_HAMPER_PREF_RE = re.compile(
+    r"\b(sweet|savou?ry|wellness|spa|luxury|premium|healthy|pamper|"
+    r"chocolates?|dark chocolate|tea|coffee|biscuits?|cookies?|snacks?|"
+    r"fruits?|nuts?|wine|cheese|skincare|beauty|vegetarian|vegan|"
+    r"flowers?|candles?|honey|jam)\b",
+    re.I,
+)
+
+
+def _is_hamper_build_request(text: str) -> bool:
+    return bool(_HAMPER_BUILD_RE.search(text or ""))
+
+
+def _stored_sender_prefs(profile: dict | None) -> list[str]:
+    """The sender's preferences already on file (profile + rolling session facts)."""
+    prefs: list[str] = []
+    p = profile or {}
+    pref_obj = p.get("preferences") or {}
+    if isinstance(pref_obj, dict):
+        styles = pref_obj.get("styles")
+        if isinstance(styles, list):
+            prefs.extend(str(s) for s in styles if s)
+        elif styles:
+            prefs.append(str(styles))
+        dietary = pref_obj.get("dietary")
+        if dietary:
+            prefs.append(f"dietary: {dietary}")
+        avoid = pref_obj.get("avoid_list")
+        if isinstance(avoid, list) and avoid:
+            prefs.append("avoid: " + ", ".join(str(a) for a in avoid))
+    facts = p.get("session_facts") or {}
+    if isinstance(facts, dict) and facts.get("constraints"):
+        prefs.append(str(facts["constraints"]))
+    return prefs
+
+
+def _hamper_prefs_known(text: str, profile: dict | None, conversation: list | None) -> bool:
+    """True when we already know enough of the sender's hamper preferences to
+    build without asking — either stated in chat or stored on their profile."""
+    blob = _recent_user_blob(conversation, text)
+    if _HAMPER_PREF_RE.search(blob):
+        return True
+    if _stored_sender_prefs(profile):
+        return True
+    return False
+
+
+def _hamper_pref_question() -> tuple[str, str]:
+    intro = "Love it — let's build you a hamper 🧺"
+    question = (
+        "What kind are you after — sweet, savoury, or wellness? "
+        "And anything to leave out (like nuts or alcohol)?"
+    )
+    return intro, question
+
+
+# Distinctive phrases from the hamper preference question, so a reply to it is
+# recognised as the continuation of the hamper build (even without the word
+# "hamper" in the user's answer).
+_HAMPER_ASK_MARKER_RE = re.compile(r"build you a hamper|sweet,\s*savou?ry,\s*or\s*wellness", re.I)
+
+
+def _last_assistant_was_hamper_question(conversation: list | None) -> bool:
+    for turn in reversed(conversation or []):
+        if turn.get("role") == "assistant":
+            return bool(_HAMPER_ASK_MARKER_RE.search(str(turn.get("content") or "")))
+    return False
+
+
+HAMPER_NUDGE = (
+    "IMPORTANT — the user asked you to BUILD A HAMPER. Assemble it from the SENDER'S preferences: "
+    "use their stored profile preferences when present, otherwise the ones they just gave. "
+    "FIRST call build_hamper with those preferences (and the theme/budget if known, and "
+    "from_stored_preferences=true when they came from the profile). THEN run a SEPARATE "
+    "kapruka_search_products call for EACH preference (e.g. q='dark chocolate', q='ceylon tea') so the "
+    "hamper is filled with real items. Respect their budget and anything to AVOID — if they said 'no "
+    "nuts', never include nuts; keep the items together within the stated budget. "
+    "Reply in 1–2 warm sentences describing the hamper you've put together — no numbered lists, no prices."
+)
 # Categories where a quick taste question genuinely sharpens the picks (flowers,
 # cake, clothing, jewellery...). For these, let the model ask ONE warm,
 # category-aware question before the first search instead of guessing.
@@ -3705,6 +3798,21 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         and _is_more_request(user_en)
         and bool(_shown_names(suggestions, cart))
     )
+    # "Build me a hamper" — its own flow: ask the sender's preferences once if we
+    # don't know them, otherwise force the build (build_hamper + per-pref searches).
+    hamper_follow = _last_assistant_was_hamper_question(conv)
+    hamper_request = (
+        not direct_request
+        and not more_request
+        and not pick_best
+        and (_is_hamper_build_request(user_en) or hamper_follow)
+    )
+    # A reply to our hamper question means the prefs are in hand (their answer, or
+    # "you pick"); otherwise check the message/profile for stated preferences.
+    hamper_prefs_known = (
+        hamper_follow or _hamper_prefs_known(user_en, profile, conv)
+    ) if hamper_request else False
+    hamper_question = hamper_request and not hamper_prefs_known and allow_questions
     search_first = False if direct_request else _should_search_first(user_en, profile, recipients, conv)
     taste_question = False if direct_request else _needs_taste_question(user_en, profile, recipients)
     clarify_question = False if direct_request else _needs_clarification_question(user_en, conv)
@@ -3714,6 +3822,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if pick_best:
         # Recommend from current suggestions — no search, no question.
         search_first, taste_question, clarify_question = False, False, False
+    if hamper_request and not hamper_question:
+        # Preferences are known — build now; don't divert to taste/clarify questions.
+        search_first, taste_question, clarify_question = True, False, False
     # Ask the budget ONCE per chat before the first real search — offering the
     # saved default vs. a new amount. Never re-ask it for later items, and never
     # lead with it when the user is emotional.
@@ -3723,6 +3834,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         and not pick_best
         and not taste_question
         and not clarify_question
+        and not hamper_request
         and allow_questions
         and _needs_budget_question(user_en, profile, conv)
     )
@@ -3737,7 +3849,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     discover_first = False
     force_search = False
     if allow_questions and not direct_request and not budget_question and not more_request \
-            and not pick_best and not repair_interests:
+            and not pick_best and not repair_interests and not hamper_request:
         momentum = search_first or _last_assistant_was_question(conv)
         pref_rich = bool(_PREF_RICH_RE.search(_recent_user_blob(conv, user_en)))
         if momentum and pref_rich:
@@ -3784,6 +3896,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     )
     if track_request:
         messages.append({"role": "system", "content": ORDER_TRACKING_NUDGE})
+    elif hamper_request:
+        messages.append({"role": "system", "content": HAMPER_NUDGE})
     elif account_intent:
         messages.append({"role": "system", "content": ACCOUNT_ACTION_NUDGE})
     elif pick_best:
@@ -3884,6 +3998,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "user_en": user_en,
             "tools_available": tool_names,
         }
+
+    if hamper_question:
+        intro, question = _hamper_pref_question()
+        return ask([question], intro=intro)
 
     if taste_question:
         return ask([_repair_taste_question(user_en)], intro=_repair_ask_intro(user_en))
