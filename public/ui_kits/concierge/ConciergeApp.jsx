@@ -1029,7 +1029,7 @@ function App({
           messages: nextConv,
           allow_questions: !proceed,
           suggestions: lastSuggestions,
-          cart: cart.map((c) => ({ name: c.name, qty: c.qty, price: c.rawPrice ?? c.price, currency: c.currency })),
+          cart: cart.map((c) => ({ name: c.name, qty: c.qty, price: c.rawPrice ?? c.price, currency: c.currency, image: c.image, url: c.url, id: c.id })),
           instructions,
           language: currentLang,
           access_token: accessToken || undefined,

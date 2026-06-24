@@ -475,7 +475,7 @@ def order_tracking_message(text: str, orders: list | None, recipients: list | No
 # shopping. These must break out of the gift-question script and answer from
 # data already in context, never trigger a product search.
 _VIEW_CUE_RE = re.compile(
-    r"\b(show|see|view|check|list|read|tell me|"
+    r"\b(show|see|view|display|look at|preview|pull up|open|check|list|read|tell me|"
     r"what(?:'?s| is| are| ?have| ?did)?|whats|how many|how much|"
     r"anything|do i have|is there anything)\b",
     re.I,
@@ -530,6 +530,42 @@ def _account_intent(text: str) -> str | None:
     if _ORDERS_WEAK_RE.search(low) and _view_cue(low):
         return "view_orders"
     return None
+
+
+# "see/show them" referring to the cart or wishlist just mentioned.
+_VIEW_THEM_RE = re.compile(
+    r"\b(see|show|view|display|look at|check out|preview|pull up)\b"
+    r"[^.?!]{0,30}\b(them|these|those|it|the (items?|list|ones?))\b",
+    re.I,
+)
+
+
+def _is_view_them_request(text: str) -> bool:
+    return bool(_VIEW_THEM_RE.search(text or ""))
+
+
+def _price_amount(raw) -> str | None:
+    if raw in (None, ""):
+        return None
+    m = re.search(r"[\d,]+(?:\.\d+)?", str(raw))
+    return m.group(0).replace(",", "") if m else None
+
+
+def _saved_item_to_product(it: dict, group: str) -> dict:
+    """Normalise a wishlist row or cart entry into the product-card shape."""
+    return {
+        "id": it.get("id") or it.get("product_id"),
+        "name": it.get("name"),
+        "price": _price_amount(it.get("price")),
+        "currency": it.get("currency") or "LKR",
+        "image": it.get("image"),
+        "url": it.get("url"),
+        "description": it.get("description") or "",
+        "customizable": bool(it.get("customizable")),
+        "customization_type": it.get("customization_type"),
+        "in_stock": True,
+        "group": group,
+    }
 
 
 def _format_cart_lines(cart: list) -> tuple[list, float, str]:
@@ -3518,6 +3554,54 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
 
     track_request = _is_order_tracking_request(user_en)
     account_intent = None if track_request else _account_intent(user_en)
+    # "see/show them" right after a cart/wishlist mention → view those items.
+    if not account_intent and not track_request and _is_view_them_request(user_en):
+        recent = ""
+        for t in reversed(conv):
+            if t.get("role") == "assistant":
+                recent = str(t.get("content") or "").lower()
+                break
+        if "wishlist" in recent:
+            account_intent = "view_wishlist"
+        elif "cart" in recent:
+            account_intent = "view_cart"
+        elif wishlist:
+            account_intent = "view_wishlist"
+        elif cart:
+            account_intent = "view_cart"
+
+    # Show the cart / wishlist as real cards — deterministically, with no model
+    # search (so a typo can never spray random products at the user).
+    if account_intent in ("view_wishlist", "view_cart"):
+        if account_intent == "view_wishlist":
+            items = [_saved_item_to_product(w, "Wishlist") for w in (wishlist or []) if w.get("name")]
+            text = (
+                "Here's what's saved in your wishlist 😊 — add any to your cart, or tap the heart to remove one."
+                if items else
+                "Your wishlist's empty right now — tap the heart on any suggestion to save it here."
+            )
+        else:
+            items = [_saved_item_to_product(c, "Your cart") for c in (cart or []) if c.get("name")]
+            if items:
+                _, subtotal, cur = _format_cart_lines(cart)
+                text = f"Here's what's in your cart — subtotal {cur} {subtotal:,.0f}. Want to change anything or check out?"
+            else:
+                text = "Your cart's empty right now — let's find something to add 😊"
+        local = _translate(text, "en", target_lang) if (target_lang and text) else text
+        return {
+            "ok": True,
+            "query": last_user,
+            "model": NIM_MODEL,
+            "answer": text,
+            "answer_local": local,
+            "user_en": user_en,
+            "products": items,
+            "cart_actions": [],
+            "tools_available": [],
+            "tool_calls": [],
+            "results": [],
+        }
+
     # An order-tracking or account request breaks out of the gift-question
     # script — never ask a taste/clarify question or force a product search.
     direct_request = track_request or bool(account_intent)
