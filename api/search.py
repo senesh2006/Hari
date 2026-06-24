@@ -3363,13 +3363,8 @@ def strategy_message(strategy: dict | None) -> str | None:
     risk = str(strategy.get("risk_level") or "").lower()
     if rel and rel != "unknown":
         lines.append(f"- Relationship: {rel}.")
-    if risk == "high":
-        lines.append(
-            "- RISK: HIGH — keep it small, inexpensive and low-pressure. Do NOT show couple gifts, jewellery, "
-            "expensive watches, perfume, or anything romantic."
-        )
-    elif risk == "formal":
-        lines.append("- RISK: PROFESSIONAL — keep it neutral and tasteful, nothing personal or romantic.")
+    if risk in ("high", "formal"):
+        lines.append(f"- Risk level: {risk} — let this shape how personal/expensive you go.")
     if strategy.get("angle"):
         lines.append(f"- Angle: {strategy['angle']}")
     if strategy.get("recipient_read"):
@@ -3401,120 +3396,33 @@ def strategy_message(strategy: dict | None) -> str | None:
     return "\n".join(lines)
 
 
-# =============================================================================
-# Relationship intelligence + risk assessment (steps 1, 4, 5)
-# =============================================================================
-
-# How close are they? Low-closeness cues raise the social risk of a gift.
-_LOW_CLOSENESS_RE = re.compile(
-    r"\b(barely know|hardly know|don'?t (really )?know (her|him|them)|"
-    r"don'?t know (her|him|them) (well|that well|very well)|not (that )?close|"
-    r"just met|recently met|only met|met (her|him|them)? ?(once|twice)|"
-    r"(talked|spoke|chatted|messaged) (to (her|him|them) )?(only )?(once|twice|a (couple|few) times)|"
-    r"(only )?(talked|spoken|chatted) (a few|a couple)|few times|couple of times|"
-    r"new (friend|girl|guy|colleague)|from (uni|university|class|college|work)|classmate)\b",
-    re.I,
-)
-_CRUSH_RE = re.compile(
-    r"\b(crush|girl i like|guy i like|someone i like|like (this|a) (girl|guy)|"
-    r"this girl i|interested in (her|this girl|a girl))\b",
-    re.I,
-)
-
-# Relationship -> how a thoughtful Sri Lankan friend would pitch the gift.
-RELATIONSHIP_PLAYBOOK = {
-    "crush": (
-        "Small, casual, low-pressure. AVOID couple gifts, jewellery, expensive watches, perfume, "
-        "anything romantic or intimate. PREFER inexpensive thoughtful picks — nice chocolates, a book, "
-        "a plant, a quirky mug, good stationery."
-    ),
-    "partner": (
-        "Romantic and personal is welcome — flowers, perfume, jewellery, a date-night treat."
-    ),
-    "spouse": (
-        "Premium and romantic — a special piece of jewellery, a luxury hamper, something meaningful."
-    ),
-    "friend": (
-        "Meaningful or practical over romantic — tie it to their interests; no romantic or couple items."
-    ),
-    "boss": (
-        "Professional and restrained — no romantic or personal items; tasteful and neutral "
-        "(a quality desk piece, gourmet hamper, plant)."
-    ),
-    "client": (
-        "Corporate and safe — neutral, gender-neutral, no romantic or personal items; gourmet hampers, "
-        "premium stationery, plants."
-    ),
-    "colleague": (
-        "Friendly but professional — modest and neutral; avoid anything personal or romantic."
-    ),
-    "family": (
-        "Thoughtful and family-oriented — comfort and care, something they'd use and feel loved by."
-    ),
-}
-
-# Items that are socially risky for a low-closeness / professional relationship.
-HIGH_RISK_AVOID = "couple gifts, jewellery, rings, expensive watches, perfume, lingerie, romantic or intimate items"
+def _resolve_search_tool_name(tools: list) -> str:
+    """The Kapruka product-search tool name (discovered at runtime)."""
+    names = [str(t.get("name") or "") for t in (tools or [])]
+    if "kapruka_search_products" in names:
+        return "kapruka_search_products"
+    for n in names:
+        nl = n.lower()
+        if "search" in nl and ("product" in nl or "gift" in nl):
+            return n
+    for n in names:
+        if "search" in n.lower():
+            return n
+    return "kapruka_search_products"
 
 
-def _classify_relationship(text: str, conversation: list | None) -> str | None:
-    blob = _recent_user_blob(conversation, text).lower()
-    if _CRUSH_RE.search(blob):
-        return "crush"
-    if re.search(r"\b(wife|husband|hubby)\b", blob):
-        return "spouse"
-    if re.search(r"\b(girlfriend|boyfriend|gf|bf|fiance|fiancee)\b", blob):
-        return "partner"
-    if re.search(r"\b(boss|manager|supervisor)\b", blob):
-        return "boss"
-    if re.search(r"\b(client|customer)\b", blob):
-        return "client"
-    if re.search(r"\b(colleague|co-?worker|coworker)\b", blob):
-        return "colleague"
-    if re.search(r"\b(mom|mother|mum|dad|father|parent|grandma|grandpa|granny|aunt|uncle|sister|brother|cousin|son|daughter)\b", blob):
-        return "family"
-    if re.search(r"\b(childhood friend|old friend|best friend|bestie|friend|firend|freind|frnd)\b", blob):
-        return "friend"
-    return None
-
-
-def _gift_risk(relationship: str | None, text: str, conversation: list | None) -> str:
-    """high (socially risky), formal (professional), or normal."""
-    blob = _recent_user_blob(conversation, text).lower()
-    low_closeness = bool(_LOW_CLOSENESS_RE.search(blob))
-    if relationship == "crush" or low_closeness:
-        return "high"
-    if relationship in ("boss", "client", "colleague"):
-        return "formal"
-    return "normal"
-
-
-def relationship_message(relationship: str | None, risk: str) -> str | None:
-    """Hard guidance so gifts match the relationship and don't overstep (e.g. no
-    couple watches for someone barely known)."""
-    if not relationship and risk == "normal":
-        return None
-    lines = ["RELATIONSHIP & RISK READ (honour this over generic ideas — it overrides 'trending' picks):"]
-    if relationship:
-        rel_label = relationship.replace("_", " ")
-        lines.append(f"- Relationship: {rel_label}.")
-        play = RELATIONSHIP_PLAYBOOK.get(relationship)
-        if play:
-            lines.append(f"- Fit: {play}")
-    if risk == "high":
-        lines.append(
-            f"- RISK: HIGH (low closeness / early days). AVOID: {HIGH_RISK_AVOID}. "
-            "Keep it small, inexpensive and low-pressure — a gift that's easy to receive without it feeling like too much."
-        )
-    elif risk == "formal":
-        lines.append(
-            "- RISK: PROFESSIONAL. Keep it neutral and tasteful — no romantic, intimate, or overly personal items."
-        )
-    return "\n".join(lines)
+def _one_strategy_search(query: str, tool_name: str) -> str:
+    """Run a single product search on its own MCP session (thread-safe)."""
+    try:
+        m = MCPSession()
+        m.initialize()
+        return m.call_tool(tool_name, {"q": query})
+    except Exception:
+        return ""
 
 
 # =============================================================================
-# Budget enforcement (hard filter — step 6/8/9)
+# Budget parsing (surface the number to the model — no hard filter)
 # =============================================================================
 
 def _coerce_budget(raw) -> float | None:
@@ -3549,36 +3457,6 @@ def _effective_budget(context: dict, conv: list, profile: dict | None) -> float 
                 if val:
                     return val
     return _coerce_budget((profile or {}).get("default_budget"))
-
-
-def _product_price_num(p: dict) -> float | None:
-    return _coerce_budget(p.get("price"))
-
-
-def _apply_budget_ceiling(products: list, ceiling: float | None):
-    """Drop products over the budget ceiling. Returns (kept, dropped_count,
-    all_over). Items with an unknown price are kept (can't judge them). If
-    EVERYTHING is over budget, keep the cheapest two so the reply can be honest
-    about it rather than showing nothing."""
-    if not ceiling:
-        return products, 0, False
-    within, over = [], []
-    for p in products:
-        pr = _product_price_num(p)
-        if pr is not None and pr > ceiling:
-            over.append(p)
-        else:
-            within.append(p)
-    if within:
-        return within, len(over), False
-    over_sorted = sorted(over, key=lambda x: _product_price_num(x) or 1e12)
-    return over_sorted[:2], len(over), bool(over)
-
-
-OVER_BUDGET_FALLBACK = (
-    "Heads up — everything close to what you wanted lands over your LKR {budget:,.0f} budget. "
-    "I've shown the nearest couple, but want me to hunt for cheaper options or nudge the budget up a touch? 😊"
-)
 
 
 # =============================================================================
@@ -4161,8 +4039,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     else:
         profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
 
-    # Active budget ceiling (client > stated-in-chat > profile default). Used to
-    # hard-filter over-budget products before they ever reach the user.
+    # Active budget number (client > stated-in-chat > profile default) — surfaced
+    # to the model so it can judge prices itself; not a hard filter.
     budget_ceiling = _effective_budget(context, conv, profile)
 
     track_request = _is_order_tracking_request(user_en)
@@ -4319,13 +4197,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         # Force a recommendation from the on-screen suggestions: no search tools.
         openai_tools = CART_TOOLS
 
-    relationship = None if direct_request else _classify_relationship(user_en, conv)
-    gift_risk = "normal" if direct_request else _gift_risk(relationship, user_en, conv)
     extra_ctx = [
         playbook_message(user_en, conv),
         conversation_memory_message(conv, user_en, profile),
         session_facts_message(profile),
-        relationship_message(relationship, gift_risk),
         recipients_message(recipients),
         wishlist_message(wishlist),
         order_history_message(orders),
@@ -4333,11 +4208,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         upcoming_occasions_message(recipients),
     ]
     if budget_ceiling and not direct_request:
-        extra_ctx.append(
-            f"BUDGET CEILING — the user's budget is LKR {budget_ceiling:,.0f}. Every product you suggest MUST cost "
-            f"LKR {budget_ceiling:,.0f} or less. Never show a single item priced above it. If nothing fits, say so "
-            "honestly and offer cheaper options or to raise the budget — do NOT pad with over-budget items."
-        )
+        extra_ctx.append(f"The user's budget is about LKR {budget_ceiling:,.0f} — keep picks at or under it.")
     if track_request:
         extra_ctx.append(order_tracking_message(user_en, orders, recipients))
     if account_intent:
@@ -4402,15 +4273,26 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         # so a slow Langbly call can never push the function past the platform limit.
         return max(3.0, min(TRANSLATE_TIMEOUT, t0 + SEARCH_BUDGET - time.monotonic()))
 
-    def finalize(answer: str) -> dict:
+    def finalize(answer: str, keep_names: list | None = None) -> dict:
         products = extract_products(results)
         if already_shown:
             products = [p for p in products if _norm_text(p.get("name")) not in already_shown]
-        products = _drop_wrong_gender(products, recipient_gender)
-        # Hard budget filter — over-budget items never reach the user (step 8/9).
-        products, _over_dropped, _all_over = _apply_budget_ceiling(products, budget_ceiling)
-        if _all_over and budget_ceiling:
-            answer = OVER_BUDGET_FALLBACK.format(budget=budget_ceiling)
+        # When the model curated which items to show (its scoring/rejection step),
+        # trust it — present only those, in its order. Match loosely so a slightly
+        # paraphrased name still resolves. Otherwise show what we found.
+        if keep_names is not None:
+            def _toks(x):
+                return {t for t in re.findall(r"[a-z0-9]+", _norm_text(x)) if len(t) >= 3}
+            entries = [(i, _toks(n)) for i, n in enumerate(keep_names)]
+            entries = [(i, kt) for i, kt in entries if kt]
+            scored = []
+            for p in products:
+                pt = _toks(p.get("name"))
+                idx = next((i for i, kt in entries if kt <= pt or pt <= kt), None)
+                if idx is not None:
+                    scored.append((idx, p))
+            scored.sort(key=lambda t: t[0])
+            products = [p for _, p in scored]
         if products:
             answer = _strip_catalog_from_answer(answer, products)
             if not (answer or "").strip():
@@ -4481,26 +4363,30 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         intro, question = _budget_ask(profile)
         return ask([question], intro=intro)
 
+    # Reserve a little tail for the outbound translation; anchor to t0 so any
+    # time already spent on translation/context shortens the loop, not the budget.
+    reserve = 8 if target_lang else 0
+    deadline = t0 + max(20.0, SEARCH_BUDGET - reserve)
+
     # === Gift strategy layer ====================================================
-    # Before searching, synthesize the gathered context (occasion, relationship,
-    # personality, constraints, budget) into an explicit ANGLE + concrete queries
-    # + a reject rule, so the agent searches to a strategy instead of free-
-    # associating. Runs only on real search turns; degrades silently on failure.
+    # Synthesize the gathered context into an explicit ANGLE + concrete queries,
+    # then EXECUTE those queries directly (parallel searches + one answer call)
+    # instead of a slow multi-round agentic loop — faster, and it can't run past
+    # the budget. Falls back to the agentic loop on any miss, so it never breaks search.
     will_strategize = (
         STRATEGY_ENABLED
         and not direct_request and not pick_best and not hamper_request and not more_request
         and (search_first or bool(repair_interests) or _is_repair_follow_up(conv, user_en))
     )
     if will_strategize:
-        budget_left = t0 + SEARCH_BUDGET - time.monotonic()
-        strat_timeout = min(
-            STRATEGY_TIMEOUT,
-            budget_left - (MIN_ROUND_SECONDS + (8 if target_lang else 0)),
-        )
+        strat_timeout = min(STRATEGY_TIMEOUT, (deadline - time.monotonic()) - (MIN_ROUND_SECONDS + 14))
         if strat_timeout >= 5:
-            strategy = build_gift_strategy(
-                conv, [profile_message(profile)] + extra_ctx, user_en, timeout=strat_timeout
-            )
+            try:
+                strategy = build_gift_strategy(
+                    conv, [profile_message(profile)] + extra_ctx, user_en, timeout=strat_timeout
+                )
+            except Exception:
+                strategy = None
             if strategy:
                 # The strategy may want ONE sharpening question before searching
                 # (e.g. "luxury, smart, or fashion watches?") — ask it if allowed.
@@ -4511,12 +4397,65 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 if strat_msg:
                     messages.append({"role": "system", "content": strat_msg})
                     trace.append({"tool": "gift_strategy", "arguments": strategy})
+                # Run the strategy's queries directly (parallel), then one answer call.
+                queries = [str(q).strip() for q in (strategy.get("search_queries") or []) if str(q).strip()][:5]
+                if queries and (deadline - time.monotonic()) >= (MIN_ROUND_SECONDS + 4):
+                    try:
+                        tool_name = _resolve_search_tool_name(tools)
+                        search_until = time.monotonic() + max(6.0, min(22.0, (deadline - time.monotonic()) - 14))
+                        with ThreadPoolExecutor(max_workers=min(5, len(queries))) as ex:
+                            futs = {ex.submit(_one_strategy_search, q, tool_name): q for q in queries}
+                            for fut in futs:
+                                rem = search_until - time.monotonic()
+                                if rem <= 0:
+                                    break
+                                try:
+                                    out = fut.result(timeout=rem)
+                                except Exception:
+                                    out = ""
+                                if out:
+                                    qq = futs[fut]
+                                    results.append({"tool": tool_name, "arguments": {"q": qq}, "output": out})
+                                    trace.append({"tool": tool_name, "arguments": {"q": qq}})
+                    except Exception:
+                        pass
+                    if results:
+                        result_text = TEXT_MODE_RESULT_PREFIX + "\n\n".join(
+                            f"q='{r['arguments'].get('q')}' ->\n{r['output']}" for r in results if r.get("output")
+                        )
+                        messages.append({
+                            "role": "user",
+                            "content": result_text
+                            + "\n\nThose are the raw search results. SCORE them against the gifting strategy — the "
+                            "relationship and risk level, the budget, and any dietary/allergy or other constraints — "
+                            "and REJECT every poor, unsafe, over-budget, or off-strategy match. Then reply with ONLY a "
+                            "JSON object:\n"
+                            '{"reply": "1-3 warm sentences; you may name your top pick and why it fits, and briefly '
+                            'say what you skipped and why", "keep": ["<exact product name to show as a card>", ...]}\n'
+                            "Put ONLY the products that genuinely pass in \"keep\" (best first, usually 1-4). If none "
+                            "are safe or appropriate, use an empty keep list and say so kindly. Do NOT call any tools.",
+                        })
+                        ans_rem = deadline - time.monotonic()
+                        try:
+                            completion = nim_chat(messages, [], timeout=min(NIM_TIMEOUT, max(5.0, ans_rem)))
+                            content = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+                        except NimTimeout:
+                            content = ""
+                        curated = None
+                        for chunk in _extract_balanced_objects(content or ""):
+                            obj = _parse_json_or_literal(chunk)
+                            if isinstance(obj, dict) and ("reply" in obj or "keep" in obj):
+                                curated = obj
+                                break
+                        if curated is not None:
+                            reply = str(curated.get("reply") or "").strip()
+                            keep = curated.get("keep")
+                            keep = [str(k) for k in keep] if isinstance(keep, list) else []
+                            return finalize(reply or "Here's what I'd go with 😊", keep_names=keep)
+                        # Model didn't return JSON — show what we found with its prose.
+                        return finalize(content or "Pulled together some options — take a look below 😊")
+                    # No results from direct search -> fall through to the agentic loop.
 
-    # Reserve a little tail for the outbound translation; anchor to t0 so any
-    # time already spent on translation/context shortens the loop, not the
-    # platform budget.
-    reserve = 8 if target_lang else 0
-    deadline = t0 + max(20.0, SEARCH_BUDGET - reserve)
     json_corrections = 0
     max_json_corrections = 2
     search_retries = 0
