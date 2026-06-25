@@ -1082,6 +1082,13 @@ SEARCH_FIRST_NUDGE = (
     "Your reply: 1–2 warm sentences max, NO product names, NO numbered lists — cards show everything below."
 )
 
+BUDGET_ANSWER_NUDGE = (
+    "IMPORTANT — the user answered the budget question (open budget / no limit / skip / a number). "
+    "Do NOT ask another question. Call kapruka_search_products NOW for fitting gifts from the chat context. "
+    "If they said no budget or no limit, treat budget as open — include premium options too. "
+    "Reply in 1–2 warm sentences only; product cards render below."
+)
+
 DISCOVERY_NUDGE = (
     "IMPORTANT — you could search, but you don't yet know the recipient's taste, so the picks would be "
     "a guess. Ask exactly ONE warm, friend-like question to sharpen them — tailored to what they asked "
@@ -1914,6 +1921,52 @@ _BUDGET_SKIP_RE = re.compile(
     r"usual|default|same as|stick with|go with|skip|surprise)\b",
     re.I,
 )
+_OPEN_BUDGET_RE = re.compile(
+    r"(?i)(?:\bno budget\w*(?:\s+constraints?)?|\bno limit\b|\bunlimited\b|\bopen budget\b|"
+    r"\bwithout (?:a )?budget\b|\bbudget(?:ary)? constraints?\b|"
+    r"\bmoney is no object\b|\bnot worried about (?:the )?price\b|"
+    r"\bprice (?:isn'?t|doesn'?t) matter\b|\bno monetary\b)",
+)
+
+
+def _user_open_budget(conversation: list | None, current_text: str | None) -> bool:
+    blob = _recent_user_blob(conversation, current_text, n=8)
+    return bool(_OPEN_BUDGET_RE.search(blob) or _BUDGET_SKIP_RE.search(blob))
+
+
+def _budget_was_asked(conversation: list | None) -> bool:
+    for turn in conversation or []:
+        if turn.get("role") == "assistant" and _BUDGET_WORD_RE.search(str(turn.get("content") or "")):
+            return True
+    return False
+
+
+def _is_budget_answer(text: str, conversation: list | None) -> bool:
+    """User is replying to our one-time budget question."""
+    if not text:
+        return False
+    low = text.lower().strip()
+    answered = (
+        bool(_SESSION_BUDGET_RE.search(text))
+        or bool(_OPEN_BUDGET_RE.search(text))
+        or bool(_BUDGET_SKIP_RE.search(low))
+        or low in _SKIP_REPLIES
+    )
+    if not answered:
+        return False
+    if _last_assistant_was_question(conversation):
+        for turn in reversed(conversation or []):
+            if turn.get("role") == "assistant":
+                return bool(_BUDGET_WORD_RE.search(str(turn.get("content") or "")))
+            break
+    return _budget_was_asked(conversation)
+
+
+def _should_search_after_budget(conversation: list | None, text: str | None) -> bool:
+    """Budget was asked and the user answered (incl. open/no limit) — search now."""
+    if not _budget_was_asked(conversation):
+        return False
+    return _is_budget_answer(text or "", conversation) or _user_open_budget(conversation, text)
 
 
 def _budget_already_handled(
@@ -1922,12 +1975,22 @@ def _budget_already_handled(
     """True once budget has come up in THIS chat — the user stated one, or we've
     already asked about it. Ensures the budget question is asked at most once per
     conversation, never for every item."""
-    if current_text and _SESSION_BUDGET_RE.search(current_text):
+    if current_text and (
+        _SESSION_BUDGET_RE.search(current_text)
+        or _OPEN_BUDGET_RE.search(current_text)
+        or _BUDGET_SKIP_RE.search(current_text)
+    ):
+        return True
+    if _user_open_budget(conversation, current_text):
         return True
     for turn in conversation or []:
         content = str(turn.get("content") or "")
         role = turn.get("role")
-        if role == "user" and _SESSION_BUDGET_RE.search(content):
+        if role == "user" and (
+            _SESSION_BUDGET_RE.search(content)
+            or _OPEN_BUDGET_RE.search(content)
+            or _BUDGET_SKIP_RE.search(content)
+        ):
             return True
         # We already asked the budget question earlier in this chat.
         if role == "assistant" and _BUDGET_WORD_RE.search(content):
@@ -3646,7 +3709,9 @@ def _coerce_budget(raw) -> float | None:
 
 def _effective_budget(context: dict, conv: list, profile: dict | None) -> float | None:
     """The active budget ceiling: explicit from the client, else the most recent
-    amount stated in chat, else the profile default."""
+    amount stated in chat, else the profile default — unless the user said open/no limit."""
+    if context.get("open_budget") or _user_open_budget(conv, None):
+        return None
     val = _coerce_budget((context or {}).get("budget"))
     if val:
         return val
@@ -3657,6 +3722,8 @@ def _effective_budget(context: dict, conv: list, profile: dict | None) -> float 
                 val = _coerce_budget(m.group(1))
                 if val:
                     return val
+            if _OPEN_BUDGET_RE.search(str(turn.get("content") or "")):
+                return None
     return _coerce_budget((profile or {}).get("default_budget"))
 
 
@@ -4244,6 +4311,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # Active budget number (client > stated-in-chat > profile default) — surfaced
     # to the model so it can judge prices itself; not a hard filter.
     budget_ceiling = _effective_budget(context, conv, profile)
+    budget_answer_turn = _should_search_after_budget(conv, user_en)
+    if budget_answer_turn or context.get("open_budget"):
+        budget_ceiling = None
 
     track_request = _is_order_tracking_request(user_en)
     account_intent = None if track_request else _account_intent(user_en)
@@ -4386,6 +4456,15 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         discover_first = False
         force_search = True
         allow_questions = False
+    if budget_answer_turn:
+        search_first = True
+        taste_question = False
+        clarify_question = False
+        recipient_discovery = False
+        budget_question = False
+        discover_first = False
+        force_search = True
+        allow_questions = False
     # Smart preference discovery. When there's an active preference-rich shopping
     # intent — a fresh search-ready message OR the user answering a question we
     # just asked (e.g. their budget reply) — but we don't yet know the
@@ -4430,6 +4509,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     ]
     if budget_ceiling and not direct_request:
         extra_ctx.append(f"The user's budget is about LKR {budget_ceiling:,.0f} — keep picks at or under it.")
+    elif _user_open_budget(conv, user_en) and not direct_request:
+        extra_ctx.append(
+            "Budget: OPEN — the user said no limit / no budget constraints. "
+            "Include premium and mid-range picks; do not treat the profile default as a ceiling."
+        )
     if track_request:
         extra_ctx.append(order_tracking_message(user_en, orders, recipients))
     if account_intent:
@@ -4464,6 +4548,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         messages.append({"role": "system", "content": DISCOVERY_NUDGE})
     elif _is_repair_follow_up(conv, user_en) and search_first:
         messages.append({"role": "system", "content": REPAIR_FOLLOWUP_NUDGE})
+    elif budget_answer_turn:
+        messages.append({"role": "system", "content": BUDGET_ANSWER_NUDGE})
     elif search_first:
         messages.append({"role": "system", "content": SEARCH_FIRST_NUDGE})
 
@@ -4672,7 +4758,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # === Strategy-first: recipient profile → gifting strategy → search → curate ===
     will_strategize = (
         STRATEGY_ENABLED
-        and not direct_request and not pick_best and not hamper_request and not more_request
+        and not direct_request
+        and not pick_best
+        and not hamper_request
+        and not more_request
+        and not budget_answer_turn
     )
     if will_strategize:
         strat_timeout = min(STRATEGY_TIMEOUT, (deadline - time.monotonic()) - (MIN_ROUND_SECONDS + 14))

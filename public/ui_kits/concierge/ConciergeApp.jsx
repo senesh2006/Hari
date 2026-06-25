@@ -178,6 +178,8 @@ const HAS_PREF_RE =
   /\b(elegant|casual|party|formal|evening|sporty|classic|trendy|minimal|chic|cute|fancy|vintage|boho|modern|traditional|ethnic|red|blue|black|white|pink|green|gold|silver|navy|maroon|beige|purple|yellow|grey|gray|cream|brown|teal|floral|pastel|spicy|sweet|savou?ry|dark|milk|woody|fresh|seafood|cheese|chicken)\b/i;
 const BUDGET_WORDS_RE =
   /\b(no budget|no limit|any budget|unlimited|mid.?range|moderate|cheap(er)?|premium|expensive|affordable)\b/i;
+const OPEN_BUDGET_RE =
+  /(?:\bno budget\w*(?:\s+constraints?)?|\bno limit\b|\bunlimited\b|\bopen budget\b|\bwithout (?:a )?budget\b|\bbudget(?:ary)? constraints?\b)/i;
 
 // Mirrors the backend recipient-discovery gate: a recipient is named but we know
 // neither their gender, taste, occasion, nor a concrete product — so the agent
@@ -1038,19 +1040,20 @@ function App({
   // the agent will reply/ask a question (no skeletons) — mirrors the backend gates.
   const isBudgetAnswer = (text) => {
     const s = (text || "").trim();
-    if (!s || s.length > 32) return false;
-    return !!parseBudget(s) || BUDGET_WORDS_RE.test(s) || /^\s*(rs\.?|lkr|rupees)?\s*\d[\d,]*\s*$/i.test(s);
+    if (!s || s.length > 80) return false;
+    return !!parseBudget(s) || BUDGET_WORDS_RE.test(s) || OPEN_BUDGET_RE.test(s) ||
+      /^\s*(rs\.?|lkr|rupees)?\s*\d[\d,]*\s*$/i.test(s);
   };
   const expectProductsFor = (text) => {
     const t = (text || "").trim();
     if (EXPLICIT_PRODUCTS_RE.test(t)) return true;
     if (!looksLikeProductRequest(t)) return false;          // greetings, cart, tracking…
     if (REPLY_TURN_RE.test(t)) return false;                // repair / opinion / pick-best → reply
-    // Once products are on screen, "cheaper/premium/more" are refine-searches, not budget answers.
-    if (!lastSuggestions.length && isBudgetAnswer(t)) return false;  // budget answer → follow-up question
+    // Budget reply (incl. open/no limit) → search for products next.
+    if (!lastSuggestions.length && isBudgetAnswer(t)) return true;
     const budgetGiven =
-      !!budget || !!parseBudget(t) ||
-      conversation.some((m) => m.role === "user" && !!parseBudget(m.content));
+      !!budget || !!parseBudget(t) || OPEN_BUDGET_RE.test(t) ||
+      conversation.some((m) => m.role === "user" && (!!parseBudget(m.content) || OPEN_BUDGET_RE.test(m.content)));
     // First product turn with no budget yet → the budget question, not products.
     if (!lastSuggestions.length && !budgetGiven) return false;
     // A category named with no taste/style/colour yet, nothing on screen → discovery question.
@@ -1082,6 +1085,7 @@ function App({
     text = (text || "").trim();
     if (!text) return;
     const b = parseBudget(text);
+    const openBudget = OPEN_BUDGET_RE.test(text) && !b;
     if (b) {
       setBudget(b);
       if (!isGuest) persistProfile({ default_budget: b });
@@ -1115,7 +1119,8 @@ function App({
           suggestions: lastSuggestions,
           cart: cart.map((c) => ({ name: c.name, qty: c.qty, price: c.rawPrice ?? c.price, currency: c.currency, image: c.image, url: c.url, id: c.id })),
           instructions,
-          budget: budget ?? undefined,
+          budget: openBudget ? undefined : (budget ?? undefined),
+          open_budget: openBudget || undefined,
           language: currentLang,
           access_token: accessToken || undefined,
         }),
