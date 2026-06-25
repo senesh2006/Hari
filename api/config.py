@@ -23,10 +23,14 @@ class handler(BaseHTTPRequestHandler):
         self._respond(
             200,
             {
-                "build": "concierge-v2-curation-2026-06-25",
+                "build": "concierge-v2-gemini-primary-2026-06-25",
                 "supabaseUrl": os.environ.get("SUPABASE_URL", "").rstrip("/"),
                 "supabaseAnonKey": os.environ.get("SUPABASE_ANON_KEY", ""),
                 "assemblyAiEnabled": bool(os.environ.get("ASSEMBLYAI_API_KEY")),
                 "assemblyVoice": os.environ.get("ASSEMBLYAI_VOICE", "ivy"),
+                "geminiEnabled": bool(
+                    os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+                ),
+                "llmPrimary": os.environ.get("LLM_PRIMARY", "gemini"),
             },
         )

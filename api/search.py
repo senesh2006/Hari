@@ -5,11 +5,11 @@ GET  /api/search?q=<natural language requirements>
 
 Pipeline:
   1. Open an MCP session and discover tools at runtime.
-  2. Run an NVIDIA NIM tool-calling loop (OpenAI-compatible chat API).
+  2. Run a tool-calling loop via Google Gemini (primary) with NVIDIA NIM fallback.
   3. Execute Kapruka searches, cart actions, and clarifying questions.
   4. Return a warm conversational answer plus product cards for the UI.
 
-Requires NVIDIA_API_KEY. Standard library only — self-contained (no sibling module imports).
+Requires GEMINI_API_KEY and/or NVIDIA_API_KEY. Standard library only — self-contained (no sibling module imports).
 """
 
 from __future__ import annotations
@@ -887,6 +887,19 @@ NIM_TIMEOUT = float(os.environ.get("NVIDIA_NIM_TIMEOUT", "35"))
 NIM_RETRIES = int(os.environ.get("NVIDIA_NIM_RETRIES", "2"))
 NIM_TEMPERATURE = float(os.environ.get("NVIDIA_NIM_TEMPERATURE", "0.3"))
 
+# Google Gemini — primary agent model (OpenAI-compatible endpoint).
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+GEMINI_BASE_URL = os.environ.get(
+    "GEMINI_BASE_URL",
+    "https://generativelanguage.googleapis.com/v1beta/openai",
+)
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_TIMEOUT = float(os.environ.get("GEMINI_TIMEOUT", "35"))
+GEMINI_RETRIES = int(os.environ.get("GEMINI_RETRIES", "1"))
+GEMINI_TEMPERATURE = float(os.environ.get("GEMINI_TEMPERATURE", "0.3"))
+# Which provider to try first when both keys are set: gemini (default) or nim.
+LLM_PRIMARY = os.environ.get("LLM_PRIMARY", "gemini").strip().lower()
+
 MAX_TOOL_ROUNDS = int(os.environ.get("SEARCH_MAX_ROUNDS", "5"))
 SEARCH_BUDGET = float(os.environ.get("SEARCH_BUDGET", "55"))
 MIN_ROUND_SECONDS = float(os.environ.get("SEARCH_MIN_ROUND_SECONDS", "8"))
@@ -903,6 +916,9 @@ STRATEGY_ENABLED = os.environ.get("STRATEGY_ENABLED", "1").strip().lower() not i
 STRATEGY_NIM_BASE_URL = os.environ.get("STRATEGY_NIM_BASE_URL", NIM_BASE_URL)
 STRATEGY_NIM_MODEL = os.environ.get("STRATEGY_NIM_MODEL", NIM_MODEL)
 STRATEGY_NIM_API_KEY = os.environ.get("STRATEGY_NIM_API_KEY", NIM_API_KEY)
+STRATEGY_GEMINI_BASE_URL = os.environ.get("STRATEGY_GEMINI_BASE_URL", GEMINI_BASE_URL)
+STRATEGY_GEMINI_MODEL = os.environ.get("STRATEGY_GEMINI_MODEL", GEMINI_MODEL)
+STRATEGY_GEMINI_API_KEY = os.environ.get("STRATEGY_GEMINI_API_KEY", GEMINI_API_KEY)
 # The strategy step only emits a small JSON object, so it doesn't need a big
 # slice of the budget. Keeping it tight leaves more time for the product search
 # below — and when the search finds matches we curate them directly and skip the
@@ -3387,25 +3403,35 @@ GENDER_NUDGE = (
 
 
 # =============================================================================
-# NVIDIA NIM
+# LLM providers (Gemini primary, NIM fallback)
 # =============================================================================
 
 
 class NimTimeout(Exception):
-    """Transient NIM failure — degrade gracefully instead of 502."""
+    """Transient LLM failure — degrade gracefully instead of 502."""
 
 
-def nim_chat(messages: list, tools: list, timeout: float | None = None, response_format=None) -> dict:
-    if not NIM_API_KEY:
-        raise PermissionError(
-            "NVIDIA_API_KEY is not set. Add it in your Vercel project's "
-            "Environment Variables (get a key at https://build.nvidia.com)."
-        )
+def _openai_compat_chat(
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    messages: list,
+    tools: list | None = None,
+    timeout: float | None = None,
+    temperature: float = 0.3,
+    max_tokens: int = 700,
+    response_format=None,
+    retries: int = 2,
+    provider: str = "llm",
+) -> dict:
+    if not api_key:
+        raise PermissionError(f"{provider} API key is not set.")
     payload = {
-        "model": NIM_MODEL,
+        "model": model,
         "messages": messages,
-        "temperature": NIM_TEMPERATURE,
-        "max_tokens": 700,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
     }
     if tools:
         payload["tools"] = tools
@@ -3414,29 +3440,110 @@ def nim_chat(messages: list, tools: list, timeout: float | None = None, response
         payload["response_format"] = response_format
 
     req = urllib.request.Request(
-        f"{NIM_BASE_URL}/chat/completions",
+        f"{base_url.rstrip('/')}/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {NIM_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Accept": "application/json",
         },
         method="POST",
     )
-    for attempt in range(NIM_RETRIES + 1):
+    for attempt in range(retries + 1):
         try:
             with urllib.request.urlopen(req, timeout=timeout or NIM_TIMEOUT) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            if exc.code >= 500 and attempt < NIM_RETRIES:
+            if exc.code >= 500 and attempt < retries:
                 time.sleep(0.6 * (attempt + 1))
                 continue
-            if exc.code >= 500:
-                raise NimTimeout(f"NIM HTTP {exc.code}: {detail[:200]}") from exc
-            raise ValueError(f"NVIDIA NIM HTTP {exc.code}: {detail[:500]}") from exc
+            if exc.code >= 500 or exc.code in (408, 429):
+                raise NimTimeout(f"{provider} HTTP {exc.code}: {detail[:200]}") from exc
+            raise ValueError(f"{provider} HTTP {exc.code}: {detail[:500]}") from exc
         except (TimeoutError, urllib.error.URLError, OSError) as exc:
             raise NimTimeout(str(exc)) from exc
+
+
+def _gemini_chat(messages: list, tools: list, timeout: float | None = None, response_format=None) -> dict:
+    return _openai_compat_chat(
+        base_url=GEMINI_BASE_URL,
+        api_key=GEMINI_API_KEY or "",
+        model=GEMINI_MODEL,
+        messages=messages,
+        tools=tools or None,
+        timeout=timeout or GEMINI_TIMEOUT,
+        temperature=GEMINI_TEMPERATURE,
+        max_tokens=700,
+        response_format=response_format,
+        retries=GEMINI_RETRIES,
+        provider="Gemini",
+    )
+
+
+def nim_chat(messages: list, tools: list, timeout: float | None = None, response_format=None) -> dict:
+    if not NIM_API_KEY:
+        raise PermissionError(
+            "NVIDIA_API_KEY is not set. Add it in your Vercel project's "
+            "Environment Variables (get a key at https://build.nvidia.com)."
+        )
+    return _openai_compat_chat(
+        base_url=NIM_BASE_URL,
+        api_key=NIM_API_KEY,
+        model=NIM_MODEL,
+        messages=messages,
+        tools=tools or None,
+        timeout=timeout or NIM_TIMEOUT,
+        temperature=NIM_TEMPERATURE,
+        max_tokens=700,
+        response_format=response_format,
+        retries=NIM_RETRIES,
+        provider="NIM",
+    )
+
+
+def agent_chat(messages: list, tools: list, timeout: float | None = None, response_format=None) -> tuple[dict, str]:
+    """Call the configured primary LLM, falling back to the other provider on failure."""
+    providers: list[tuple[str, callable]] = []
+    if LLM_PRIMARY == "nim":
+        if NIM_API_KEY:
+            providers.append(("nim", lambda: nim_chat(messages, tools, timeout=timeout, response_format=response_format)))
+        if GEMINI_API_KEY:
+            providers.append(("gemini", lambda: _gemini_chat(messages, tools, timeout=timeout, response_format=response_format)))
+    else:
+        if GEMINI_API_KEY:
+            providers.append(("gemini", lambda: _gemini_chat(messages, tools, timeout=timeout, response_format=response_format)))
+        if NIM_API_KEY:
+            providers.append(("nim", lambda: nim_chat(messages, tools, timeout=timeout, response_format=response_format)))
+
+    if not providers:
+        raise PermissionError(
+            "No LLM API key is set. Add GEMINI_API_KEY (https://aistudio.google.com/apikey) "
+            "and/or NVIDIA_API_KEY in your Vercel environment variables."
+        )
+
+    last_err: Exception | None = None
+    for name, fn in providers:
+        try:
+            return fn(), name
+        except (NimTimeout, ValueError, PermissionError, OSError) as exc:
+            last_err = exc
+            continue
+    raise NimTimeout(str(last_err) if last_err else "All LLM providers failed")
+
+
+def _active_agent_model(provider: str) -> str:
+    return GEMINI_MODEL if provider == "gemini" else NIM_MODEL
+
+
+def _default_llm_provider() -> str:
+    if LLM_PRIMARY == "nim":
+        if NIM_API_KEY:
+            return "nim"
+        return "gemini" if GEMINI_API_KEY else "nim"
+    if GEMINI_API_KEY:
+        return "gemini"
+    return "nim"
 
 
 # =============================================================================
@@ -3504,32 +3611,61 @@ lack enough to strategise, return {"insufficient": true}."""
 
 
 def strategy_chat(messages: list, timeout: float | None = None) -> dict:
-    if not STRATEGY_NIM_API_KEY:
+    providers: list[tuple[str, dict]] = []
+    if LLM_PRIMARY == "nim":
+        if STRATEGY_NIM_API_KEY:
+            providers.append(("nim", {
+                "base_url": STRATEGY_NIM_BASE_URL,
+                "api_key": STRATEGY_NIM_API_KEY,
+                "model": STRATEGY_NIM_MODEL,
+            }))
+        if STRATEGY_GEMINI_API_KEY:
+            providers.append(("gemini", {
+                "base_url": STRATEGY_GEMINI_BASE_URL,
+                "api_key": STRATEGY_GEMINI_API_KEY,
+                "model": STRATEGY_GEMINI_MODEL,
+            }))
+    else:
+        if STRATEGY_GEMINI_API_KEY:
+            providers.append(("gemini", {
+                "base_url": STRATEGY_GEMINI_BASE_URL,
+                "api_key": STRATEGY_GEMINI_API_KEY,
+                "model": STRATEGY_GEMINI_MODEL,
+            }))
+        if STRATEGY_NIM_API_KEY:
+            providers.append(("nim", {
+                "base_url": STRATEGY_NIM_BASE_URL,
+                "api_key": STRATEGY_NIM_API_KEY,
+                "model": STRATEGY_NIM_MODEL,
+            }))
+    if not providers:
         raise PermissionError("Strategy model key not set.")
-    payload = {
-        "model": STRATEGY_NIM_MODEL,
-        "messages": messages,
-        "temperature": STRATEGY_TEMPERATURE,
-        "max_tokens": STRATEGY_MAX_TOKENS,
-    }
-    req = urllib.request.Request(
-        f"{STRATEGY_NIM_BASE_URL}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {STRATEGY_NIM_API_KEY}",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout or STRATEGY_TIMEOUT) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+
+    last_err: Exception | None = None
+    for _name, cfg in providers:
+        try:
+            return _openai_compat_chat(
+                base_url=cfg["base_url"],
+                api_key=cfg["api_key"],
+                model=cfg["model"],
+                messages=messages,
+                tools=None,
+                timeout=timeout or STRATEGY_TIMEOUT,
+                temperature=STRATEGY_TEMPERATURE,
+                max_tokens=STRATEGY_MAX_TOKENS,
+                retries=0,
+                provider="strategy",
+            )
+        except Exception as exc:
+            last_err = exc
+            continue
+    raise last_err or PermissionError("Strategy model key not set.")
 
 
 def build_gift_strategy(conv: list, context_blocks: list, last_user: str, timeout: float) -> dict | None:
     """Run the strategy model and return a parsed strategy dict, or None on any
     failure / insufficiency so the search degrades to its normal behaviour."""
-    if not STRATEGY_ENABLED or not STRATEGY_NIM_API_KEY:
+    if not STRATEGY_ENABLED or not (STRATEGY_GEMINI_API_KEY or STRATEGY_NIM_API_KEY):
         return None
     context = "\n\n".join([b for b in (context_blocks or []) if b])
     convo_tail = []
@@ -3645,6 +3781,7 @@ def _needs_input_response(
     questions: list,
     intro: str | None = None,
     tr_timeout: float = 18.0,
+    model: str | None = None,
 ) -> dict:
     qs = questions[:3]
     local_qs = qs
@@ -3660,7 +3797,7 @@ def _needs_input_response(
         "ok": True,
         "needs_input": True,
         "query": last_user,
-        "model": NIM_MODEL,
+        "model": model or _active_agent_model(_default_llm_provider()),
         "answer": intro_en,
         "answer_local": intro_local,
         "questions": qs,
@@ -4334,13 +4471,15 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     cart = context.get("cart") or []
     instructions = context.get("instructions") or []
     language = context.get("language")
+    llm_provider = _default_llm_provider()
+    agent_model = _active_agent_model(llm_provider)
 
     # Fast path: greetings / thanks without an active cart or suggestions.
     if (_is_greeting(last_user) or _is_thanks(last_user)) and not suggestions and not cart:
         return {
             "ok": True,
             "query": last_user,
-            "model": NIM_MODEL,
+            "model": agent_model,
             "answer": _greeting_reply("en", last_user),
             "answer_local": _greeting_reply(language, last_user),
             "user_en": last_user,
@@ -4358,7 +4497,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         return {
             "ok": False,
             "query": last_user,
-            "model": NIM_MODEL,
+            "model": agent_model,
             "error": f"Could not reach Kapruka search service: {exc}",
         }
 
@@ -4434,7 +4573,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         return {
             "ok": True,
             "query": last_user,
-            "model": NIM_MODEL,
+            "model": agent_model,
             "answer": text,
             "answer_local": local,
             "user_en": user_en,
@@ -4712,7 +4851,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         return {
             "ok": True,
             "query": last_user,
-            "model": NIM_MODEL,
+            "model": agent_model,
             "answer": answer,
             "answer_local": local,
             "user_en": user_en,
@@ -4725,6 +4864,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 "raw_found": len(extract_products(results)),
                 "shown": len(products),
                 "had_strategy": any(t.get("tool") == "gift_strategy" for t in trace),
+                "llm_provider": llm_provider,
                 "searches": [
                     (t.get("arguments") or {}).get("q")
                     for t in trace
@@ -4737,6 +4877,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         """The model scores the found products and picks which to show (its reject
         step) — pure LLM, no keyword filters. On failure, show NO unvetted cards
         rather than risk an unsafe/over-budget item."""
+        nonlocal llm_provider, agent_model
         prods = _prefilter_by_strategy(extract_products(results), active_strategy)
         if already_shown:
             prods = [p for p in prods if _norm_text(p.get("name")) not in already_shown]
@@ -4777,7 +4918,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         content = ""
         for rf in ({"type": "json_object"}, None):
             try:
-                completion = nim_chat(cur_msgs, [], timeout=min(NIM_TIMEOUT, ans_rem), response_format=rf)
+                completion, llm_provider = agent_chat(
+                    cur_msgs, [], timeout=min(GEMINI_TIMEOUT, NIM_TIMEOUT, ans_rem), response_format=rf
+                )
+                agent_model = _active_agent_model(llm_provider)
                 content = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
                 break
             except NimTimeout:
@@ -4835,6 +4979,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             questions=questions,
             intro=intro,
             tr_timeout=_tr_timeout(),
+            model=agent_model,
         )
 
     if hamper_question:
@@ -4955,7 +5100,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             return degrade()
 
         try:
-            completion = nim_chat(messages, openai_tools, timeout=min(NIM_TIMEOUT, remaining))
+            completion, llm_provider = agent_chat(
+                messages, openai_tools, timeout=min(GEMINI_TIMEOUT, NIM_TIMEOUT, remaining)
+            )
+            agent_model = _active_agent_model(llm_provider)
         except NimTimeout:
             return degrade()
 
