@@ -23,6 +23,7 @@ class handler(BaseHTTPRequestHandler):
         self._respond(
             200,
             {
+                "build": "concierge-v2-curation-2026-06-25",
                 "supabaseUrl": os.environ.get("SUPABASE_URL", "").rstrip("/"),
                 "supabaseAnonKey": os.environ.get("SUPABASE_ANON_KEY", ""),
                 "assemblyAiEnabled": bool(os.environ.get("ASSEMBLYAI_API_KEY")),
