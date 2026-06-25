@@ -13,6 +13,10 @@
 @keyframes k-floaty   { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-4px);} }
 @keyframes k-ring     { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 45%, transparent);} 70%,100% { box-shadow: 0 0 0 12px transparent;} }
 @keyframes k-sparkle  { 0%,100% { transform: scale(1) rotate(0); opacity:.85;} 50% { transform: scale(1.18) rotate(12deg); opacity:1;} }
+@keyframes k-slide-user { from { opacity:0; transform: translateY(10px) translateX(6px); } to { opacity:1; transform:none; } }
+@keyframes k-glow-idle { 0%,100% { box-shadow: 0 4px 14px color-mix(in srgb, var(--c-coral) 28%, transparent); } 50% { box-shadow: 0 6px 22px color-mix(in srgb, var(--c-lilac) 35%, transparent); } }
+@keyframes k-glow-active { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 45%, transparent); transform: scale(1); } 50% { box-shadow: 0 0 0 10px transparent; transform: scale(1.04); } }
+@keyframes k-status-in { from { opacity:0; transform: translateY(4px); } to { opacity:1; transform:none; } }
 
 /* ============ Button ============ */
 .k-btn {
@@ -143,3 +147,21 @@
 
 /* Entrance helper for staggered grids */
 .k-rise { opacity: 0; animation: k-rise .4s var(--ease-out) both; }
+
+/* User vs bot message entrance */
+.msg-in--bot { animation: k-rise .38s var(--ease-out) both; }
+.msg-in--user { animation: k-slide-user .34s var(--ease-out) both; }
+
+/* Suggestion chips — staggered entrance when composer shows prompts */
+.composer-inner .cards .k-chip { opacity: 0; animation: k-rise .42s var(--ease-out) both; }
+.composer-inner .cards .k-chip:nth-child(1) { animation-delay: 0ms; }
+.composer-inner .cards .k-chip:nth-child(2) { animation-delay: 70ms; }
+.composer-inner .cards .k-chip:nth-child(3) { animation-delay: 140ms; }
+.composer-inner .cards .k-chip:nth-child(4) { animation-delay: 210ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-in--bot, .msg-in--user,
+  .composer-inner .cards .k-chip,
+  .k-avatar--ai, .k-avatar--thinking,
+  .k-badge, .k-toast, .k-rise { animation: none !important; opacity: 1 !important; transform: none !important; }
+}

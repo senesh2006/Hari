@@ -32,7 +32,14 @@ body { height: 100dvh; overflow: hidden; }
   background: var(--grad-brand, linear-gradient(140deg, var(--c-coral), var(--c-lilac)));
   box-shadow: 0 4px 14px color-mix(in srgb, var(--c-coral) 30%, transparent);
   flex: 0 0 auto;
+  transition: transform .2s var(--ease-out);
+  animation: k-glow-idle 5s var(--ease-in-out) infinite;
 }
+.topbar.is-thinking .brandmark,
+.topbar.is-listening .brandmark {
+  animation: k-glow-active 1.4s var(--ease-in-out) infinite;
+}
+.topbar.is-listening .brandmark { transform: scale(1.05); }
 .greet-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .greet-sub { color: var(--muted); font-size: .76rem; font-weight: 500; letter-spacing: .01em; }
 .greet-title {
@@ -200,7 +207,6 @@ body { height: 100dvh; overflow: hidden; }
 .welcome-hero {
   text-align: center;
   padding: 2.5rem 1rem 1.5rem;
-  animation: k-rise .5s var(--ease-out) both;
 }
 .welcome-mark {
   width: 64px; height: 64px;
@@ -210,6 +216,8 @@ body { height: 100dvh; overflow: hidden; }
   background: var(--grad-brand, linear-gradient(140deg, var(--c-coral), var(--c-lilac)));
   box-shadow: 0 8px 28px color-mix(in srgb, var(--c-coral) 25%, transparent);
   color: #fff;
+  opacity: 0;
+  animation: k-rise .55s var(--ease-out) .05s both, k-glow-idle 5s var(--ease-in-out) 1s infinite;
 }
 .welcome-title {
   font-family: var(--font-serif, var(--font-display));
@@ -219,6 +227,8 @@ body { height: 100dvh; overflow: hidden; }
   letter-spacing: -.01em;
   margin: 0 0 .5rem;
   line-height: 1.2;
+  opacity: 0;
+  animation: k-rise .5s var(--ease-out) .15s both;
 }
 .welcome-tag {
   color: var(--muted);
@@ -228,6 +238,8 @@ body { height: 100dvh; overflow: hidden; }
   max-width: 28ch;
   margin-inline: auto;
   line-height: 1.5;
+  opacity: 0;
+  animation: k-rise .5s var(--ease-out) .28s both;
 }
 
 /* ===== Feed ===== */
@@ -251,7 +263,7 @@ main {
   flex-direction: column;
 }
 .feed { display: flex; flex-direction: column; gap: 1.25rem; }
-.msg-in { animation: k-rise .38s var(--ease-out) both; min-width: 0; }
+.msg-in { min-width: 0; }
 .prod-wrap { margin-left: 0; width: 100%; max-width: 100%; }
 @media (min-width: 520px) { .prod-wrap { margin-left: 2.4rem; width: calc(100% - 2.4rem); } }
 .grid {
@@ -290,7 +302,11 @@ main {
   background-size: 200% 100%;
   animation: k-shimmer 1.2s ease-in-out infinite;
 }
-@media (prefers-reduced-motion: reduce) { .skel-img, .skel-line { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .skel-img, .skel-line { animation: none; }
+  .brandmark, .welcome-mark, .welcome-title, .welcome-tag,
+  .refine-chip, .status { animation: none !important; opacity: 1 !important; transform: none !important; }
+}
 
 /* Refine chips */
 .refine-chips { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .65rem; }
@@ -301,8 +317,14 @@ main {
   cursor: pointer; color: var(--text);
   background: var(--surface-2);
   border: 1px solid var(--border);
+  opacity: 0;
+  animation: k-pop-in .3s var(--ease-out) both;
   transition: background .14s ease, border-color .14s ease, transform .1s ease;
 }
+.refine-chips .refine-chip:nth-child(1) { animation-delay: 0ms; }
+.refine-chips .refine-chip:nth-child(2) { animation-delay: 55ms; }
+.refine-chips .refine-chip:nth-child(3) { animation-delay: 110ms; }
+.refine-chips .refine-chip:nth-child(4) { animation-delay: 165ms; }
 .refine-chip:hover { background: var(--surface-3); border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
 .refine-chip:active { transform: scale(.96); }
 
@@ -352,7 +374,11 @@ main {
   min-height: 1.1em;
   text-align: center;
   font-weight: 500;
+  animation: k-status-in .28s var(--ease-out) both;
+  transition: color .2s ease, opacity .2s ease;
 }
+.topbar.is-listening ~ .composer .status,
+.composer:has(.mic--listening) .status { color: var(--primary); }
 .cards {
   display: flex;
   flex-wrap: wrap;
@@ -375,11 +401,12 @@ main {
   border-radius: var(--radius-bar);
   padding: .3rem .3rem .3rem 1.15rem;
   box-shadow: var(--shadow-sm);
-  transition: border-color .16s var(--ease-out), box-shadow .16s var(--ease-out);
+  transition: border-color .2s var(--ease-out), box-shadow .2s var(--ease-out), transform .2s var(--ease-out);
 }
 .searchbar:focus-within {
   border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
-  box-shadow: var(--shadow-sm), 0 0 0 3px var(--ring);
+  box-shadow: var(--shadow-sm), 0 0 0 3px var(--ring), 0 8px 24px color-mix(in srgb, var(--primary) 12%, transparent);
+  transform: translateY(-1px);
 }
 .searchbar input {
   flex: 1; min-width: 0;

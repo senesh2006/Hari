@@ -1555,6 +1555,42 @@ def _items_discussed(conversation: list | None, current_text: str | None = None)
     return found[:6]
 
 
+def _context_search_queries(conversation: list | None, current_text: str | None) -> list[str]:
+    """Kapruka search queries from gift context across recent user turns — used when
+    the current message is only a budget answer (e.g. 'no budget') and carries no
+    product signal on its own."""
+    blob = _recent_user_blob(conversation, current_text, n=8)
+    if not blob.strip():
+        return []
+    queries: list[str] = []
+    items = _items_discussed(conversation, current_text)
+    occ = detect_occasion(blob)
+    for item in items[:3]:
+        q = f"{occ} {item}".strip() if occ else item
+        queries.append(q)
+    if not items:
+        if re.search(r"\bflowers?\b", blob, re.I):
+            queries.append(f"{occ} flowers".strip() if occ else "flowers bouquet")
+        for m in re.finditer(
+            r"\b(hamper|chocolate|cake|perfume|jewellery|jewelry|watch|gift basket|bouquet)\b",
+            blob,
+            re.I,
+        ):
+            q = f"{occ} {m.group(1)}".strip() if occ else m.group(1)
+            queries.append(q)
+        if occ and not queries:
+            queries.append(f"{occ} gift")
+    out: list[str] = []
+    seen: set[str] = set()
+    for q in queries:
+        q = re.sub(r"\s+", " ", q.strip())
+        key = q.lower()
+        if q and key not in seen:
+            seen.add(key)
+            out.append(q)
+    return out[:3]
+
+
 def _persisted_recipient_profile(profile: dict | None, current_text: str | None = None) -> dict:
     """The recipient profile saved across sessions (set by extract_session_facts)."""
     facts = (profile or {}).get("session_facts") or {}
@@ -1929,7 +1965,8 @@ _BUDGET_SKIP_RE = re.compile(
     re.I,
 )
 _OPEN_BUDGET_RE = re.compile(
-    r"(?i)(?:\bno budget\w*(?:\s+constraints?)?|\bno limit\b|\bunlimited\b|\bopen budget\b|"
+    r"(?i)(?:\bno budget\w*(?:\s+constraints?)?|\b(?:there'?s|theres|there is) no budget\b|"
+    r"\b(?:don'?t|do not) have (?:a )?budget\b|\bno limit\b|\bunlimited\b|\bopen budget\b|"
     r"\bwithout (?:a )?budget\b|\bbudget(?:ary)? constraints?\b|"
     r"\bmoney is no object\b|\bnot worried about (?:the )?price\b|"
     r"\bprice (?:isn'?t|doesn'?t) matter\b|\bno monetary\b)",
@@ -1965,7 +2002,6 @@ def _is_budget_answer(text: str, conversation: list | None) -> bool:
         for turn in reversed(conversation or []):
             if turn.get("role") == "assistant":
                 return bool(_BUDGET_WORD_RE.search(str(turn.get("content") or "")))
-            break
     return _budget_was_asked(conversation)
 
 
@@ -4516,7 +4552,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # Once taste is known (or they say "you pick"), search instead of stalling.
     repair_interests = _recipient_interests_for_repair(user_en, recipients)
     discover_first = False
-    force_search = False
+    if not budget_answer_turn and not explicit_products_request:
+        force_search = False
     if allow_questions and not direct_request and not budget_question and not more_request \
             and not pick_best and not repair_interests and not hamper_request and not recipient_discovery:
         momentum = search_first or _last_assistant_was_question(conv)
@@ -4618,6 +4655,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # Product types explicitly requested this turn (e.g. "a cake also") must
     # actually appear in the results — don't claim a category we didn't return.
     requested_terms = set() if more_request else _requested_product_terms(user_en)
+    if budget_answer_turn:
+        ctx_blob = _recent_user_blob(conv, user_en, n=8)
+        requested_terms |= {w.lower() for w in _PRODUCT_NOUN_RE.findall(ctx_blob)}
+        if not salient_terms:
+            salient_terms = _salient_want_terms(conv, ctx_blob)
     items_warned = False
     already_shown = {_norm_text(n) for n in _shown_names(suggestions, cart)} if more_request else set()
     # Don't show the wrong gender's items (works across the chat's languages).
@@ -4852,6 +4894,16 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         intro, question = _budget_ask(profile)
         return ask([question], intro=intro)
 
+    if budget_answer_turn:
+        ctx_queries = _context_search_queries(conv, user_en)
+        if ctx_queries and _run_strategy_searches(
+            {"search_queries": ctx_queries}, tools, deadline, results, trace
+        ):
+            if extract_products(results):
+                return curate_then_finalize(
+                    "Lovely — here are a few that should work for that occasion 😊"
+                )
+
     json_corrections = 0
     max_json_corrections = 2
     search_retries = 0
@@ -4865,10 +4917,13 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         # gets cards instead of a dead-end message that just re-triggers the same
         # slow path when they resend.
         if not extract_products(results) and not cart_actions:
+            salvage_terms = sorted(salient_terms | requested_terms)
+            if not salvage_terms and budget_answer_turn:
+                salvage_terms = _context_search_queries(conv, user_en)
             try:
                 _salvage_search(
                     active_strategy,
-                    sorted(salient_terms | requested_terms),
+                    salvage_terms,
                     tools,
                     results,
                     trace,
@@ -4884,6 +4939,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             return curate_then_finalize("Got some options for you — they're below 😊")
         if cart_actions:
             return finalize("Done — cart's updated 👍")
+        if budget_answer_turn or _user_open_budget(conv, user_en):
+            return finalize(
+                "Kapruka's being a bit slow right now — try sending the gift idea again "
+                "(e.g. anniversary flowers) and I'll search straight away 😊"
+            )
         return finalize(
             "I couldn't pull up good matches just now — tell me who it's for and a "
             "rough budget and I'll get some options up for you. 😊"

@@ -25,6 +25,7 @@
     --radius: 20px;
     --font: "Plus Jakarta Sans", system-ui, sans-serif;
     --serif: "Instrument Serif", Georgia, serif;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
@@ -46,6 +47,11 @@
       radial-gradient(ellipse 60% 45% at 0% 20%, rgba(255,122,98,.10), transparent 50%),
       var(--bg);
     pointer-events: none;
+    animation: mesh-drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes mesh-drift {
+    0% { filter: hue-rotate(0deg); opacity: 1; }
+    100% { filter: hue-rotate(8deg); opacity: .92; }
   }
   a { color: inherit; text-decoration: none; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
@@ -58,6 +64,11 @@
     -webkit-backdrop-filter: blur(16px) saturate(160%);
     background: rgba(15,13,18,.75);
     border-bottom: 1px solid var(--border);
+    animation: nav-in .55s var(--ease-out) both;
+  }
+  @keyframes nav-in {
+    from { opacity: 0; transform: translateY(-12px); }
+    to { opacity: 1; transform: none; }
   }
   .nav-in { display: flex; align-items: center; gap: 20px; height: 68px; }
   .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 1.1rem; letter-spacing: -.02em; }
@@ -100,7 +111,45 @@
     background: var(--surface);
     border-radius: 999px; padding: 7px 16px; margin-bottom: 24px;
   }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(74,222,128,.15); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(74,222,128,.15); animation: pulse-dot 2s ease-in-out infinite; }
+  @keyframes pulse-dot {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(74,222,128,.15); }
+    50% { box-shadow: 0 0 0 6px rgba(74,222,128,.05); }
+  }
+
+  /* Hero entrance */
+  .reveal { opacity: 0; transform: translateY(18px); animation: reveal-up .65s var(--ease-out) forwards; }
+  .reveal-d1 { animation-delay: .08s; }
+  .reveal-d2 { animation-delay: .16s; }
+  .reveal-d3 { animation-delay: .24s; }
+  .reveal-d4 { animation-delay: .32s; }
+  .reveal-d5 { animation-delay: .4s; }
+  @keyframes reveal-up {
+    to { opacity: 1; transform: none; }
+  }
+
+  /* Scroll-triggered sections */
+  .reveal-scroll {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity .6s var(--ease-out), transform .6s var(--ease-out);
+  }
+  .reveal-scroll.in-view { opacity: 1; transform: none; }
+  .bento .feat.reveal-scroll:nth-child(1) { transition-delay: 0ms; }
+  .bento .feat.reveal-scroll:nth-child(2) { transition-delay: 60ms; }
+  .bento .feat.reveal-scroll:nth-child(3) { transition-delay: 120ms; }
+  .bento .feat.reveal-scroll:nth-child(4) { transition-delay: 180ms; }
+  .bento .feat.reveal-scroll:nth-child(5) { transition-delay: 240ms; }
+  .bento .feat.reveal-scroll:nth-child(6) { transition-delay: 300ms; }
+  .bento .feat.reveal-scroll:nth-child(7) { transition-delay: 360ms; }
+  .steps .step.reveal-scroll:nth-child(1) { transition-delay: 0ms; }
+  .steps .step.reveal-scroll:nth-child(2) { transition-delay: 80ms; }
+  .steps .step.reveal-scroll:nth-child(3) { transition-delay: 160ms; }
+  .steps .step.reveal-scroll:nth-child(4) { transition-delay: 240ms; }
+  .stats .stat.reveal-scroll:nth-child(1) { transition-delay: 0ms; }
+  .stats .stat.reveal-scroll:nth-child(2) { transition-delay: 70ms; }
+  .stats .stat.reveal-scroll:nth-child(3) { transition-delay: 140ms; }
+  .stats .stat.reveal-scroll:nth-child(4) { transition-delay: 210ms; }
   h1 {
     font-size: clamp(2.4rem, 5vw, 3.5rem);
     line-height: 1.08; font-weight: 800;
@@ -130,24 +179,52 @@
     border-radius: 24px;
     padding: 20px;
     box-shadow: 0 32px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.04) inset;
-    animation: float 6s ease-in-out infinite;
+    animation: float 6s ease-in-out infinite, reveal-up .7s var(--ease-out) .35s both;
   }
   @keyframes float {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-8px); }
   }
+  .device::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(255,122,98,.35), rgba(167,139,250,.25), transparent 60%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    opacity: .6;
+  }
+  .device { position: relative; }
   .d-head { display: flex; align-items: center; gap: 12px; padding: 4px 6px 16px; border-bottom: 1px solid var(--border); }
   .d-head .leaf { width: 32px; height: 32px; border-radius: 10px; }
   .d-head small { color: var(--faint); display: block; font-size: .72rem; }
   .d-head strong { font-size: .9rem; }
   .msgs { display: flex; flex-direction: column; gap: 12px; padding: 18px 4px 4px; }
   .bubble { max-width: 85%; padding: 12px 16px; border-radius: 18px; font-size: .88rem; line-height: 1.45; }
+  .chat-seq { opacity: 0; transform: translateY(10px) scale(.98); animation: chat-in .45s var(--ease-out) forwards; animation-delay: var(--delay, 0s); }
+  @keyframes chat-in { to { opacity: 1; transform: none; } }
   .bot { background: var(--surface-2); border: 1px solid var(--border); border-top-left-radius: 6px; align-self: flex-start; }
   .me {
     background: linear-gradient(135deg, rgba(255,122,98,.95), rgba(167,139,250,.85));
     color: #1a1218; border-top-right-radius: 6px;
     align-self: flex-end; font-weight: 600;
   }
+  .chat-seq.me { animation-name: chat-in-user; }
+  @keyframes chat-in-user {
+    from { opacity: 0; transform: translateY(8px) translateX(8px); }
+    to { opacity: 1; transform: none; }
+  }
+  .cards, .chips { opacity: 0; animation: chat-in .5s var(--ease-out) forwards; }
+  .cards { animation-delay: 2.6s; }
+  .chips { animation-delay: 2.9s; }
+  .pcard { opacity: 0; animation: chat-in .4s var(--ease-out) forwards; }
+  .pcard:nth-child(1) { animation-delay: 2.75s; }
+  .pcard:nth-child(2) { animation-delay: 2.9s; }
   .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-self: flex-start; width: 100%; margin-top: 4px; }
   .pcard { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; transition: transform .2s; }
   .pcard:hover { transform: translateY(-2px); }
@@ -280,6 +357,20 @@
     background: radial-gradient(circle at 30% 50%, rgba(255,255,255,.15), transparent 60%);
     pointer-events: none;
   }
+  .cta-band::after {
+    content: "";
+    position: absolute;
+    inset: -50% -20%;
+    background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.18) 50%, transparent 60%);
+    animation: cta-shine 5s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes cta-shine {
+    0%, 100% { transform: translateX(-30%) rotate(8deg); opacity: 0; }
+    45% { opacity: 1; }
+    55% { transform: translateX(30%) rotate(8deg); opacity: 1; }
+    65% { opacity: 0; }
+  }
   .cta-band > * { position: relative; }
   .cta-band h2 { color: #1a1218; font-size: 2rem; }
   .cta-band p { color: rgba(26,18,24,.75); max-width: 48ch; margin: 10px auto 28px; font-weight: 500; }
@@ -310,7 +401,8 @@
     .cta-band { padding: 40px 24px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    *, .device { animation: none !important; transition: none !important; }
+    *, .device, body::before { animation: none !important; transition: none !important; }
+    .reveal, .reveal-scroll, .chat-seq, .cards, .chips, .pcard { opacity: 1 !important; transform: none !important; }
   }
 </style>
 </head>
@@ -333,14 +425,14 @@
 
 <header id="top" class="wrap hero">
   <div>
-    <span class="pill"><span class="dot"></span> AI Gift Concierge for Sri Lanka</span>
-    <h1>The gift assistant that <em>finishes the job</em></h1>
-    <p class="sub">Talk or type to Hari. It learns who the gift is for, finds real products from Kapruka, and walks you through to a paid order.</p>
-    <div class="cta-row">
+    <span class="pill reveal"><span class="dot"></span> AI Gift Concierge for Sri Lanka</span>
+    <h1 class="reveal reveal-d1">The gift assistant that <em>finishes the job</em></h1>
+    <p class="sub reveal reveal-d2">Talk or type to Hari. It learns who the gift is for, finds real products from Kapruka, and walks you through to a paid order.</p>
+    <div class="cta-row reveal reveal-d3">
       <a class="btn" href="/">Start a conversation</a>
       <a class="btn ghost" href="#how">See how it works</a>
     </div>
-    <div class="langs">
+    <div class="langs reveal reveal-d4">
       <span class="lang-pill">English</span>
       <span class="lang-pill">සිංහල</span>
       <span class="lang-pill">தமிழ்</span>
@@ -354,11 +446,11 @@
       <div><strong>Hari</strong><small>Good evening · What can I find for you?</small></div>
     </div>
     <div class="msgs">
-      <div class="bubble bot">Hi, I'm Hari. Who are we spoiling today?</div>
-      <div class="bubble me">birthday gift for my mum, she loves spa stuff</div>
-      <div class="bubble bot">Lovely. Want your usual budget, or something new for this?</div>
-      <div class="bubble me">around 4000, something relaxing</div>
-      <div class="bubble bot">The spa hamper feels like the thoughtful pick.</div>
+      <div class="bubble bot chat-seq" style="--delay:.5s">Hi, I'm Hari. Who are we spoiling today?</div>
+      <div class="bubble me chat-seq" style="--delay:1s">birthday gift for my mum, she loves spa stuff</div>
+      <div class="bubble bot chat-seq" style="--delay:1.5s">Lovely. Want your usual budget, or something new for this?</div>
+      <div class="bubble me chat-seq" style="--delay:2s">around 4000, something relaxing</div>
+      <div class="bubble bot chat-seq" style="--delay:2.45s">The spa hamper feels like the thoughtful pick.</div>
       <div class="cards">
         <div class="pcard"><div class="pimg"></div><div class="pb"><div class="pn">Spa Ceylon Relax Gift Set</div><div class="pp">LKR 3,950</div></div></div>
         <div class="pcard"><div class="pimg"></div><div class="pb"><div class="pn">Aromatherapy Hamper</div><div class="pp">LKR 4,200</div></div></div>
@@ -369,43 +461,43 @@
 </header>
 
 <section id="features" class="wrap">
-  <div class="center">
+  <div class="center reveal-scroll">
     <span class="eyebrow">What Hari does</span>
     <h2>A concierge, not a search box</h2>
     <p class="lead">Hari reasons about the recipient and occasion, asks one smart question instead of a form, and never bluffs about what it found.</p>
   </div>
   <div class="bento">
-    <div class="feat span-8">
+    <div class="feat span-8 reveal-scroll">
       <div class="ic">💬</div>
       <h3>Natural conversation</h3>
       <p>Understands occasion, recipient and feeling — by text or voice — in English, Sinhala or Tamil. No forms, no filters to fiddle with.</p>
     </div>
-    <div class="feat span-4">
+    <div class="feat span-4 reveal-scroll">
       <div class="ic">🎯</div>
       <h3>One smart question</h3>
       <p>Budget once, then a single taste cue. Never an interrogation.</p>
     </div>
-    <div class="feat span-4">
+    <div class="feat span-4 reveal-scroll">
       <div class="ic">🛡️</div>
       <h3>Honest by design</h3>
       <p>Every reply is grounded in real Kapruka results — no relabelling fruit baskets as ramen.</p>
     </div>
-    <div class="feat span-4">
+    <div class="feat span-4 reveal-scroll">
       <div class="ic">🧠</div>
       <h3>Remembers people</h3>
       <p>Saves recipients, birthdays, anniversaries, and your gifting style.</p>
     </div>
-    <div class="feat span-4">
+    <div class="feat span-4 reveal-scroll">
       <div class="ic">🛒</div>
       <h3>Real checkout</h3>
       <p>Cart, wishlist, and a genuine order with a secure pay link.</p>
     </div>
-    <div class="feat span-6">
+    <div class="feat span-6 reveal-scroll">
       <div class="ic">💙</div>
       <h3>Emotionally aware</h3>
       <p>Handles apologies, condolences and get-well moments with warmth — and picks up past chats where you left off.</p>
     </div>
-    <div class="feat span-6">
+    <div class="feat span-6 reveal-scroll">
       <div class="ic">🎙️</div>
       <h3>Voice-first when you want it</h3>
       <p>Tap the mic, speak naturally, hear replies back. Switch languages mid-conversation.</p>
@@ -414,26 +506,26 @@
 </section>
 
 <section id="how" class="wrap">
-  <div class="center">
+  <div class="center reveal-scroll">
     <span class="eyebrow">How it works</span>
     <h2>From "her birthday's coming up" to a paid order</h2>
   </div>
   <div class="steps">
-    <div class="step"><div class="num">1</div><h4>Tell Hari</h4><p>Who it's for and the occasion — type or talk, any language.</p></div>
-    <div class="step"><div class="num">2</div><h4>One question</h4><p>Budget, then a single taste cue to sharpen the picks.</p></div>
-    <div class="step"><div class="num">3</div><h4>See curated gifts</h4><p>Real products as cards, grouped by category, refine with a tap.</p></div>
-    <div class="step"><div class="num">4</div><h4>Checkout</h4><p>Delivery details and a secure pay link — done.</p></div>
+    <div class="step reveal-scroll"><div class="num">1</div><h4>Tell Hari</h4><p>Who it's for and the occasion — type or talk, any language.</p></div>
+    <div class="step reveal-scroll"><div class="num">2</div><h4>One question</h4><p>Budget, then a single taste cue to sharpen the picks.</p></div>
+    <div class="step reveal-scroll"><div class="num">3</div><h4>See curated gifts</h4><p>Real products as cards, grouped by category, refine with a tap.</p></div>
+    <div class="step reveal-scroll"><div class="num">4</div><h4>Checkout</h4><p>Delivery details and a secure pay link — done.</p></div>
   </div>
 </section>
 
 <section id="tech" class="tech">
   <div class="wrap">
-    <div class="center">
+    <div class="center reveal-scroll">
       <span class="eyebrow">Under the hood</span>
       <h2>An agent built on guardrails, not vibes</h2>
       <p class="lead">The hard part isn't capability — it's discipline: knowing when to ask, refusing to bluff, and staying graceful in three languages on serverless infrastructure.</p>
     </div>
-    <div class="flow">
+    <div class="flow reveal-scroll">
       <div class="node"><div class="t">Client</div><div class="d">React chat UI with voice, product cards, and chat history.</div></div>
       <div class="arrow">→</div>
       <div class="node"><div class="t">Intent layer</div><div class="d">Routes each turn: budget, taste, cart, tracking.</div></div>
@@ -476,16 +568,16 @@
       <div class="eng"><h4>🚦 Intent guardrails</h4><p>Budget asked <code>once per chat</code>, one taste question max, forced search when promised.</p></div>
     </div>
     <div class="stats">
-      <div class="stat"><div class="n grad-text">3</div><div class="l">languages, voice in &amp; out</div></div>
-      <div class="stat"><div class="n grad-text">70B</div><div class="l">parameter agent over MCP</div></div>
-      <div class="stat"><div class="n grad-text">100%</div><div class="l">serverless, zero-build</div></div>
-      <div class="stat"><div class="n grad-text">E2E</div><div class="l">discovery to paid checkout</div></div>
+      <div class="stat reveal-scroll"><div class="n grad-text">3</div><div class="l">languages, voice in &amp; out</div></div>
+      <div class="stat reveal-scroll"><div class="n grad-text">70B</div><div class="l">parameter agent over MCP</div></div>
+      <div class="stat reveal-scroll"><div class="n grad-text">100%</div><div class="l">serverless, zero-build</div></div>
+      <div class="stat reveal-scroll"><div class="n grad-text">E2E</div><div class="l">discovery to paid checkout</div></div>
     </div>
   </div>
 </section>
 
 <section class="wrap">
-  <div class="cta-band">
+  <div class="cta-band reveal-scroll">
     <h2>Meet Hari.</h2>
     <p>The warmest way to find a gift — with a disciplined agent behind the curtain.</p>
     <a class="btn" href="/">Start a chat</a>
@@ -505,6 +597,21 @@
       if (!a) return;
       if (embedded) { e.preventDefault(); window.parent.postMessage("hari:enter", "*"); }
     });
+
+    var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reduced && "IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("in-view");
+            io.unobserve(entry.target);
+          }
+        });
+      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
+      document.querySelectorAll(".reveal-scroll").forEach(function (el) { io.observe(el); });
+    } else {
+      document.querySelectorAll(".reveal-scroll").forEach(function (el) { el.classList.add("in-view"); });
+    }
   })();
 </script>
 </body>

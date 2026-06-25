@@ -179,7 +179,7 @@ const HAS_PREF_RE =
 const BUDGET_WORDS_RE =
   /\b(no budget|no limit|any budget|unlimited|mid.?range|moderate|cheap(er)?|premium|expensive|affordable)\b/i;
 const OPEN_BUDGET_RE =
-  /(?:\bno budget\w*(?:\s+constraints?)?|\bno limit\b|\bunlimited\b|\bopen budget\b|\bwithout (?:a )?budget\b|\bbudget(?:ary)? constraints?\b)/i;
+  /(?:\bno budget\w*(?:\s+constraints?)?|\b(?:there'?s|theres|there is) no budget\b|\b(?:don'?t|do not) have (?:a )?budget\b|\bno limit\b|\bunlimited\b|\bopen budget\b|\bwithout (?:a )?budget\b|\bbudget(?:ary)? constraints?\b)/i;
 
 // Mirrors the backend recipient-discovery gate: a recipient is named but we know
 // neither their gender, taste, occasion, nor a concrete product — so the agent
@@ -1314,7 +1314,7 @@ function App({
 
   return (
     <React.Fragment>
-      <header className="topbar">
+      <header className={"topbar" + (messages.some((m) => m.thinking) ? " is-thinking" : "") + (listening ? " is-listening" : "")}>
         <div className="inner">
           <div className="greet">
             <span className="brandmark"><Icon name="leaf" size={20} /></span>
@@ -1554,7 +1554,7 @@ function App({
           )}
           <div className="feed" ref={feedRef}>
             {messages.map((m) => (
-              <div className="msg-in" key={m.id} style={{ display: "flex", flexDirection: "column" }}>
+              <div className={"msg-in msg-in--" + m.role} key={m.id} style={{ display: "flex", flexDirection: "column" }}>
                 {m.thought && m.role === "bot" && (
                   <div className="bot-thought">
                     <Icon name="sparkles" size={14} />
