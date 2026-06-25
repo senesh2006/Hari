@@ -883,6 +883,9 @@ NIM_TEMPERATURE = float(os.environ.get("NVIDIA_NIM_TEMPERATURE", "0.3"))
 MAX_TOOL_ROUNDS = int(os.environ.get("SEARCH_MAX_ROUNDS", "5"))
 SEARCH_BUDGET = float(os.environ.get("SEARCH_BUDGET", "55"))
 MIN_ROUND_SECONDS = float(os.environ.get("SEARCH_MIN_ROUND_SECONDS", "8"))
+# Time set aside at the end of the budget so the model's curation/scoring step
+# (which decides the cards) always has room to run, even if search ran long.
+CURATION_RESERVE = float(os.environ.get("CURATION_RESERVE", "16"))
 
 # Strategy layer — a dedicated model that turns the gathered context (occasion,
 # relationship, personality, constraints, budget) into an explicit gifting
@@ -4329,7 +4332,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             prods = [p for p in prods if _norm_text(p.get("name")) not in already_shown]
         if not prods:
             return finalize(fallback_answer)
-        ans_rem = deadline - time.monotonic()
+        ans_rem = curation_deadline - time.monotonic()
         if ans_rem < 5:
             return finalize(
                 "Found a few, but I want to double-check they fit before showing — resend and I'll be quick 😊",
@@ -4424,7 +4427,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # Reserve a little tail for the outbound translation; anchor to t0 so any
     # time already spent on translation/context shortens the loop, not the budget.
     reserve = 8 if target_lang else 0
-    deadline = t0 + max(20.0, SEARCH_BUDGET - reserve)
+    # The whole-request deadline, and an earlier search deadline that leaves a
+    # guaranteed slice for the curation step so it never runs out of time.
+    curation_deadline = t0 + max(20.0, SEARCH_BUDGET - reserve)
+    deadline = max(t0 + 12.0, curation_deadline - CURATION_RESERVE)
 
     # === Gift strategy layer ====================================================
     # Synthesize the gathered context into an explicit ANGLE + concrete queries,
