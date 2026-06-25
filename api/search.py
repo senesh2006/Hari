@@ -880,7 +880,10 @@ USER_AGENT = os.environ.get(
 NIM_BASE_URL = os.environ.get("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
 NIM_MODEL = os.environ.get("NVIDIA_NIM_MODEL", "meta/llama-3.3-70b-instruct")
 NIM_API_KEY = os.environ.get("NVIDIA_API_KEY")
-NIM_TIMEOUT = float(os.environ.get("NVIDIA_NIM_TIMEOUT", "60"))
+# Per-call cap for a single model request. Kept well under the function's total
+# budget so one slow call can never consume the whole request — the loop, the
+# curation step and the salvage search all still get their turn.
+NIM_TIMEOUT = float(os.environ.get("NVIDIA_NIM_TIMEOUT", "35"))
 NIM_RETRIES = int(os.environ.get("NVIDIA_NIM_RETRIES", "2"))
 NIM_TEMPERATURE = float(os.environ.get("NVIDIA_NIM_TEMPERATURE", "0.3"))
 
@@ -900,7 +903,11 @@ STRATEGY_ENABLED = os.environ.get("STRATEGY_ENABLED", "1").strip().lower() not i
 STRATEGY_NIM_BASE_URL = os.environ.get("STRATEGY_NIM_BASE_URL", NIM_BASE_URL)
 STRATEGY_NIM_MODEL = os.environ.get("STRATEGY_NIM_MODEL", NIM_MODEL)
 STRATEGY_NIM_API_KEY = os.environ.get("STRATEGY_NIM_API_KEY", NIM_API_KEY)
-STRATEGY_TIMEOUT = float(os.environ.get("STRATEGY_TIMEOUT", "18"))
+# The strategy step only emits a small JSON object, so it doesn't need a big
+# slice of the budget. Keeping it tight leaves more time for the product search
+# below — and when the search finds matches we curate them directly and skip the
+# slower agent loop entirely.
+STRATEGY_TIMEOUT = float(os.environ.get("STRATEGY_TIMEOUT", "13"))
 STRATEGY_MAX_TOKENS = int(os.environ.get("STRATEGY_MAX_TOKENS", "420"))
 STRATEGY_TEMPERATURE = float(os.environ.get("STRATEGY_TEMPERATURE", "0.4"))
 
