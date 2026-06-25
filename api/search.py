@@ -3813,6 +3813,7 @@ def _run_strategy_searches(
     deadline: float,
     results: list,
     trace: list,
+    max_price: float | None = None,
 ) -> bool:
     """Execute strategy search_queries in parallel. Returns True if any results."""
     queries = [str(q).strip() for q in (strategy.get("search_queries") or []) if str(q).strip()][:5]
@@ -3822,7 +3823,7 @@ def _run_strategy_searches(
         tool_name = _resolve_search_tool_name(tools)
         search_until = time.monotonic() + max(6.0, min(22.0, (deadline - time.monotonic()) - 14))
         with ThreadPoolExecutor(max_workers=min(5, len(queries))) as ex:
-            futs = {ex.submit(_one_strategy_search, q, tool_name): q for q in queries}
+            futs = {ex.submit(_one_strategy_search, q, tool_name, max_price): q for q in queries}
             for fut in futs:
                 rem = search_until - time.monotonic()
                 if rem <= 0:
@@ -3833,8 +3834,11 @@ def _run_strategy_searches(
                     out = ""
                 if out:
                     qq = futs[fut]
-                    results.append({"tool": tool_name, "arguments": {"q": qq}, "output": out})
-                    trace.append({"tool": tool_name, "arguments": {"q": qq}})
+                    args = {"params": {"q": qq}} if tool_name == "kapruka_search_products" else {"q": qq}
+                    if max_price is not None and tool_name == "kapruka_search_products":
+                        args["params"]["max_price"] = max_price
+                    results.append({"tool": tool_name, "arguments": args, "output": out})
+                    trace.append({"tool": tool_name, "arguments": args})
     except Exception:
         return False
     return bool(results)
@@ -3847,6 +3851,7 @@ def _salvage_search(
     results: list,
     trace: list,
     hard_deadline: float,
+    max_price: float | None = None,
 ) -> bool:
     """Last-ditch fast product search when the main pipeline ran out of time
     before finding anything.
@@ -3874,7 +3879,7 @@ def _salvage_search(
     # _run_strategy_searches derives its window from (deadline - now) - 14, so
     # offset the deadline we pass by +14 to grant exactly `budget` of search time.
     search_deadline = time.monotonic() + budget + 14.0
-    return _run_strategy_searches({"search_queries": queries}, tools, search_deadline, results, trace)
+    return _run_strategy_searches({"search_queries": queries}, tools, search_deadline, results, trace, max_price=max_price)
 
 
 def _resolve_search_tool_name(tools: list) -> str:
@@ -3892,12 +3897,18 @@ def _resolve_search_tool_name(tools: list) -> str:
     return "kapruka_search_products"
 
 
-def _one_strategy_search(query: str, tool_name: str) -> str:
+def _one_strategy_search(query: str, tool_name: str, max_price: float | None = None) -> str:
     """Run a single product search on its own MCP session (thread-safe)."""
     try:
         m = MCPSession()
         m.initialize()
-        return m.call_tool(tool_name, {"q": query})
+        if tool_name == "kapruka_search_products":
+            args = {"params": {"q": query}}
+            if max_price is not None:
+                args["params"]["max_price"] = max_price
+        else:
+            args = {"q": query}
+        return m.call_tool(tool_name, args)
     except Exception:
         return ""
 
@@ -5018,7 +5029,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 strat_msg = strategy_message(active_strategy)
                 if strat_msg:
                     messages.append({"role": "system", "content": strat_msg})
-                if _run_strategy_searches(active_strategy, tools, deadline, results, trace):
+                if _run_strategy_searches(active_strategy, tools, deadline, results, trace, max_price=budget_ceiling):
                     hint = str(active_strategy.get("explain_hint") or "").strip()
                     return curate_then_finalize(
                         hint or "Pulled together some options — take a look below 😊"
@@ -5042,7 +5053,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if budget_answer_turn:
         ctx_queries = _context_search_queries(conv, user_en)
         if ctx_queries and _run_strategy_searches(
-            {"search_queries": ctx_queries}, tools, deadline, results, trace
+            {"search_queries": ctx_queries}, tools, deadline, results, trace, max_price=budget_ceiling
         ):
             if extract_products(results):
                 return curate_then_finalize(
@@ -5073,6 +5084,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                     results,
                     trace,
                     curation_deadline,
+                    max_price=budget_ceiling,
                 )
             except Exception:
                 pass
