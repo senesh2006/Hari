@@ -4320,6 +4320,64 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "results": results,
         }
 
+    def curate_then_finalize(fallback_answer: str) -> dict:
+        """The model scores the found products and picks which to show (its reject
+        step) — pure LLM, no keyword filters. On failure, show NO unvetted cards
+        rather than risk an unsafe/over-budget item."""
+        prods = extract_products(results)
+        if already_shown:
+            prods = [p for p in prods if _norm_text(p.get("name")) not in already_shown]
+        if not prods:
+            return finalize(fallback_answer)
+        ans_rem = deadline - time.monotonic()
+        if ans_rem < 5:
+            return finalize(
+                "Found a few, but I want to double-check they fit before showing — resend and I'll be quick 😊",
+                keep_names=[],
+            )
+        lines = []
+        for i, p in enumerate(prods[:24], 1):
+            desc = (p.get("description") or "")[:110]
+            lines.append(f"{i}. {p.get('name')} — {p.get('currency') or 'LKR'} {p.get('price')}. {desc}")
+        cur_msgs = messages + [{
+            "role": "user",
+            "content": "Candidate products found:\n" + "\n".join(lines)
+            + "\n\nAs the concierge, SCORE these against everything the user needs — recipient, occasion, "
+            "relationship, budget, and ANY dietary/allergy or other constraint they mentioned — and REJECT every "
+            "poor, unsafe, over-budget, or irrelevant one. Reply with ONLY JSON: "
+            '{"reply":"1-3 warm sentences; name your top pick and why, and note what you skipped and why",'
+            '"keep":[<the numbers to show, best first>]}. Keep only ones that truly fit (usually 1-4); if none are '
+            "safe/appropriate use an empty list and say so kindly. Do NOT call tools.",
+        }]
+        try:
+            completion = nim_chat(cur_msgs, [], timeout=min(NIM_TIMEOUT, ans_rem))
+            content = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        except NimTimeout:
+            content = ""
+        obj = None
+        for chunk in _extract_balanced_objects(content):
+            o = _parse_json_or_literal(chunk)
+            if isinstance(o, dict) and ("keep" in o or "reply" in o):
+                obj = o
+                break
+        if obj is None:
+            return finalize(
+                "Let me double-check these actually fit before showing them — mind resending? Was a touch slow my end 😊",
+                keep_names=[],
+            )
+        reply = str(obj.get("reply") or "").strip()
+        keep_names = []
+        for k in (obj.get("keep") or []):
+            if isinstance(k, bool):
+                continue
+            if isinstance(k, (int, float)) or (isinstance(k, str) and k.strip().isdigit()):
+                n = int(k) - 1
+                if 0 <= n < len(prods):
+                    keep_names.append(prods[n].get("name"))
+            elif isinstance(k, str):
+                keep_names.append(k)
+        return finalize(reply or fallback_answer, keep_names=keep_names)
+
     def ask(questions: list, intro: str | None = None) -> dict:
         qs = questions[:3]
         local_qs = qs
@@ -4420,40 +4478,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                     except Exception:
                         pass
                     if results:
-                        result_text = TEXT_MODE_RESULT_PREFIX + "\n\n".join(
-                            f"q='{r['arguments'].get('q')}' ->\n{r['output']}" for r in results if r.get("output")
-                        )
-                        messages.append({
-                            "role": "user",
-                            "content": result_text
-                            + "\n\nThose are the raw search results. SCORE them against the gifting strategy — the "
-                            "relationship and risk level, the budget, and any dietary/allergy or other constraints — "
-                            "and REJECT every poor, unsafe, over-budget, or off-strategy match. Then reply with ONLY a "
-                            "JSON object:\n"
-                            '{"reply": "1-3 warm sentences; you may name your top pick and why it fits, and briefly '
-                            'say what you skipped and why", "keep": ["<exact product name to show as a card>", ...]}\n'
-                            "Put ONLY the products that genuinely pass in \"keep\" (best first, usually 1-4). If none "
-                            "are safe or appropriate, use an empty keep list and say so kindly. Do NOT call any tools.",
-                        })
-                        ans_rem = deadline - time.monotonic()
-                        try:
-                            completion = nim_chat(messages, [], timeout=min(NIM_TIMEOUT, max(5.0, ans_rem)))
-                            content = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-                        except NimTimeout:
-                            content = ""
-                        curated = None
-                        for chunk in _extract_balanced_objects(content or ""):
-                            obj = _parse_json_or_literal(chunk)
-                            if isinstance(obj, dict) and ("reply" in obj or "keep" in obj):
-                                curated = obj
-                                break
-                        if curated is not None:
-                            reply = str(curated.get("reply") or "").strip()
-                            keep = curated.get("keep")
-                            keep = [str(k) for k in keep] if isinstance(keep, list) else []
-                            return finalize(reply or "Here's what I'd go with 😊", keep_names=keep)
-                        # Model didn't return JSON — show what we found with its prose.
-                        return finalize(content or "Pulled together some options — take a look below 😊")
+                        return curate_then_finalize("Pulled together some options — take a look below 😊")
                     # No results from direct search -> fall through to the agentic loop.
 
     json_corrections = 0
@@ -4465,9 +4490,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         if partial:
             return finalize(partial)
         if results:
-            return finalize(
-                "Got some options for you — took me a sec longer than usual, but they're below 😊"
-            )
+            return curate_then_finalize("Got some options for you — they're below 😊")
         if cart_actions:
             return finalize("Done — cart's updated 👍")
         return finalize(
@@ -4505,7 +4528,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 search_retries += 1
                 messages.append({"role": "user", "content": FORCE_SEARCH_NUDGE})
                 continue
-            return finalize(content)
+            # If we have product results, the model curates which cards to show
+            # (its reject step). A pure reply with no results just goes through.
+            return curate_then_finalize(content) if results else finalize(content)
 
         if allow_questions:
             ask_call = next((c for c in norm if c["name"] == "ask_user"), None)
@@ -4597,7 +4622,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 })
 
     if results:
-        return finalize("Pulled together some options — take a look below 😊")
+        return curate_then_finalize("Pulled together some options — take a look below 😊")
     if cart_actions:
         return finalize("Done — cart's updated 👍")
     return finalize(
