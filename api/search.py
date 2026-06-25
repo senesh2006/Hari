@@ -3205,7 +3205,7 @@ class NimTimeout(Exception):
     """Transient NIM failure — degrade gracefully instead of 502."""
 
 
-def nim_chat(messages: list, tools: list, timeout: float | None = None) -> dict:
+def nim_chat(messages: list, tools: list, timeout: float | None = None, response_format=None) -> dict:
     if not NIM_API_KEY:
         raise PermissionError(
             "NVIDIA_API_KEY is not set. Add it in your Vercel project's "
@@ -3220,6 +3220,8 @@ def nim_chat(messages: list, tools: list, timeout: float | None = None) -> dict:
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
+    if response_format:
+        payload["response_format"] = response_format
 
     req = urllib.request.Request(
         f"{NIM_BASE_URL}/chat/completions",
@@ -4344,19 +4346,27 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             lines.append(f"{i}. {p.get('name')} — {p.get('currency') or 'LKR'} {p.get('price')}. {desc}")
         cur_msgs = messages + [{
             "role": "user",
-            "content": "Candidate products found:\n" + "\n".join(lines)
+            "content": "Candidate products found (numbered):\n" + "\n".join(lines)
             + "\n\nAs the concierge, SCORE these against everything the user needs — recipient, occasion, "
             "relationship, budget, and ANY dietary/allergy or other constraint they mentioned — and REJECT every "
-            "poor, unsafe, over-budget, or irrelevant one. Reply with ONLY JSON: "
-            '{"reply":"1-3 warm sentences; name your top pick and why, and note what you skipped and why",'
-            '"keep":[<the numbers to show, best first>]}. Keep only ones that truly fit (usually 1-4); if none are '
-            "safe/appropriate use an empty list and say so kindly. Do NOT call tools.",
+            "poor, unsafe, over-budget, or irrelevant one. The product CARDS render below your reply with full "
+            "details and prices, so do NOT list products or prices in your reply. Respond with ONLY a JSON object: "
+            '{"keep": [<the item NUMBERS to show as cards, best first>], '
+            '"reply": "1-2 warm sentences — name your single top pick and why it fits, and briefly note what you '
+            'skipped and why. No numbered list, no prices."}. '
+            "Keep only items that truly fit (usually 1-4). If none are safe/appropriate, keep:[] and say so kindly.",
         }]
-        try:
-            completion = nim_chat(cur_msgs, [], timeout=min(NIM_TIMEOUT, ans_rem))
-            content = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-        except NimTimeout:
-            content = ""
+        content = ""
+        for rf in ({"type": "json_object"}, None):
+            try:
+                completion = nim_chat(cur_msgs, [], timeout=min(NIM_TIMEOUT, ans_rem), response_format=rf)
+                content = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+                break
+            except NimTimeout:
+                content = ""
+                break
+            except Exception:
+                continue  # response_format unsupported on this endpoint -> retry without
         obj = None
         for chunk in _extract_balanced_objects(content):
             o = _parse_json_or_literal(chunk)
