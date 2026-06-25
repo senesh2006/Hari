@@ -1,23 +1,17 @@
-/* Kapruka — Effects: soft shadows, easings, and the linen-paper background.
-   v2 drops the glass/blobs for warm, diffuse "pillow" shadows and a calm
-   paper-textured canvas with two slow-breathing pastel glows. */
+/* Hari — Effects: shadows, easings, paper grain */
 :root {
-  /* ---- Soft elevation (warm, diffuse — built from themed --shadow-color) ---- */
-  --shadow-sm:   0 1px 2px var(--shadow-color), 0 2px 8px color-mix(in srgb, var(--shadow-color) 55%, transparent);
-  --shadow:      0 6px 20px var(--shadow-color);
-  --shadow-lg:   0 18px 50px var(--shadow-color);
-  --shadow-card: 0 12px 34px var(--shadow-color);
+  --shadow-sm:   0 1px 2px var(--shadow-color), 0 4px 12px color-mix(in srgb, var(--shadow-color) 50%, transparent);
+  --shadow:      0 8px 24px var(--shadow-color);
+  --shadow-lg:   0 20px 56px var(--shadow-color);
+  --shadow-card: 0 14px 40px var(--shadow-color);
 
-  /* CTA shadows tint with the coral primary */
-  --shadow-btn:       0 5px 16px color-mix(in srgb, var(--primary) 38%, transparent); /* @kind shadow */
-  --shadow-btn-hover: 0 9px 24px color-mix(in srgb, var(--primary) 50%, transparent); /* @kind shadow */
+  --shadow-btn:       0 4px 14px color-mix(in srgb, var(--primary) 35%, transparent);
+  --shadow-btn-hover: 0 8px 22px color-mix(in srgb, var(--primary) 45%, transparent);
 
-  /* ---- Easings ---- */
-  --ease-out:    cubic-bezier(0.23, 1, 0.32, 1);     /* @kind other */
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);     /* @kind other */
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);  /* @kind other */
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);     /* @kind other */
+  --ease-out:    cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 
-  /* Linen paper grain (inline SVG turbulence — no asset needed) */
-  --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); /* @kind other */
+  --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }

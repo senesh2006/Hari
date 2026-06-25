@@ -809,8 +809,12 @@ def extract_session_facts(
     last_user: str,
     answer: str,
     existing: dict | None,
+    scenario_reset: bool = False,
 ) -> dict:
     facts = dict(existing or {})
+    if scenario_reset:
+        for key in ("recipient_profile", "recipient", "occasion", "constraints", "tone", "bullets"):
+            facts.pop(key, None)
     text = f"{last_user} {answer}".lower()
     occasion = detect_occasion(last_user) or detect_occasion(answer)
     if occasion:
@@ -1537,11 +1541,18 @@ def _items_discussed(conversation: list | None, current_text: str | None = None)
     return found[:6]
 
 
-def _persisted_recipient_profile(profile: dict | None) -> dict:
+def _persisted_recipient_profile(profile: dict | None, current_text: str | None = None) -> dict:
     """The recipient profile saved across sessions (set by extract_session_facts)."""
     facts = (profile or {}).get("session_facts") or {}
     rp = facts.get("recipient_profile") if isinstance(facts, dict) else None
-    return rp if isinstance(rp, dict) else {}
+    if not isinstance(rp, dict) or not rp:
+        return {}
+    if current_text:
+        cur = _recipient_token(current_text)
+        stored = _recipient_token(str(rp.get("recipient") or ""))
+        if cur and stored and cur != stored:
+            return {}
+    return rp
 
 
 def conversation_memory_message(
@@ -1555,7 +1566,7 @@ def conversation_memory_message(
     mem = _extract_session_memory(conversation, current_text)
     # Cross-session recall: fill gaps this chat hasn't re-established from the
     # recipient profile saved for signed-in users.
-    persisted = _persisted_recipient_profile(profile)
+    persisted = _persisted_recipient_profile(profile, current_text)
     recalled = not mem.get("recipient") and not _session_has_specifics(mem)
     for key in ("recipient", "age", "color", "style", "taste"):
         if not mem.get(key) and persisted.get(key):
@@ -1880,7 +1891,9 @@ def _should_search_first(
     if occ:
         if occ == "apology":
             return _message_has_taste_hints(text)
-        return True
+        if _has_search_ready_context(text):
+            return True
+        return False
 
     if _has_search_ready_context(text):
         return True
@@ -1891,22 +1904,6 @@ def _should_search_first(
     facts = (profile or {}).get("session_facts") or {}
     if isinstance(facts, dict) and facts.get("constraints"):
         return True
-
-    if _EMOTIONAL_URGENCY_RE.search(low) and not _RECIPIENT_RE.search(low):
-        return True
-
-    has_recipient = bool(_RECIPIENT_RE.search(low))
-    has_gift_intent = bool(re.search(
-        r"\b(gift|birthday|anniversary|flowers|cake|hamper|bouquet|present|something for)\b",
-        low,
-        re.I,
-    ))
-    if has_recipient and has_gift_intent:
-        return True
-
-    if has_recipient and profile and profile.get("default_budget"):
-        if re.search(r"\b(gift|something|help|ideas|suggest|need)\b", low, re.I):
-            return True
 
     return False
 
@@ -3330,6 +3327,14 @@ NOT close.
 THIS relationship? A near-stranger or a crush is HIGH risk: avoid couple gifts, jewellery, expensive watches, \
 perfume, and anything romantic — prefer small, casual, low-pressure picks. A boss/client is PROFESSIONAL: neutral, \
 tasteful, never personal. Sombre occasions: never cake/balloons/celebration.
+
+EXAMPLES (study these failures):
+- Childhood friend + 10-year reunion + watches + meaningful-not-emotional → collector/practical angle, NOT generic \
+"watch" search; prefer display box, strap, streetwear accessory; avoid cheesy sentimental plaques.
+- University crush + LKR 5000 + barely talked → HIGH risk; avoid couple watches, jewellery, perfume; prefer casual \
+low-pressure (snack box, book, mug, small plant) under budget.
+- Wife + loves chocolate + diabetic + peanut allergy → goal is love/special, NOT medical supplements; search \
+sugar-free/diabetic-safe chocolate and safe treats; reject peanut items and random health products.
 7. GIFT CATEGORY — first pick the TYPE that fits, then the product: experience, accessory, personalized, luxury, \
 practical, sentimental, tech, fashion, or food. Don't go straight from a keyword to a search.
 
@@ -3461,6 +3466,19 @@ def strategy_message(strategy: dict | None) -> str | None:
         )
     if strategy.get("explain_hint"):
         lines.append(f"- Explain like this: {strategy['explain_hint']}")
+    goal = strategy.get("gifting_goal")
+    if goal:
+        lines.append(f"- Gifting goal: {goal}")
+    avoid = strategy.get("avoid")
+    if isinstance(avoid, list) and avoid:
+        kept = [str(a).strip() for a in avoid if str(a).strip()]
+        if kept:
+            lines.append(f"- AVOID showing: {', '.join(kept)}")
+    prefer = strategy.get("prefer")
+    if isinstance(prefer, list) and prefer:
+        kept = [str(p).strip() for p in prefer if str(p).strip()]
+        if kept:
+            lines.append(f"- PREFER: {', '.join(kept)}")
     lines.append(
         "- CURATE, don't dump: present only the best 1–3 on-strategy items, not everything returned. It's good to "
         "say you filtered (e.g. 'found a bunch but these two fit best') and to name your top pick with a one-line "
@@ -3468,6 +3486,89 @@ def strategy_message(strategy: dict | None) -> str | None:
         "Keep it warm and short; the cards show the details and prices."
     )
     return "\n".join(lines)
+
+
+def _prefilter_by_strategy(products: list, strategy: dict | None) -> list:
+    """Drop obvious strategy violations before LLM curation."""
+    if not strategy or not products:
+        return products
+    avoid = [str(a).lower() for a in (strategy.get("avoid") or []) if str(a).strip()]
+    if not avoid:
+        return products
+    kept = []
+    for p in products:
+        blob = _norm_text(f"{p.get('name')} {p.get('description')}")
+        if any(a in blob for a in avoid):
+            continue
+        kept.append(p)
+    return kept if kept else products
+
+
+def _needs_input_response(
+    *,
+    last_user: str,
+    user_en: str,
+    target_lang: str | None,
+    tool_names: list,
+    questions: list,
+    intro: str | None = None,
+    tr_timeout: float = 18.0,
+) -> dict:
+    qs = questions[:3]
+    local_qs = qs
+    if target_lang and qs:
+        joined = _translate("\n".join(qs), "en", target_lang, tr_timeout)
+        parts = [p.strip() for p in joined.split("\n") if p.strip()]
+        local_qs = parts if len(parts) == len(qs) else qs
+    intro_en = (intro or "").strip()
+    intro_local = intro_en
+    if target_lang and intro_en:
+        intro_local = _translate(intro_en, "en", target_lang, tr_timeout) or intro_en
+    return {
+        "ok": True,
+        "needs_input": True,
+        "query": last_user,
+        "model": NIM_MODEL,
+        "answer": intro_en,
+        "answer_local": intro_local,
+        "questions": qs,
+        "questions_local": local_qs,
+        "user_en": user_en,
+        "tools_available": tool_names,
+    }
+
+
+def _run_strategy_searches(
+    strategy: dict,
+    tools: list,
+    deadline: float,
+    results: list,
+    trace: list,
+) -> bool:
+    """Execute strategy search_queries in parallel. Returns True if any results."""
+    queries = [str(q).strip() for q in (strategy.get("search_queries") or []) if str(q).strip()][:5]
+    if not queries or (deadline - time.monotonic()) < (MIN_ROUND_SECONDS + 4):
+        return False
+    try:
+        tool_name = _resolve_search_tool_name(tools)
+        search_until = time.monotonic() + max(6.0, min(22.0, (deadline - time.monotonic()) - 14))
+        with ThreadPoolExecutor(max_workers=min(5, len(queries))) as ex:
+            futs = {ex.submit(_one_strategy_search, q, tool_name): q for q in queries}
+            for fut in futs:
+                rem = search_until - time.monotonic()
+                if rem <= 0:
+                    break
+                try:
+                    out = fut.result(timeout=rem)
+                except Exception:
+                    out = ""
+                if out:
+                    qq = futs[fut]
+                    results.append({"tool": tool_name, "arguments": {"q": qq}, "output": out})
+                    trace.append({"tool": tool_name, "arguments": {"q": qq}})
+    except Exception:
+        return False
+    return bool(results)
 
 
 def _resolve_search_tool_name(tools: list) -> str:
@@ -3763,11 +3864,12 @@ def _persist_session_facts(
     conversation: list,
     last_user: str,
     answer: str,
+    scenario_reset: bool = False,
 ) -> None:
     if not token or not uid or not answer:
         return
     new_facts = extract_session_facts(
-        conversation, last_user, answer, profile.get("session_facts") or {}
+        conversation, last_user, answer, profile.get("session_facts") or {}, scenario_reset=scenario_reset
     )
     try:
         _patch_profile(token, uid, {"session_facts": new_facts})
@@ -4338,6 +4440,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         # No searching when recommending from on-screen suggestions.
         valid_names = set(CART_TOOL_NAMES)
 
+    reserve = 8 if target_lang else 0
+    curation_deadline = t0 + max(20.0, SEARCH_BUDGET - reserve)
+    deadline = max(t0 + 12.0, curation_deadline - CURATION_RESERVE)
+    active_strategy = None
+
     # Concrete interests the result should actually be about (e.g. "ramen").
     # For "show me more" we want DIFFERENT items, so skip interest grounding.
     salient_terms = set() if more_request else _salient_want_terms(conv, user_en)
@@ -4357,7 +4464,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         return max(3.0, min(TRANSLATE_TIMEOUT, t0 + SEARCH_BUDGET - time.monotonic()))
 
     def finalize(answer: str, keep_names: list | None = None) -> dict:
-        products = extract_products(results)
+        products = _prefilter_by_strategy(extract_products(results), active_strategy)
         if already_shown:
             products = [p for p in products if _norm_text(p.get("name")) not in already_shown]
         # When the model curated which items to show (its scoring/rejection step),
@@ -4388,7 +4495,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 answer = HONEST_NO_MATCH_FALLBACK.format(terms=", ".join(sorted(missed)))
         local = _translate(answer, "en", target_lang, _tr_timeout()) if (target_lang and answer) else answer
         if uid and profile and answer:
-            _persist_session_facts(access_token, uid, profile, conv, user_en, answer)
+            _persist_session_facts(
+                access_token, uid, profile, conv, user_en, answer, scenario_reset=scenario_reset
+            )
         return {
             "ok": True,
             "query": last_user,
@@ -4417,7 +4526,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         """The model scores the found products and picks which to show (its reject
         step) — pure LLM, no keyword filters. On failure, show NO unvetted cards
         rather than risk an unsafe/over-budget item."""
-        prods = extract_products(results)
+        prods = _prefilter_by_strategy(extract_products(results), active_strategy)
         if already_shown:
             prods = [p for p in prods if _norm_text(p.get("name")) not in already_shown]
         if not prods:
@@ -4432,19 +4541,27 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         for i, p in enumerate(prods[:24], 1):
             desc = (p.get("description") or "")[:110]
             lines.append(f"{i}. {p.get('name')} — {p.get('currency') or 'LKR'} {p.get('price')}. {desc}")
+        strat_ctx = ""
+        if active_strategy:
+            sm = strategy_message(active_strategy)
+            if sm:
+                strat_ctx = "\n\n" + sm
+            if budget_ceiling:
+                strat_ctx += f"\nBudget ceiling: LKR {budget_ceiling:,.0f} — reject over-budget items."
         cur_msgs = messages + [{
             "role": "user",
             "content": "Candidate products found (numbered):\n" + "\n".join(lines)
+            + strat_ctx
             + "\n\nAs the concierge, SCORE each on: relationship fit, occasion fit, interest fit, budget fit, "
             "constraint SAFETY (allergy/dietary/etc.), social appropriateness, and gift quality. REJECT every poor, "
             "unsafe, over-budget, or irrelevant one — never keep a product just because it was returned. RANK the "
             "survivors best-first. The product CARDS render below your reply with full details and prices, so do NOT "
             "list products or prices in your reply. Respond with ONLY a JSON object: "
             '{"keep": [<item NUMBERS to show, RANKED best first>], '
-            '"reply": "lead with your #1 best match by name and one line on why it fits the relationship/occasion/'
-            'goal, then (if relevant) one line on what you skipped and why. 2-3 warm sentences, no numbered list, '
-            'no prices."}. Keep only items that truly fit (usually 1-4). If none are safe/appropriate, keep:[] and '
-            "say so kindly.",
+            '"reply": "Start by showing you understand the relationship and occasion in one warm line. Then lead with '
+            'your #1 best match (🥇) by name and one line on why it fits the relationship/occasion/goal. If relevant, '
+            'one line on what you skipped and why. 2-3 warm sentences total, no numbered list, no prices."}. '
+            "Keep only items that truly fit (usually 1-4). If none are safe/appropriate, keep:[] and say so kindly.",
         }]
         content = ""
         for rf in ({"type": "json_object"}, None):
@@ -4489,110 +4606,63 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         return finalize(reply or fallback_answer, keep_names=keep_names)
 
     def ask(questions: list, intro: str | None = None) -> dict:
-        qs = questions[:3]
-        local_qs = qs
-        if target_lang and qs:
-            joined = _translate("\n".join(qs), "en", target_lang, _tr_timeout())
-            parts = [p.strip() for p in joined.split("\n") if p.strip()]
-            local_qs = parts if len(parts) == len(qs) else qs
-        intro_en = (intro or "").strip()
-        intro_local = intro_en
-        if target_lang and intro_en:
-            intro_local = _translate(intro_en, "en", target_lang, _tr_timeout()) or intro_en
-        return {
-            "ok": True,
-            "needs_input": True,
-            "query": last_user,
-            "model": NIM_MODEL,
-            "answer": intro_en,
-            "answer_local": intro_local,
-            "questions": qs,
-            "questions_local": local_qs,
-            "user_en": user_en,
-            "tools_available": tool_names,
-        }
+        return _needs_input_response(
+            last_user=last_user,
+            user_en=user_en,
+            target_lang=target_lang,
+            tool_names=tool_names,
+            questions=questions,
+            intro=intro,
+            tr_timeout=_tr_timeout(),
+        )
 
     if hamper_question:
         intro, question = _hamper_pref_question()
         return ask([question], intro=intro)
 
-    if taste_question:
-        return ask([_repair_taste_question(user_en)], intro=_repair_ask_intro(user_en))
-
-    if clarify_question:
-        intro, question = _clarification_ask(user_en)
-        return ask([question], intro=intro)
-
-    if recipient_discovery:
-        intro, question = _recipient_discovery_ask(user_en)
-        return ask([question], intro=intro)
-
-    if budget_question:
-        intro, question = _budget_ask(profile)
-        return ask([question], intro=intro)
-
-    # Reserve a little tail for the outbound translation; anchor to t0 so any
-    # time already spent on translation/context shortens the loop, not the budget.
-    reserve = 8 if target_lang else 0
-    # The whole-request deadline, and an earlier search deadline that leaves a
-    # guaranteed slice for the curation step so it never runs out of time.
-    curation_deadline = t0 + max(20.0, SEARCH_BUDGET - reserve)
-    deadline = max(t0 + 12.0, curation_deadline - CURATION_RESERVE)
-
-    # === Gift strategy layer ====================================================
-    # Synthesize the gathered context into an explicit ANGLE + concrete queries,
-    # then EXECUTE those queries directly (parallel searches + one answer call)
-    # instead of a slow multi-round agentic loop — faster, and it can't run past
-    # the budget. Falls back to the agentic loop on any miss, so it never breaks search.
+    # === Strategy-first: recipient profile → gifting strategy → search → curate ===
     will_strategize = (
         STRATEGY_ENABLED
         and not direct_request and not pick_best and not hamper_request and not more_request
-        and (search_first or bool(repair_interests) or _is_repair_follow_up(conv, user_en))
     )
     if will_strategize:
         strat_timeout = min(STRATEGY_TIMEOUT, (deadline - time.monotonic()) - (MIN_ROUND_SECONDS + 14))
         if strat_timeout >= 5:
             try:
-                strategy = build_gift_strategy(
+                active_strategy = build_gift_strategy(
                     conv, [profile_message(profile)] + extra_ctx, user_en, timeout=strat_timeout
                 )
             except Exception:
-                strategy = None
-            if strategy:
-                # The strategy may want ONE sharpening question before searching
-                # (e.g. "luxury, smart, or fashion watches?") — ask it if allowed.
-                clarify = str(strategy.get("clarify_question") or "").strip()
+                active_strategy = None
+            if active_strategy:
+                trace.append({"tool": "gift_strategy", "arguments": active_strategy})
+                clarify = str(active_strategy.get("clarify_question") or "").strip()
                 if clarify and ask_allowed and not _last_assistant_was_question(conv):
-                    return ask([clarify])
-                strat_msg = strategy_message(strategy)
+                    intro = str(active_strategy.get("explain_hint") or "").strip() or None
+                    return ask([clarify], intro=intro)
+                strat_msg = strategy_message(active_strategy)
                 if strat_msg:
                     messages.append({"role": "system", "content": strat_msg})
-                    trace.append({"tool": "gift_strategy", "arguments": strategy})
-                # Run the strategy's queries directly (parallel), then one answer call.
-                queries = [str(q).strip() for q in (strategy.get("search_queries") or []) if str(q).strip()][:5]
-                if queries and (deadline - time.monotonic()) >= (MIN_ROUND_SECONDS + 4):
-                    try:
-                        tool_name = _resolve_search_tool_name(tools)
-                        search_until = time.monotonic() + max(6.0, min(22.0, (deadline - time.monotonic()) - 14))
-                        with ThreadPoolExecutor(max_workers=min(5, len(queries))) as ex:
-                            futs = {ex.submit(_one_strategy_search, q, tool_name): q for q in queries}
-                            for fut in futs:
-                                rem = search_until - time.monotonic()
-                                if rem <= 0:
-                                    break
-                                try:
-                                    out = fut.result(timeout=rem)
-                                except Exception:
-                                    out = ""
-                                if out:
-                                    qq = futs[fut]
-                                    results.append({"tool": tool_name, "arguments": {"q": qq}, "output": out})
-                                    trace.append({"tool": tool_name, "arguments": {"q": qq}})
-                    except Exception:
-                        pass
-                    if results:
-                        return curate_then_finalize("Pulled together some options — take a look below 😊")
-                    # No results from direct search -> fall through to the agentic loop.
+                if _run_strategy_searches(active_strategy, tools, deadline, results, trace):
+                    hint = str(active_strategy.get("explain_hint") or "").strip()
+                    return curate_then_finalize(
+                        hint or "Pulled together some options — take a look below 😊"
+                    )
+
+    if taste_question and not active_strategy:
+        return ask([_repair_taste_question(user_en)], intro=_repair_ask_intro(user_en))
+
+    if clarify_question and not active_strategy:
+        intro, question = _clarification_ask(user_en)
+        return ask([question], intro=intro)
+
+    if recipient_discovery and not active_strategy:
+        intro, question = _recipient_discovery_ask(user_en)
+        return ask([question], intro=intro)
+
+    if budget_question and not active_strategy:
+        intro, question = _budget_ask(profile)
+        return ask([question], intro=intro)
 
     json_corrections = 0
     max_json_corrections = 2
@@ -4797,6 +4867,7 @@ class handler(BaseHTTPRequestHandler):
             "instructions": data.get("instructions") or [],
             "language": data.get("language"),
             "access_token": data.get("access_token"),
+            "budget": data.get("budget"),
         }
         self._run(
             conversation,

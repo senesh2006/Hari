@@ -1,80 +1,77 @@
-/* Kapruka — Color system  (v2: friendly soft pastel, light + dark)
-   Dark is the DEFAULT theme (:root). Add data-theme="light" on <html> for light.
-   Accent hues stay constant across themes; only surfaces/text/borders/shadow
-   and a couple of "ink" accents flip. A warm, gift-shop palette — soft coral
-   lead with pastel occasion accents (mint, lilac, butter, sky, blush). */
+/* Hari — Color system
+   Deep warm charcoal canvas, coral + violet accents, gift-shop warmth. */
 
 :root {
-  /* ===== Accent hues — shared by both themes ===== */
-  --c-coral:  #ff8a72;   /* brand warm */
-  --c-mint:   #5fc9b5;
-  --c-lilac:  #a48fe0;
-  --c-butter: #e6b24d;
-  --c-sky:    #6bb0ee;
-  --c-blush:  #ee8fb0;
+  --c-coral:  #ff7a62;
+  --c-mint:   #4ec4ad;
+  --c-lilac:  #a78bfa;
+  --c-butter: #e8a84a;
+  --c-sky:    #5ba3e8;
+  --c-blush:  #f472b6;
 
-  /* Semantic status (soft, friendly) */
-  --ok:  #54b978;
-  --bad: #ec6a6a;
+  --ok:  #4ade80;
+  --bad: #f87171;
 
-  /* ===== DARK theme (default) ===== */
-  --bg:        #221c28;   /* warm plum-charcoal canvas */
-  --bg-soft:   #2a2331;
-  --surface:   #2f2836;   /* cards, drawers */
-  --surface-2: #392f42;   /* inset fields */
-  --surface-3: #453a50;   /* chips, pills, hover */
+  /* Dark (default) */
+  --bg:        #0f0d12;
+  --bg-soft:   #16131a;
+  --surface:   #1c1822;
+  --surface-2: #252029;
+  --surface-3: #2e2935;
 
-  --text:  #f4eff3;
-  --muted: #beb2c6;
-  --faint: #8c8096;
+  --text:  #f5f0f4;
+  --muted: #a89aad;
+  --faint: #6f6478;
 
-  --border:   rgba(255,255,255,.10);
-  --border-2: rgba(255,255,255,.055);
+  --border:   rgba(255,255,255,.08);
+  --border-2: rgba(255,255,255,.04);
 
-  /* Coral primary — pastel fill with deep warm ink (friendly + accessible) */
-  --primary:        #ff9e8a;   /* brand hue: icon tints, accents */
-  --primary-soft:   #f7a593;   /* button fill */
-  --primary-strong: #ffb39f;   /* hover fill (lighter on dark) */
-  --on-primary:     #3a1c14;   /* text on coral */
-  --ink-accent:     #ffb39f;   /* links / price text on dark */
+  --primary:        #ff8f7a;
+  --primary-soft:   #ff9a88;
+  --primary-strong: #ffb0a0;
+  --on-primary:     #2a1210;
+  --ink-accent:     #ffb0a0;
 
-  /* Effects helpers (consumed in effects.css) */
-  --shadow-color: rgba(0,0,0,.45);
-  --ring:         color-mix(in srgb, var(--primary) 40%, transparent);
-  --glow-1: rgba(255,150,120,.16);   /* warm coral bg glow */
-  --glow-2: rgba(160,143,224,.14);   /* lilac bg glow */
-  --paper-opacity: 0.05; /* @kind other */
-  --paper-blend:   soft-light; /* @kind other */
+  --accent-violet: #a78bfa;
+  --grad-brand: linear-gradient(135deg, var(--c-coral) 0%, var(--c-lilac) 100%);
+  --grad-soft: linear-gradient(160deg, rgba(255,122,98,.12) 0%, rgba(167,139,250,.10) 100%);
+
+  --shadow-color: rgba(0,0,0,.5);
+  --ring:         color-mix(in srgb, var(--primary) 38%, transparent);
+  --glow-1: rgba(255,122,98,.14);
+  --glow-2: rgba(167,139,250,.12);
+  --paper-opacity: 0.04;
+  --paper-blend:   soft-light;
 
   color-scheme: dark;
 }
 
 [data-theme="light"] {
-  --bg:        #fbf5ef;   /* warm linen */
-  --bg-soft:   #f6ece2;
+  --bg:        #faf7f4;
+  --bg-soft:   #f3ece6;
   --surface:   #ffffff;
-  --surface-2: #fbf3eb;
-  --surface-3: #f4e9de;
+  --surface-2: #faf5f0;
+  --surface-3: #f0e8e0;
 
-  --text:  #322a30;
-  --muted: #6e6068;
-  --faint: #9c8d96;
+  --text:  #1a1418;
+  --muted: #6b5f68;
+  --faint: #9a8d96;
 
-  --border:   rgba(80,50,45,.12);
-  --border-2: rgba(80,50,45,.06);
+  --border:   rgba(40,25,35,.10);
+  --border-2: rgba(40,25,35,.05);
 
   --primary:        #e85c42;
-  --primary-soft:   #ffb6a2;
-  --primary-strong: #ff9e86;
-  --on-primary:     #48190e;
-  --ink-accent:     #d2563c;
+  --primary-soft:   #ff9a88;
+  --primary-strong: #ff8268;
+  --on-primary:     #fff;
+  --ink-accent:     #c94a32;
 
-  --shadow-color: rgba(150,110,90,.20);
-  --ring:         color-mix(in srgb, var(--primary) 32%, transparent);
-  --glow-1: rgba(255,180,150,.50);
-  --glow-2: rgba(190,170,235,.40);
-  --paper-opacity: 0.55; /* @kind other */
-  --paper-blend:   multiply; /* @kind other */
+  --shadow-color: rgba(120,80,60,.14);
+  --ring:         color-mix(in srgb, var(--primary) 28%, transparent);
+  --glow-1: rgba(255,160,130,.35);
+  --glow-2: rgba(180,150,240,.28);
+  --paper-opacity: 0.45;
+  --paper-blend:   multiply;
 
   color-scheme: light;
 }

@@ -1,6 +1,4 @@
-/* Kapruka — Base element styles, theme canvas & helpers  (v2)
-   A bare page already looks "Kapruka": warm paper canvas, two soft breathing
-   pastel glows, friendly type. Works in light & dark (dark default). */
+/* Hari — Base element styles & canvas */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
@@ -15,7 +13,6 @@ body {
   position: relative;
 }
 
-/* Linen-paper grain overlay — fixed, ultra-subtle, themed opacity & blend */
 body::before {
   content: "";
   position: fixed;
@@ -28,21 +25,20 @@ body::before {
   mix-blend-mode: var(--paper-blend);
 }
 
-/* Two soft pastel glows that slowly breathe behind everything */
 body::after {
   content: "";
   position: fixed;
-  inset: -20%;
+  inset: -15%;
   z-index: -3;
   pointer-events: none;
   background:
-    radial-gradient(40% 38% at 22% 18%, var(--glow-1), transparent 70%),
-    radial-gradient(44% 40% at 82% 78%, var(--glow-2), transparent 72%);
-  animation: k-bg-breathe 16s var(--ease-in-out) infinite;
+    radial-gradient(45% 40% at 15% 12%, var(--glow-1), transparent 68%),
+    radial-gradient(42% 38% at 88% 85%, var(--glow-2), transparent 70%);
+  animation: k-bg-breathe 20s var(--ease-in-out) infinite;
 }
 @keyframes k-bg-breathe {
-  0%, 100% { transform: scale(1) translate(0, 0); opacity: .92; }
-  50%      { transform: scale(1.12) translate(2%, -2%); opacity: 1; }
+  0%, 100% { transform: scale(1) translate(0, 0); opacity: .88; }
+  50%      { transform: scale(1.08) translate(1.5%, -1.5%); opacity: 1; }
 }
 
 h1, h2, h3, h4 {
@@ -53,17 +49,15 @@ h1, h2, h3, h4 {
   line-height: var(--leading-tight);
 }
 
-a { color: var(--ink-accent); text-underline-offset: 2px; }
+a { color: var(--ink-accent); text-underline-offset: 3px; }
 
-::selection { background: color-mix(in srgb, var(--primary) 34%, transparent); }
+::selection { background: color-mix(in srgb, var(--primary) 30%, transparent); }
 
-/* Soft, contained scrollbars */
 * { scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent; }
-*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
 *::-webkit-scrollbar-track { background: transparent; }
 
-/* Honor reduced-motion everywhere */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .001ms !important;

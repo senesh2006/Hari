@@ -1,11 +1,9 @@
-/* Kapruka — Typography tokens  (v2)
-   Nunito (rounded, warm) for display; Nunito Sans for body & UI. Friendly and
-   approachable without being childish. */
+/* Hari — Typography tokens */
 :root {
-  --font-display: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-body:    "Nunito Sans", "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body:    "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif:   "Instrument Serif", Georgia, "Times New Roman", serif;
 
-  /* Type scale (rem) */
   --text-xs:   0.74rem;
   --text-sm:   0.83rem;
   --text-base: 0.98rem;
@@ -15,17 +13,17 @@
   --text-2xl:  1.7rem;
   --text-3xl:  2.3rem;
 
-  /* Weights — Nunito carries weight well; headings are bold/extrabold */
   --weight-regular:  400;
-  --weight-medium:   600;
-  --weight-semibold: 700;
-  --weight-bold:     800;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+  --weight-extrabold: 800;
 
-  --leading-tight: 1.2;
-  --leading-snug:  1.38;
-  --leading-body:  1.6;
+  --leading-tight: 1.15;
+  --leading-snug:  1.35;
+  --leading-body:  1.62;
   --leading-chat:  1.65;
 
-  /* Rounded display sits at neutral tracking, slightly tight at large sizes */
-  --tracking-display: -0.005em;
+  --tracking-display: -0.02em;
+  --tracking-tight:   -0.03em;
 }
