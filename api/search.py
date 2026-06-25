@@ -4323,6 +4323,16 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "tools_available": tool_names,
             "tool_calls": trace,
             "results": results,
+            "debug": {
+                "raw_found": len(extract_products(results)),
+                "shown": len(products),
+                "had_strategy": any(t.get("tool") == "gift_strategy" for t in trace),
+                "searches": [
+                    (t.get("arguments") or {}).get("q")
+                    for t in trace
+                    if "search" in str(t.get("tool") or "")
+                ],
+            },
         }
 
     def curate_then_finalize(fallback_answer: str) -> dict:
