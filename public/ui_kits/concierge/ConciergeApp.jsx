@@ -48,12 +48,44 @@ const normProduct = (p) => {
     rawPrice: raw,
     currency: cur,
     description: p.description || "",
-    image: p.image || "",
-    url: p.url || "",
+    image: p.image || p.image_url || "",
+    url: p.url || p.link || "",
     customizable: !!p.customizable,
     customization_type: p.customization_type || null,
     group: p.group || "",
   };
+};
+
+/** Fallback: pull product objects out of raw MCP tool results when the API
+ *  response omits the curated `products` array. */
+const extractProductsFromResults = (results) => {
+  const found = [];
+  const looksLike = (d) => {
+    if (!d || typeof d !== "object" || Array.isArray(d)) return false;
+    const name = d.name || d.title || d.product_name || d.productName;
+    if (!name) return false;
+    return d.price != null || d.amount != null || d.url || d.link || d.image || d.image_url;
+  };
+  const walk = (obj) => {
+    if (!obj || typeof obj !== "object") return;
+    if (Array.isArray(obj)) { obj.forEach(walk); return; }
+    if (looksLike(obj)) { found.push(normProduct(obj)); return; }
+    Object.values(obj).forEach(walk);
+  };
+  for (const r of results || []) {
+    let data = r?.output;
+    if (typeof data === "string") {
+      try { data = JSON.parse(data); } catch (_) { continue; }
+    }
+    walk(data);
+  }
+  const seen = new Set();
+  return found.filter((p) => {
+    const key = (p.url || p.name || "").toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 /** Group products by their `group` label, preserving first-seen order. Returns
  *  [{ label, items }]. */
@@ -136,6 +168,8 @@ const looksLikeProductRequest = (text) => {
 // Turns where the agent replies/asks rather than searching — show no skeletons.
 const REPLY_TURN_RE =
   /\b(mad at|angry|upset|fight|make (it )?up|messed up|apolog|sorry|forgot (our|the|anniversary)|what do (you|u) think|not sure|thinking about|which (is|one|of these)|best (one|option|pick|choice)|you (choose|pick|decide)|recommend|your (pick|favou?rite|choice))\b/i;
+const EXPLICIT_PRODUCTS_RE =
+  /(?:\bwhat gifts?\b|\bwhat (?:do|would|can) (?:you|u)\b).{0,48}\b(?:suggest(?:ions?)?|recommend(?:ations?)?|options?|ideas?|picks?)\b|\bshow me (?:some )?(?:options?|gifts?|ideas?|suggestions?|products?)\b|\b(?:any|some) (?:suggestions?|options?|ideas?|gifts?)\b|\bwhat should i (?:get|buy|gift)\b|\bgive me (?:some )?(?:ideas?|options?|suggestions?)\b/i;
 // Preference-rich categories that get a discovery question before searching.
 const PREF_RICH_HINT_RE =
   /\b(flowers?|bouquet|roses?|orchids?|cake|cakes|hamper|chocolates?|ramen|noodles?|tea|coffee|wine|snacks?|dress|dresses|saree|sari|outfit|clothing|shirt|skirt|suit|jewell?ery|necklace|pendant|earrings?|bracelet|ring|watch|watches|perfume|fragrance|cologne|handbag|purse|wallet|shoes?|spa|wellness|toy|toys|plant|plants|book|books)\b/i;
@@ -593,6 +627,7 @@ function App({
 
   const restoredRef = useRef(false);
   const feedRef = useRef(null);
+  const mainRef = useRef(null);
   const checkoutFormRef = useRef(null);
   const recogRef = useRef(null);
   const currentAudioRef = useRef(null);
@@ -809,8 +844,8 @@ function App({
   }, []);
 
   useEffect(() => {
-    const el = feedRef.current;
-    if (el && el.parentElement) el.parentElement.scrollTop = el.parentElement.scrollHeight;
+    const el = mainRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   useEffect(() => {
@@ -1008,6 +1043,7 @@ function App({
   };
   const expectProductsFor = (text) => {
     const t = (text || "").trim();
+    if (EXPLICIT_PRODUCTS_RE.test(t)) return true;
     if (!looksLikeProductRequest(t)) return false;          // greetings, cart, tracking…
     if (REPLY_TURN_RE.test(t)) return false;                // repair / opinion / pick-best → reply
     // Once products are on screen, "cheaper/premium/more" are refine-searches, not budget answers.
@@ -1117,8 +1153,11 @@ function App({
 
       if (data.ok) {
         if (Array.isArray(data.cart_actions) && data.cart_actions.length) await applyCartActions(data.cart_actions);
-        const products = Array.isArray(data.products) ? data.products.map(normProduct) : [];
-        if (products.length) setLastSuggestions(data.products);
+        let products = Array.isArray(data.products) ? data.products.map(normProduct) : [];
+        if (!products.length && Array.isArray(data.results)) {
+          products = extractProductsFromResults(data.results);
+        }
+        if (products.length) setLastSuggestions(data.products?.length ? data.products : products);
         const thought = products.length ? `Searched Kapruka · ${products.length} matches` : null;
         let display = data.answer_local || data.answer || "";
         if (products.length) {
@@ -1499,7 +1538,7 @@ function App({
         </div>
       </header>
 
-      <main>
+      <main ref={mainRef}>
         <div className="thread">
           {!started && messages.length <= 1 && (
             <div className="welcome-hero">
@@ -1531,7 +1570,7 @@ function App({
                     ))}
                   </div>
                 )}
-                {m.products && (() => {
+                {m.products?.length > 0 && (() => {
                   const groups = groupProducts(m.products);
                   const showHeaders = groups.length > 1;
                   let n = 0;
@@ -1554,7 +1593,7 @@ function App({
                     );
                   };
                   return (
-                    <div style={{ marginLeft: "2.4rem" }}>
+                    <div className="prod-wrap">
                       {groups.map((g) => (
                         <div key={g.label} className="prod-group">
                           {showHeaders && <h4 className="prod-group-label">{g.label}</h4>}

@@ -2195,6 +2195,32 @@ def _is_more_request(text: str) -> bool:
     return bool(_MORE_RE.search(text or ""))
 
 
+# --- "Show me gifts / what do you suggest" (after context is gathered) ----- #
+_EXPLICIT_PRODUCTS_RE = re.compile(
+    r"(?i)(?:\bwhat gifts?\b|\bwhat (?:do|would|can) (?:you|u)\b).{0,48}\b(?:suggest(?:ions?)?|recommend(?:ations?)?|options?|ideas?|picks?)\b"
+    r"|\bshow me (?:some )?(?:options?|gifts?|ideas?|suggestions?|products?)\b"
+    r"|\b(?:any|some) (?:suggestions?|options?|ideas?|gifts?)\b"
+    r"|\bwhat should i (?:get|buy|gift)\b"
+    r"|\bgive me (?:some )?(?:ideas?|options?|suggestions?)\b",
+)
+
+
+def _is_explicit_products_request(text: str, conversation: list | None) -> bool:
+    """User is explicitly asking to see gift options — search now, don't clarify."""
+    if not _EXPLICIT_PRODUCTS_RE.search(text or ""):
+        return False
+    blob = _recent_user_blob(conversation, text, n=6)
+    if _RECIPIENT_RE.search(blob) or detect_occasion(blob) or _has_search_ready_context(blob):
+        return True
+    for turn in conversation or []:
+        if turn.get("role") != "user":
+            continue
+        c = str(turn.get("content") or "")
+        if _RECIPIENT_RE.search(c) or detect_occasion(c):
+            return True
+    return False
+
+
 # --- "Pick the best of what's already shown" ------------------------------- #
 _PICK_BEST_RE = re.compile(
     r"\b(best (option|one|pick|choice|gift|of these)|"
@@ -4350,6 +4376,16 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     )
     if budget_question:
         search_first = False
+    explicit_products_request = _is_explicit_products_request(user_en, conv)
+    if explicit_products_request:
+        search_first = True
+        taste_question = False
+        clarify_question = False
+        recipient_discovery = False
+        budget_question = False
+        discover_first = False
+        force_search = True
+        allow_questions = False
     # Smart preference discovery. When there's an active preference-rich shopping
     # intent — a fresh search-ready message OR the user answering a question we
     # just asked (e.g. their budget reply) — but we don't yet know the
@@ -4483,6 +4519,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                     scored.append((idx, p))
             scored.sort(key=lambda t: t[0])
             products = [p for _, p in scored]
+            if not products:
+                # Curation names didn't match catalogue titles — show top finds.
+                products = _prefilter_by_strategy(extract_products(results), active_strategy)[:4]
         if products:
             answer = _strip_catalog_from_answer(answer, products)
             if not (answer or "").strip():
@@ -4581,6 +4620,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 obj = o
                 break
         if obj is None:
+            if prods:
+                return finalize(
+                    fallback_answer or "Pulled a few options — take a look below 😊",
+                    keep_names=[p.get("name") for p in prods[:4]],
+                )
             return finalize(
                 "Let me double-check these actually fit before showing them — mind resending? Was a touch slow my end 😊",
                 keep_names=[],
@@ -4597,9 +4641,14 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             elif isinstance(k, str):
                 keep_names.append(k)
         if not keep_names:
-            # The model rejected everything found — be honest, don't say "options below".
+            # Curation rejected everything — still show top picks so the user sees cards.
+            if prods:
+                return finalize(
+                    reply or "Pulled a few options — take a look below 😊",
+                    keep_names=[p.get("name") for p in prods[:4]],
+                )
             return finalize(
-                reply or "Hmm, nothing in what I found is a safe, on-budget fit for her. Want me to try a "
+                reply or "Hmm, nothing in what I found is a safe, on-budget fit. Want me to try a "
                 "different angle — a specific brand, or a non-food gift? 😊",
                 keep_names=[],
             )
@@ -4637,7 +4686,12 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             if active_strategy:
                 trace.append({"tool": "gift_strategy", "arguments": active_strategy})
                 clarify = str(active_strategy.get("clarify_question") or "").strip()
-                if clarify and ask_allowed and not _last_assistant_was_question(conv):
+                if (
+                    clarify
+                    and ask_allowed
+                    and not _last_assistant_was_question(conv)
+                    and not explicit_products_request
+                ):
                     intro = str(active_strategy.get("explain_hint") or "").strip() or None
                     return ask([clarify], intro=intro)
                 strat_msg = strategy_message(active_strategy)
