@@ -3660,6 +3660,40 @@ def _run_strategy_searches(
     return bool(results)
 
 
+def _salvage_search(
+    strategy: dict | None,
+    user_en: str,
+    tools: list,
+    results: list,
+    trace: list,
+    hard_deadline: float,
+) -> bool:
+    """Last-ditch fast product search when the main pipeline ran out of time
+    before finding anything.
+
+    The strategy + agent + curation pipeline is three sequential model calls; on
+    a slow upstream the agent loop can time out before it ever searches, leaving
+    the user with a dead-end "try again" message. This reuses whatever time is
+    left in the curation reserve to surface real Kapruka cards instead, using the
+    strategy's queries (if any) or the user's own words. Returns True if it found
+    anything."""
+    budget = (hard_deadline - time.monotonic()) - 9.0  # leave ~9s for curation
+    if budget < 5:
+        return False
+    queries = []
+    if strategy:
+        queries = [str(q).strip() for q in (strategy.get("search_queries") or []) if str(q).strip()]
+    if not queries and user_en and user_en.strip():
+        queries = [user_en.strip()]
+    queries = queries[:3]
+    if not queries:
+        return False
+    # _run_strategy_searches derives its window from (deadline - now) - 14, so
+    # offset the deadline we pass by +14 to grant exactly `budget` of search time.
+    search_deadline = time.monotonic() + budget + 14.0
+    return _run_strategy_searches({"search_queries": queries}, tools, search_deadline, results, trace)
+
+
 def _resolve_search_tool_name(tools: list) -> str:
     """The Kapruka product-search tool name (discovered at runtime)."""
     names = [str(t.get("name") or "") for t in (tools or [])]
@@ -4816,13 +4850,22 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     def degrade(partial: str | None = None) -> dict:
         if partial:
             return finalize(partial)
+        # The heavy pipeline ran out of time before finding anything — spend the
+        # leftover curation reserve on one fast direct search so the user still
+        # gets cards instead of a dead-end message that just re-triggers the same
+        # slow path when they resend.
+        if not results and not cart_actions:
+            try:
+                _salvage_search(active_strategy, user_en, tools, results, trace, curation_deadline)
+            except Exception:
+                pass
         if results:
             return curate_then_finalize("Got some options for you — they're below 😊")
         if cart_actions:
             return finalize("Done — cart's updated 👍")
         return finalize(
-            "Sorry, that took longer than I expected on my end. "
-            "Send your last message again and we'll pick up where we left off."
+            "I couldn't pull up good matches just now — tell me who it's for and a "
+            "rough budget and I'll get some options up for you. 😊"
         )
 
     for _ in range(MAX_TOOL_ROUNDS):
