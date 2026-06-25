@@ -17,7 +17,7 @@ const CHIPS = [
   { icon: "gift", tone: "butter", tx: "Under Rs 3000", prompt: "A nice gift and a card under Rs 3000" },
 ];
 const GREETING =
-  "Hi 😊 I'm Hari, your gift concierge. Who are we spoiling today? Tap the mic or type below.";
+  "Hi, I'm Hari. Who are we spoiling today? Tap the mic or type below.";
 const LANG_CODES = { en: "en-US", si: "si-LK", ta: "ta-LK" };
 const LANG_NAMES = { en: "English", si: "Sinhala", ta: "Tamil" };
 const UI_TEXT = {
@@ -1501,6 +1501,13 @@ function App({
 
       <main>
         <div className="thread">
+          {!started && messages.length <= 1 && (
+            <div className="welcome-hero">
+              <div className="welcome-mark"><Icon name="leaf" size={28} /></div>
+              <h2 className="welcome-title">Find the perfect gift</h2>
+              <p className="welcome-tag">Tell me who it's for and the occasion — I'll handle the rest.</p>
+            </div>
+          )}
           <div className="feed" ref={feedRef}>
             {messages.map((m) => (
               <div className="msg-in" key={m.id} style={{ display: "flex", flexDirection: "column" }}>
@@ -1596,7 +1603,7 @@ function App({
               onChange={(e) => setQuery(e.target.value)}
               type="text"
               autoComplete="off"
-              placeholder="Tell Hari what you're looking for…"
+              placeholder="Who are we spoiling today?"
             />
             <button
               type="button"
