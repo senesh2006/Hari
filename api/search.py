@@ -4389,6 +4389,13 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                     keep_names.append(prods[n].get("name"))
             elif isinstance(k, str):
                 keep_names.append(k)
+        if not keep_names:
+            # The model rejected everything found — be honest, don't say "options below".
+            return finalize(
+                reply or "Hmm, nothing in what I found is a safe, on-budget fit for her. Want me to try a "
+                "different angle — a specific brand, or a non-food gift? 😊",
+                keep_names=[],
+            )
         return finalize(reply or fallback_answer, keep_names=keep_names)
 
     def ask(questions: list, intro: str | None = None) -> dict:
