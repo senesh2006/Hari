@@ -1793,6 +1793,67 @@ def _recipient_discovery_ask(text: str) -> tuple[str, str]:
     return intro, question
 
 
+# --- Scenario / recipient reset (req #6) ----------------------------------- #
+# When the user pivots to a DIFFERENT gift recipient mid-chat, the previous
+# recipient's interests and on-screen products must be discarded so they don't
+# bleed into the new gift.
+_SCENARIO_RECIPIENT_RE = re.compile(
+    r"\b(wife|husband|hubby|girlfriend|boyfriend|gf|bf|partner|fiance|fiancee|crush|"
+    r"mom|mother|mum|mummy|dad|father|daddy|sister|brother|son|daughter|"
+    r"friend|firend|freind|bestie|boss|colleague|co-?worker|coworker|client|cousin|"
+    r"aunt|uncle|grandma|grandpa|granny|niece|nephew|teacher|neighbour|neighbor)\b",
+    re.I,
+)
+_RECIPIENT_GROUPS = {
+    "mother": "mom", "mum": "mom", "mummy": "mom", "mom": "mom",
+    "father": "dad", "daddy": "dad", "dad": "dad",
+    "girlfriend": "partner", "gf": "partner", "boyfriend": "partner", "bf": "partner",
+    "partner": "partner", "fiance": "partner", "fiancee": "partner",
+    "hubby": "husband", "husband": "husband", "wife": "wife", "crush": "crush",
+    "bestie": "friend", "friend": "friend", "firend": "friend", "freind": "friend",
+    "co-worker": "colleague", "coworker": "colleague", "colleague": "colleague",
+    "neighbour": "neighbour", "neighbor": "neighbour",
+}
+
+
+_CRUSH_CUE_RE = re.compile(
+    r"\b(crush|girl i like|guy i like|someone i like|this girl|this guy|"
+    r"girl (i|at|from)|guy (i|at|from)|girl at (uni|university|class|college|work))\b",
+    re.I,
+)
+
+
+def _recipient_token(text: str) -> str | None:
+    if _CRUSH_CUE_RE.search(text or ""):
+        return "crush"
+    m = _SCENARIO_RECIPIENT_RE.search(text or "")
+    if not m:
+        return None
+    r = m.group(1).lower()
+    return _RECIPIENT_GROUPS.get(r, r)
+
+
+def _scenario_changed(conversation: list | None, last_user: str) -> bool:
+    """True when this message names a different recipient than the most recent
+    one earlier in the chat — a fresh gifting scenario."""
+    cur = _recipient_token(last_user)
+    if not cur:
+        return False
+    for turn in reversed((conversation or [])[:-1]):
+        if turn.get("role") == "user":
+            prev = _recipient_token(str(turn.get("content") or ""))
+            if prev:
+                return prev != cur
+    return False
+
+
+SCENARIO_RESET_NUDGE = (
+    "NEW RECIPIENT — the user has switched to a DIFFERENT person to buy for. Build a FRESH recipient "
+    "profile from THIS message only. Ignore every earlier recipient, their interests, the earlier budget, "
+    "and any products already shown — none of it applies to this new person."
+)
+
+
 def _should_search_first(
     text: str,
     profile: dict | None = None,
@@ -3280,18 +3341,26 @@ interest ("likes watches" → luxury, smart, or fashion?; "perfume" → fresh, f
 matters. Put it in "clarify_question". If you have enough to choose well, leave it empty and just strategise. Never \
 ask more than one, and never ask about budget here.
 
-Reply with ONLY a JSON object, no prose, no markdown, exactly this shape:
+First build the RECIPIENT PROFILE, then the strategy. Reply with ONLY a JSON object, no prose, no markdown, \
+exactly this shape:
 {
   "relationship": "crush | girlfriend | wife | childhood friend | boss | client | parent | colleague | unknown",
+  "occasion": "birthday | anniversary | reunion | apology | just-because | condolence | ... | unknown",
+  "recipient_type": "short label, e.g. 'watch-enthusiast guy friend', 'health-conscious wife'",
+  "interests": ["the recipient's interests you can infer"],
+  "budget": "the budget ceiling or 'open'",
+  "constraints": ["hard constraints: allergies, dietary, things to avoid, tone"],
+  "gifting_goal": "the feeling to create, e.g. 'make her feel loved without overdoing it'",
   "risk_level": "high | normal | formal",
+  "avoid": ["categories/items to NOT show for this relationship/constraint"],
+  "prefer": ["categories/items that fit best"],
   "category": "experience | accessory | personalized | luxury | practical | sentimental | tech | fashion | food",
   "clarify_question": "ONE warm question to sharpen the gift, or empty string if none needed",
-  "angle": "one sentence: the gifting strategy and why it fits THIS relationship and occasion",
+  "angle": "one sentence: the gifting strategy and why it fits THIS relationship + occasion + goal",
   "recipient_read": "short read on who they are / what they'd value",
-  "constraints": ["hard budget ceiling if any", "things to avoid", "tone"],
-  "search_queries": ["2-5 SHORT concrete product nouns tailored to the angle AND the budget, e.g. 'mens leather wallet', 'ceramic mug'"],
-  "reject_rule": "one sentence: what to DROP from results (off-strategy, wrong gender, over budget, too romantic/expensive for this relationship)",
-  "explain_hint": "one warm sentence the agent can say to justify the pick AND, if relevant, why it avoided something risky (e.g. 'since you've only spoken a few times, I kept it light rather than too personal')"
+  "search_queries": ["2-5 SHORT concrete product nouns tailored to the angle, goal AND budget, e.g. 'sugar free dark chocolate', 'mens leather wallet'"],
+  "reject_rule": "one sentence: what to DROP (off-strategy, wrong gender, over budget, unsafe for a constraint, too romantic/expensive for this relationship)",
+  "explain_hint": "one warm sentence justifying the pick AND, if relevant, why you avoided something (e.g. 'since you've only spoken a few times, I kept it light')"
 }
 Keep queries specific, gendered, occasion- and budget-appropriate. Never include adult/intimate items. If you truly \
 lack enough to strategise, return {"insufficient": true}."""
@@ -4101,6 +4170,12 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     # An order-tracking or account request breaks out of the gift-question
     # script — never ask a taste/clarify question or force a product search.
     direct_request = track_request or bool(account_intent)
+    # Req #6 — recipient/scenario reset. If the user pivots to a different person,
+    # discard the previous recipient's on-screen products so they can't bleed in,
+    # and tell the model to build a fresh profile from this message only.
+    scenario_reset = (not direct_request) and _scenario_changed(conv, user_en)
+    if scenario_reset:
+        suggestions = []
     # "Pick the best for me" — recommend from what's already on screen, no new search.
     pick_best = (
         not direct_request
@@ -4203,9 +4278,12 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         openai_tools = CART_TOOLS
 
     extra_ctx = [
+        SCENARIO_RESET_NUDGE if scenario_reset else None,
         playbook_message(user_en, conv),
-        conversation_memory_message(conv, user_en, profile),
-        session_facts_message(profile),
+        # On a scenario switch, drop the carried recipient memory/session facts so
+        # the previous person's interests can't leak into the new gift (req #6).
+        None if scenario_reset else conversation_memory_message(conv, user_en, profile),
+        None if scenario_reset else session_facts_message(profile),
         recipients_message(recipients),
         wishlist_message(wishlist),
         order_history_message(orders),
@@ -4357,14 +4435,16 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         cur_msgs = messages + [{
             "role": "user",
             "content": "Candidate products found (numbered):\n" + "\n".join(lines)
-            + "\n\nAs the concierge, SCORE these against everything the user needs — recipient, occasion, "
-            "relationship, budget, and ANY dietary/allergy or other constraint they mentioned — and REJECT every "
-            "poor, unsafe, over-budget, or irrelevant one. The product CARDS render below your reply with full "
-            "details and prices, so do NOT list products or prices in your reply. Respond with ONLY a JSON object: "
-            '{"keep": [<the item NUMBERS to show as cards, best first>], '
-            '"reply": "1-2 warm sentences — name your single top pick and why it fits, and briefly note what you '
-            'skipped and why. No numbered list, no prices."}. '
-            "Keep only items that truly fit (usually 1-4). If none are safe/appropriate, keep:[] and say so kindly.",
+            + "\n\nAs the concierge, SCORE each on: relationship fit, occasion fit, interest fit, budget fit, "
+            "constraint SAFETY (allergy/dietary/etc.), social appropriateness, and gift quality. REJECT every poor, "
+            "unsafe, over-budget, or irrelevant one — never keep a product just because it was returned. RANK the "
+            "survivors best-first. The product CARDS render below your reply with full details and prices, so do NOT "
+            "list products or prices in your reply. Respond with ONLY a JSON object: "
+            '{"keep": [<item NUMBERS to show, RANKED best first>], '
+            '"reply": "lead with your #1 best match by name and one line on why it fits the relationship/occasion/'
+            'goal, then (if relevant) one line on what you skipped and why. 2-3 warm sentences, no numbered list, '
+            'no prices."}. Keep only items that truly fit (usually 1-4). If none are safe/appropriate, keep:[] and '
+            "say so kindly.",
         }]
         content = ""
         for rf in ({"type": "json_object"}, None):
