@@ -3669,7 +3669,7 @@ def _run_strategy_searches(
 
 def _salvage_search(
     strategy: dict | None,
-    user_en: str,
+    fallback_terms: list,
     tools: list,
     results: list,
     trace: list,
@@ -3682,7 +3682,10 @@ def _salvage_search(
     a slow upstream the agent loop can time out before it ever searches, leaving
     the user with a dead-end "try again" message. This reuses whatever time is
     left in the curation reserve to surface real Kapruka cards instead, using the
-    strategy's queries (if any) or the user's own words. Returns True if it found
+    strategy's concrete queries, or — failing that — the concrete interest/product
+    terms gathered this turn. It deliberately does NOT search the user's raw
+    sentence, which returns junk or nothing; if there's nothing concrete to search
+    we'd rather ask than show irrelevant cards. Returns True if it found
     anything."""
     budget = (hard_deadline - time.monotonic()) - 9.0  # leave ~9s for curation
     if budget < 5:
@@ -3690,8 +3693,8 @@ def _salvage_search(
     queries = []
     if strategy:
         queries = [str(q).strip() for q in (strategy.get("search_queries") or []) if str(q).strip()]
-    if not queries and user_en and user_en.strip():
-        queries = [user_en.strip()]
+    if not queries:
+        queries = [str(t).strip() for t in (fallback_terms or []) if str(t).strip()]
     queries = queries[:3]
     if not queries:
         return False
@@ -4861,12 +4864,23 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         # leftover curation reserve on one fast direct search so the user still
         # gets cards instead of a dead-end message that just re-triggers the same
         # slow path when they resend.
-        if not results and not cart_actions:
+        if not extract_products(results) and not cart_actions:
             try:
-                _salvage_search(active_strategy, user_en, tools, results, trace, curation_deadline)
+                _salvage_search(
+                    active_strategy,
+                    sorted(salient_terms | requested_terms),
+                    tools,
+                    results,
+                    trace,
+                    curation_deadline,
+                )
             except Exception:
                 pass
-        if results:
+        # Only claim we have options when real products actually came back. A
+        # non-empty `results` can still hold zero parseable products (e.g. an
+        # empty Kapruka response to a vague query), which would otherwise show
+        # "they're below" with no cards underneath.
+        if extract_products(results):
             return curate_then_finalize("Got some options for you — they're below 😊")
         if cart_actions:
             return finalize("Done — cart's updated 👍")
