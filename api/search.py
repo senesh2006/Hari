@@ -3838,15 +3838,29 @@ def _run_strategy_searches(
     trace: list,
     max_price: float | None = None,
 ) -> bool:
-    """Execute strategy search_queries in parallel. Returns True if any results."""
-    queries = [str(q).strip() for q in (strategy.get("search_queries") or []) if str(q).strip()][:5]
+    """Execute strategy search_queries in parallel with concurrency cap and staggering.
+    Deduplicates overlapping search terms case-insensitively.
+    """
+    raw_queries = [str(q).strip() for q in (strategy.get("search_queries") or []) if str(q).strip()]
+    seen = set()
+    queries = []
+    for q in raw_queries:
+        low = q.lower()
+        if low not in seen:
+            seen.add(low)
+            queries.append(q)
+    queries = queries[:5]
     if not queries or (deadline - time.monotonic()) < (MIN_ROUND_SECONDS + 4):
         return False
     try:
         tool_name = _resolve_search_tool_name(tools)
         search_until = time.monotonic() + max(6.0, min(22.0, (deadline - time.monotonic()) - 14))
-        with ThreadPoolExecutor(max_workers=min(5, len(queries))) as ex:
-            futs = {ex.submit(_one_strategy_search, q, tool_name, max_price): q for q in queries}
+        with ThreadPoolExecutor(max_workers=min(2, len(queries))) as ex:
+            futs = {}
+            for i, q in enumerate(queries):
+                if i > 0:
+                    time.sleep(0.15)
+                futs[ex.submit(_one_strategy_search, q, tool_name, max_price)] = q
             for fut in futs:
                 rem = search_until - time.monotonic()
                 if rem <= 0:
