@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from .product_validator import validate_products
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 
@@ -4904,7 +4905,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         return max(3.0, min(TRANSLATE_TIMEOUT, t0 + SEARCH_BUDGET - time.monotonic()))
 
     def finalize(answer: str, keep_names: list | None = None, alternative_question: str | None = None) -> dict:
-        products = _prefilter_by_strategy(extract_products(results), active_strategy)
+        products = validate_products(_prefilter_by_strategy(extract_products(results), active_strategy), active_strategy or {})
         if already_shown:
             products = [p for p in products if _norm_text(p.get("name")) not in already_shown]
         # When the model curated which items to show (its scoring/rejection step),
