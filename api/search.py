@@ -4979,7 +4979,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             '{"keep": [<item NUMBERS to show, RANKED best first>], '
             '"reply": "Start by showing you understand the relationship and occasion in one warm line. Then lead with '
             'your #1 best match (🥇) by name and one line on why it fits the relationship/occasion/goal. If relevant, '
-            'one line on what you skipped and why. 2-3 warm sentences total, no numbered list, no prices."}. '
+            'one line on what you skipped and why. Finally, ask the user if they would like to see other options, '
+            'recommending some other specific products or gift categories (e.g. flowers, a cake, or a giftset) that '
+            'could also fit. 3-4 warm sentences total, no numbered list, no prices."}. '
             "Keep only items that truly fit (usually 1-4). If none are safe/appropriate, keep:[] and say so kindly.",
         }]
         content = ""
