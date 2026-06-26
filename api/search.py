@@ -3779,6 +3779,23 @@ def strategy_message(strategy: dict | None) -> str | None:
     return "\n".join(lines)
 
 
+def _split_alternative_question(text: str) -> tuple[str, str | None]:
+    """Split the final alternative recommendation question sentence from the main text."""
+    if not text:
+        return "", None
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    if not sentences:
+        return "", None
+    last = sentences[-1]
+    if last.endswith("?"):
+        question_keywords = {"would", "like", "options", "see", "other", "alternative", "flowers", "cake", "bouquet", "giftset", "hamper"}
+        words = {w.lower() for w in re.findall(r'[a-zA-Z]+', last)}
+        if words.intersection(question_keywords) or len(sentences) > 1:
+            main_text = " ".join(sentences[:-1])
+            return main_text, last
+    return text, None
+
+
 def _prefilter_by_strategy(products: list, strategy: dict | None) -> list:
     """Drop obvious strategy violations before LLM curation."""
     if not strategy or not products:
@@ -4886,7 +4903,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         # so a slow Langbly call can never push the function past the platform limit.
         return max(3.0, min(TRANSLATE_TIMEOUT, t0 + SEARCH_BUDGET - time.monotonic()))
 
-    def finalize(answer: str, keep_names: list | None = None) -> dict:
+    def finalize(answer: str, keep_names: list | None = None, alternative_question: str | None = None) -> dict:
         products = _prefilter_by_strategy(extract_products(results), active_strategy)
         if already_shown:
             products = [p for p in products if _norm_text(p.get("name")) not in already_shown]
@@ -4920,6 +4937,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             if missed:
                 answer = HONEST_NO_MATCH_FALLBACK.format(terms=", ".join(sorted(missed)))
         local = _translate(answer, "en", target_lang, _tr_timeout()) if (target_lang and answer) else answer
+        local_q = _translate(alternative_question, "en", target_lang, _tr_timeout()) if (target_lang and alternative_question) else alternative_question
         if uid and profile and answer:
             _persist_session_facts(
                 access_token, uid, profile, conv, user_en, answer, scenario_reset=scenario_reset
@@ -4930,6 +4948,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "model": agent_model,
             "answer": answer,
             "answer_local": local,
+            "alternative_question": alternative_question,
+            "alternative_question_local": local_q,
             "user_en": user_en,
             "products": products,
             "cart_actions": cart_actions,
@@ -4993,9 +5013,10 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             '{"keep": [<item NUMBERS to show, RANKED best first>], '
             '"reply": "Start by showing you understand the relationship and occasion in one warm line. Then lead with '
             'your #1 best match (🥇) by name and one line on why it fits the relationship/occasion/goal. If relevant, '
-            'one line on what you skipped and why. Finally, ask the user if they would like to see other options, '
-            'recommending some other specific products or gift categories (e.g. flowers, a cake, or a giftset) that '
-            'could also fit. 3-4 warm sentences total, no numbered list, no prices."}. '
+            'one line on what you skipped and why. 2-3 warm sentences total, no numbered list, no prices.", '
+            '"alternative_question": "A single warm question asking if the user would like to see other alternative '
+            'options, recommending some other specific products or gift categories (e.g. flowers, a cake, or a giftset) '
+            'that could also fit."}. '
             "Keep only items that truly fit (usually 1-4). If none are safe/appropriate, keep:[] and say so kindly.",
         }]
         content = ""
@@ -5029,6 +5050,12 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 keep_names=[],
             )
         reply = str(obj.get("reply") or "").strip()
+        alt_q = str(obj.get("alternative_question") or "").strip() or None
+        if alt_q:
+            if reply.endswith(alt_q):
+                reply = reply[:-len(alt_q)].strip()
+        else:
+            reply, alt_q = _split_alternative_question(reply)
         keep_names = []
         for k in (obj.get("keep") or []):
             if isinstance(k, bool):
@@ -5045,13 +5072,15 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 return finalize(
                     reply or "Pulled a few options — take a look below 😊",
                     keep_names=[p.get("name") for p in prods[:4]],
+                    alternative_question=alt_q,
                 )
             return finalize(
                 reply or "Hmm, nothing in what I found is a safe, on-budget fit. Want me to try a "
                 "different angle — a specific brand, or a non-food gift? 😊",
                 keep_names=[],
+                alternative_question=alt_q,
             )
-        return finalize(reply or fallback_answer, keep_names=keep_names)
+        return finalize(reply or fallback_answer, keep_names=keep_names, alternative_question=alt_q)
 
     def ask(questions: list, intro: str | None = None) -> dict:
         return _needs_input_response(

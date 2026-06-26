@@ -1165,6 +1165,7 @@ function App({
         if (products.length) setLastSuggestions(data.products?.length ? data.products : products);
         const thought = products.length ? `Searched Kapruka · ${products.length} matches` : null;
         let display = data.answer_local || data.answer || "";
+        const altQuestion = data.alternative_question_local || data.alternative_question || "";
         if (products.length) {
           display = stripCatalogFromText(display, products);
           if (!display.trim()) {
@@ -1173,13 +1174,14 @@ function App({
           }
         }
         if (display || products.length) {
-          setMessages((m) => [...m, { id: nid(), role: "bot", text: display, thought, products }]);
+          setMessages((m) => [...m, { id: nid(), role: "bot", text: display, thought, products, alternative_question: altQuestion || undefined }]);
         } else {
           setMessages((m) => [...m, { id: nid(), role: "bot", text: "I couldn't find matching products — try giving me more detail." }]);
         }
         if (data.answer) {
           setConversation((c) => [...c, { role: "assistant", content: data.answer }]);
-          if (display) speak(display);
+          const speechText = altQuestion ? `${display}\n\n${altQuestion}` : display;
+          if (speechText) speak(speechText);
         }
       } else {
         const err = data.error || JSON.stringify(data);
@@ -1608,6 +1610,13 @@ function App({
                     </div>
                   );
                 })()}
+                {m.alternative_question && (
+                  <div style={{ marginTop: "1rem" }}>
+                    <Bubble role="bot">
+                      <BotText text={m.alternative_question} />
+                    </Bubble>
+                  </div>
+                )}
                 {m.id === lastProductMsgId && (
                   <div className="refine-chips" style={{ marginLeft: "2.4rem" }}>
                     {REFINE_CHIPS.map((c) => (
