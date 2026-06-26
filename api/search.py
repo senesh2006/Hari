@@ -4759,6 +4759,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if pick_best:
         # Force a recommendation from the on-screen suggestions: no search tools.
         openai_tools = CART_TOOLS
+    elif allow_questions and (taste_question or clarify_question or recipient_discovery or budget_question or hamper_question):
+        # Force the model to only ask the required question and not search/build yet
+        openai_tools = [ASK_USER_TOOL]
 
     extra_ctx = [
         SCENARIO_RESET_NUDGE if scenario_reset else None,
@@ -4838,6 +4841,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if pick_best:
         # No searching when recommending from on-screen suggestions.
         valid_names = set(CART_TOOL_NAMES)
+    elif allow_questions and (taste_question or clarify_question or recipient_discovery or budget_question or hamper_question):
+        valid_names = {"ask_user"}
 
     reserve = 8 if target_lang else 0
     curation_deadline = t0 + max(20.0, SEARCH_BUDGET - reserve)
