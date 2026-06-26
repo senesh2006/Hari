@@ -3903,7 +3903,7 @@ def _one_strategy_search(query: str, tool_name: str, max_price: float | None = N
         m = MCPSession()
         m.initialize()
         if tool_name == "kapruka_search_products":
-            args = {"params": {"q": query}}
+            args = {"params": {"q": query, "response_format": "json"}}
             if max_price is not None:
                 args["params"]["max_price"] = max_price
         else:
@@ -4448,6 +4448,10 @@ def _execute_tool_calls(
             continue
 
         args = sanitize_args(args)
+        if name == "kapruka_search_products":
+            if "params" not in args or not isinstance(args["params"], dict):
+                args["params"] = {}
+            args["params"]["response_format"] = "json"
         try:
             output = mcp.call_tool(name, args)
         except Exception as exc:
