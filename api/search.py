@@ -3909,8 +3909,16 @@ def _one_strategy_search(query: str, tool_name: str, max_price: float | None = N
         else:
             args = {"q": query}
         return m.call_tool(tool_name, args)
-    except Exception:
-        return ""
+    except Exception as exc:
+        return f"ERROR: {exc}"
+
+
+def _is_rate_limited(results: list) -> bool:
+    for r in results or []:
+        out = str(r.get("output") or "").lower()
+        if "rate limit" in out or "429" in out or "too many requests" in out:
+            return True
+    return False
 
 
 # =============================================================================
@@ -4893,6 +4901,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         if already_shown:
             prods = [p for p in prods if _norm_text(p.get("name")) not in already_shown]
         if not prods:
+            if _is_rate_limited(results):
+                return finalize(
+                    "Kapruka's search server is currently receiving too many requests. "
+                    "Please wait a moment and try again 😊"
+                )
             return finalize(fallback_answer)
         ans_rem = curation_deadline - time.monotonic()
         if ans_rem < 5:
@@ -5068,6 +5081,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     def degrade(partial: str | None = None) -> dict:
         if partial:
             return finalize(partial)
+        if _is_rate_limited(results):
+            return finalize(
+                "Kapruka's search server is currently receiving too many requests. "
+                "Please wait a moment and try again 😊"
+            )
         # The heavy pipeline ran out of time before finding anything — spend the
         # leftover curation reserve on one fast direct search so the user still
         # gets cards instead of a dead-end message that just re-triggers the same
