@@ -1220,10 +1220,10 @@ function App({
       }
       const item = { product_id: pid, quantity: c.qty };
       const cu = c.customization || {};
+      if (cu.text) {
+        item.icing_text = cu.text;
+      }
       if (cu.text || cu.image_url) {
-        item.customization = {};
-        if (cu.text) item.customization.text = cu.text;
-        if (cu.image_url) item.customization.image_url = cu.image_url;
         customNotes.push(
           `Personalisation for ${c.name}: ${[cu.text && `text="${cu.text}"`, cu.image_url && `photo=${cu.image_url}`].filter(Boolean).join(", ")}`
         );

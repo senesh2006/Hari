@@ -428,6 +428,51 @@ def list_tools_payload() -> dict:
 
 def invoke_tool(name: str, arguments: dict) -> dict:
     arguments = sanitize_args(arguments or {})
+    if name == "kapruka_create_order" and "params" in arguments:
+        params = arguments["params"]
+        if isinstance(params, dict):
+            if "recipient" in params and isinstance(params["recipient"], dict):
+                r = params["recipient"]
+                params["recipient"] = {
+                    k: v for k, v in r.items()
+                    if k in {"name", "phone"}
+                }
+            if "sender" in params and isinstance(params["sender"], dict):
+                s = params["sender"]
+                params["sender"] = {
+                    k: v for k, v in s.items()
+                    if k in {"name", "anonymous"}
+                }
+            if "delivery" in params and isinstance(params["delivery"], dict):
+                d = params["delivery"]
+                params["delivery"] = {
+                    k: v for k, v in d.items()
+                    if k in {"address", "city", "location_type", "date", "instructions"}
+                }
+            if "cart" in params and isinstance(params["cart"], list):
+                new_cart = []
+                for item in params["cart"]:
+                    if isinstance(item, dict):
+                        icing = item.get("icing_text")
+                        if not icing and "customization" in item and isinstance(item["customization"], dict):
+                            icing = item["customization"].get("text")
+                        cleaned_item = {
+                            "product_id": item.get("product_id"),
+                            "quantity": item.get("quantity", 1),
+                        }
+                        if icing:
+                            cleaned_item["icing_text"] = icing
+                        new_cart.append(cleaned_item)
+                params["cart"] = new_cart
+            allowed_params = {"cart", "recipient", "delivery", "sender", "gift_message", "currency", "response_format"}
+            arguments["params"] = {k: v for k, v in params.items() if k in allowed_params}
+    elif name == "kapruka_track_order" and "params" in arguments:
+        params = arguments["params"]
+        if isinstance(params, dict):
+            arguments["params"] = {
+                k: v for k, v in params.items()
+                if k in {"order_number", "response_format"}
+            }
     mcp = MCPSession()
     mcp.initialize()
     output = mcp.call_tool(name, arguments)

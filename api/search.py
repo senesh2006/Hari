@@ -1178,6 +1178,24 @@ REPAIR_FOLLOWUP_NUDGE = (
     "Reply: 1–2 warm sentences max, NO product names."
 )
 
+CLARIFICATION_NUDGE = (
+    "IMPORTANT — the user's request is vague or ambiguous. "
+    "Call ask_user with exactly ONE clear, warm, conversational question to clarify what they want to find or do. "
+    "Do NOT search yet until they clarify."
+)
+
+BUDGET_QUESTION_NUDGE = (
+    "IMPORTANT — ask the user about their budget before searching. "
+    "Call ask_user with exactly ONE warm, conversational question about their budget or price range "
+    "so you can tailor the search correctly. Do NOT search until they answer."
+)
+
+HAMPER_QUESTION_NUDGE = (
+    "IMPORTANT — the user wants to build a hamper but you don't know their preferences. "
+    "Call ask_user with exactly ONE warm, conversational question asking what theme or types of "
+    "items they want to include (e.g. chocolates, cookies, savouries, or a specific wellness theme)."
+)
+
 _BRAINSTORM_RE = re.compile(
     r"\b(what do you think|what do u think|was thinking|thinking about|"
     r"good idea|would that work|should i get|do you reckon|your opinion|"
@@ -1785,13 +1803,18 @@ def _needs_taste_question(
     text: str,
     profile: dict | None = None,
     recipients: list | None = None,
+    conversation: list | None = None,
 ) -> bool:
     """Ask what the recipient is into before defaulting to generic apology gifts."""
     if _message_has_taste_hints(text):
         return False
-    if not _is_repair_situation(text):
-        return False
-    return True
+    if _is_repair_situation(text):
+        return True
+    low = (text or "").lower()
+    has_recipient = bool(_RECIPIENT_RE.search(low))
+    if has_recipient and not _has_known_preferences(text, profile, recipients, conversation):
+        return True
+    return False
 
 
 # --- Recipient discovery (who is it for, really?) -------------------------- #
@@ -1938,7 +1961,7 @@ def _should_search_first(
     conversation: list | None = None,
 ) -> bool:
     """True when ask_user would be wrong — search immediately instead."""
-    if _needs_taste_question(text, profile, recipients):
+    if _needs_taste_question(text, profile, recipients, conversation):
         return False
     if _needs_clarification_question(text, conversation):
         return False
@@ -4646,7 +4669,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     ) if hamper_request else False
     hamper_question = hamper_request and not hamper_prefs_known and allow_questions
     search_first = False if direct_request else _should_search_first(user_en, profile, recipients, conv)
-    taste_question = False if direct_request else _needs_taste_question(user_en, profile, recipients)
+    taste_question = False if direct_request else _needs_taste_question(user_en, profile, recipients, conv)
     clarify_question = False if direct_request else _needs_clarification_question(user_en, conv)
     if more_request:
         # They want more — just search, don't gate behind a question.
@@ -4727,8 +4750,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                 force_search = True
     if force_search:
         search_first = True
-    if search_first and not discover_first:
-        allow_questions = False
+    # if search_first and not discover_first:
+    #     allow_questions = False
 
     openai_tools = mcp_tools_to_openai(tools) + CART_TOOLS
     if allow_questions:
@@ -4775,13 +4798,24 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     if track_request:
         messages.append({"role": "system", "content": ORDER_TRACKING_NUDGE})
     elif hamper_request:
-        messages.append({"role": "system", "content": HAMPER_NUDGE})
+        if hamper_question:
+            messages.append({"role": "system", "content": HAMPER_QUESTION_NUDGE})
+        else:
+            messages.append({"role": "system", "content": HAMPER_NUDGE})
     elif account_intent:
         messages.append({"role": "system", "content": ACCOUNT_ACTION_NUDGE})
     elif pick_best:
         messages.append({"role": "system", "content": PICK_BEST_NUDGE})
     elif more_request:
         messages.append({"role": "system", "content": MORE_SUGGESTIONS_NUDGE})
+    elif taste_question:
+        messages.append({"role": "system", "content": TASTE_QUESTION_NUDGE})
+    elif clarify_question:
+        messages.append({"role": "system", "content": CLARIFICATION_NUDGE})
+    elif recipient_discovery:
+        messages.append({"role": "system", "content": DISCOVERY_NUDGE})
+    elif budget_question:
+        messages.append({"role": "system", "content": BUDGET_QUESTION_NUDGE})
     elif repair_interests and search_first:
         messages.append({
             "role": "system",
@@ -5010,9 +5044,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             model=agent_model,
         )
 
-    if hamper_question:
-        intro, question = _hamper_pref_question()
-        return ask([question], intro=intro)
+    # if hamper_question:
+    #     intro, question = _hamper_pref_question()
+    #     return ask([question], intro=intro)
 
     # === Strategy-first: recipient profile → gifting strategy → search → curate ===
     will_strategize = (
@@ -5052,20 +5086,20 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                         hint or "Pulled together some options — take a look below 😊"
                     )
 
-    if taste_question and not active_strategy:
-        return ask([_repair_taste_question(user_en)], intro=_repair_ask_intro(user_en))
-
-    if clarify_question and not active_strategy:
-        intro, question = _clarification_ask(user_en)
-        return ask([question], intro=intro)
-
-    if recipient_discovery and not active_strategy:
-        intro, question = _recipient_discovery_ask(user_en)
-        return ask([question], intro=intro)
-
-    if budget_question and not active_strategy:
-        intro, question = _budget_ask(profile)
-        return ask([question], intro=intro)
+    # if taste_question and not active_strategy:
+    #     return ask([_repair_taste_question(user_en)], intro=_repair_ask_intro(user_en))
+    # 
+    # if clarify_question and not active_strategy:
+    #     intro, question = _clarification_ask(user_en)
+    #     return ask([question], intro=intro)
+    # 
+    # if recipient_discovery and not active_strategy:
+    #     intro, question = _recipient_discovery_ask(user_en)
+    #     return ask([question], intro=intro)
+    # 
+    # if budget_question and not active_strategy:
+    #     intro, question = _budget_ask(profile)
+    #     return ask([question], intro=intro)
 
     if budget_answer_turn:
         ctx_queries = _context_search_queries(conv, user_en)
