@@ -4974,6 +4974,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         step) — pure LLM, no keyword filters. On failure, show NO unvetted cards
         rather than risk an unsafe/over-budget item."""
         nonlocal llm_provider, agent_model
+        fallback_reply, fallback_alt_q = _split_alternative_question(fallback_answer)
         prods = _prefilter_by_strategy(extract_products(results), active_strategy)
         if already_shown:
             prods = [p for p in prods if _norm_text(p.get("name")) not in already_shown]
@@ -4983,7 +4984,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
                     "Kapruka's search server is currently receiving too many requests. "
                     "Please wait a moment and try again 😊"
                 )
-            return finalize(fallback_answer)
+            return finalize(fallback_reply, alternative_question=fallback_alt_q)
         ans_rem = curation_deadline - time.monotonic()
         if ans_rem < 5:
             return finalize(
@@ -5042,8 +5043,9 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         if obj is None:
             if prods:
                 return finalize(
-                    fallback_answer or "Pulled a few options — take a look below 😊",
+                    fallback_reply or "Pulled a few options — take a look below 😊",
                     keep_names=[p.get("name") for p in prods[:4]],
+                    alternative_question=fallback_alt_q,
                 )
             return finalize(
                 "Let me double-check these actually fit before showing them — mind resending? Was a touch slow my end 😊",
@@ -5051,11 +5053,18 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             )
         reply = str(obj.get("reply") or "").strip()
         alt_q = str(obj.get("alternative_question") or "").strip() or None
-        if alt_q:
-            if reply.endswith(alt_q):
-                reply = reply[:-len(alt_q)].strip()
+        if not reply:
+            reply = fallback_reply
+            if not alt_q:
+                alt_q = fallback_alt_q
         else:
-            reply, alt_q = _split_alternative_question(reply)
+            if alt_q:
+                if reply.endswith(alt_q):
+                    reply = reply[:-len(alt_q)].strip()
+            else:
+                reply, alt_q = _split_alternative_question(reply)
+        if not alt_q:
+            alt_q = fallback_alt_q
         keep_names = []
         for k in (obj.get("keep") or []):
             if isinstance(k, bool):
