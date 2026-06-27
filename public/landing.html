@@ -530,7 +530,7 @@
       <div class="arrow">→</div>
       <div class="node"><div class="t">Intent layer</div><div class="d">Routes each turn: budget, taste, cart, tracking.</div></div>
       <div class="arrow">→</div>
-      <div class="node"><div class="t">Agent loop</div><div class="d">Llama 3.3 70B via NVIDIA NIM with tool calling.</div></div>
+      <div class="node"><div class="t">Agent loop</div><div class="d">Gemini 2.0 Flash (Primary) / Llama 3.3 (Fallback) with tool calling.</div></div>
       <div class="arrow">→</div>
       <div class="node"><div class="t">MCP tools</div><div class="d">Kapruka catalogue, cart and orders over MCP.</div></div>
       <div class="arrow">→</div>
@@ -613,7 +613,7 @@
     <div class="stack-group">
       <div class="lbl">AI &amp; Agent</div>
       <div class="stack">
-        <span class="tag"><b>LLM</b>NVIDIA NIM · Llama 3.3 70B</span>
+        <span class="tag"><b>LLM</b>Gemini 2.0 Flash · NVIDIA NIM Llama 3.3</span>
         <span class="tag"><b>Protocol</b>Model Context Protocol</span>
         <span class="tag"><b>Pattern</b>Agentic tool-calling</span>
         <span class="tag"><b>Safety</b>Result grounding</span>
@@ -640,6 +640,8 @@
       <div class="eng"><h4>⚧ Safety filters</h4><p>Gender-aware filtering, stock checks, and NSFW stripping — deterministically.</p></div>
       <div class="eng"><h4>⏱️ Serverless-safe i18n</h4><p>Request-wide time budget so translation + DB loads can't blow the 60s limit.</p></div>
       <div class="eng"><h4>🚦 Intent guardrails</h4><p>Budget asked <code>once per chat</code>, one taste question max, forced search when promised.</p></div>
+      <div class="eng"><h4>🛡️ Constraint validation</h4><p>Applies strict validation filters on budget limits, allergen alerts, and relationship safety.</p></div>
+      <div class="eng"><h4>🧠 Recommendation memory</h4><p>Tracks previously shown and rejected items to dynamically pivot suggestions to fresh alternatives.</p></div>
     </div>
     <div class="stats">
       <div class="stat reveal-scroll"><div class="n grad-text">3</div><div class="l">languages, voice in &amp; out</div></div>
