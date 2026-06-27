@@ -536,33 +536,80 @@
       <div class="arrow">→</div>
       <div class="node"><div class="t">Guardrails</div><div class="d">Grounding, filters, then product cards.</div></div>
     </div>
-<div class="under-the-hood-map">
-  <ul class="map-steps">
-    <li><strong>User UI</strong><br><small>Web page (HTML/JS)</small></li>
-    <li class="arrow">→</li>
-    <li><strong>API Gateway</strong><br><small>api/search.py</small></li>
-    <li class="arrow">→</li>
-    <li><strong>Strategy LLM</strong><br><small>Gemini / NVIDIA</small></li>
-    <li class="arrow">↘︎</li>
-    <li><strong>Kapruka MCP</strong><br><small>Product catalogue</small></li>
-    <li class="arrow">←</li>
-    <li><strong>Validator</strong><br><small>product_validator.py</small></li>
-    <li class="arrow">→</li>
-    <li><strong>LLM Curator</strong><br><small>Choose keep_names</small></li>
-    <li class="arrow">→</li>
-    <li><strong>Translation</strong><br><small>en ↔ target language</small></li>
-    <li class="arrow">→</li>
-    <li><strong>Response</strong><br><small>JSON with answer + cards</small></li>
-  </ul>
-</div>
-<style>
-  .under-the-hood-map { margin: 1.5rem 0; font-family: var(--font-sans); }
-  .map-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; list-style: none; padding: 0; }
-  .map-steps li { background: #1e1e1e; color: #fff; padding: 0.75rem 1rem; border-radius: 8px; text-align: center; min-width: 120px; }
-  .map-steps .arrow { background: transparent; font-size: 1.5rem; color: #00bcd4; }
-  .map-steps li small { display: block; font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem; }
-  @media (max-width: 768px) { .map-steps { flex-direction: column; } .map-steps .arrow { transform: rotate(90deg); } }
-</style>
+    <div class="stack-group" style="margin-top: 48px;">
+      <div class="lbl">Search &amp; Recommendation Flow</div>
+      <div class="rec-grid">
+        <div class="node">
+          <div class="node-step">01</div>
+          <div class="t">User UI</div>
+          <div class="d">Captures user requirements or voice inputs in English, Sinhala, or Tamil.</div>
+        </div>
+        <div class="node">
+          <div class="node-step">02</div>
+          <div class="t">API Gateway</div>
+          <div class="d">Receives the request, builds session context, and orchestrates the search.</div>
+        </div>
+        <div class="node">
+          <div class="node-step">03</div>
+          <div class="t">Strategy LLM</div>
+          <div class="d">Analyzes the query and generates a target budget, health rules, and search terms.</div>
+        </div>
+        <div class="node">
+          <div class="node-step">04</div>
+          <div class="t">Kapruka MCP</div>
+          <div class="d">Queries the live Kapruka catalogue using the generated search terms.</div>
+        </div>
+        <div class="node">
+          <div class="node-step">05</div>
+          <div class="t">Product Validator</div>
+          <div class="d">Applies strict, automated filters for budget limits, avoid terms, and health constraints.</div>
+        </div>
+        <div class="node">
+          <div class="node-step">06</div>
+          <div class="t">LLM Curator</div>
+          <div class="d">Scores and curates the validated products to select the best recommendations.</div>
+        </div>
+        <div class="node">
+          <div class="node-step">07</div>
+          <div class="t">Translation</div>
+          <div class="d">Translates the descriptions and explanations into the user's preferred language.</div>
+        </div>
+        <div class="node">
+          <div class="node-step">08</div>
+          <div class="t">Response</div>
+          <div class="d">Delivers the conversational response and interactive product cards to the chat UI.</div>
+        </div>
+      </div>
+    </div>
+    <style>
+      .rec-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-top: 12px;
+      }
+      .node-step {
+        font-size: .65rem;
+        font-weight: 800;
+        color: var(--lilac);
+        background: rgba(167, 139, 250, 0.1);
+        padding: 2px 6px;
+        border-radius: 6px;
+        display: inline-block;
+        margin-bottom: 10px;
+        letter-spacing: 0.05em;
+      }
+      @media (max-width: 992px) {
+        .rec-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 576px) {
+        .rec-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
     <div class="stack-group">
       <div class="lbl">AI &amp; Agent</div>
       <div class="stack">
