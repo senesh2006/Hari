@@ -38,3 +38,17 @@ def is_health_safe(product: dict, constraints: list) -> bool:
         if term and term in text:
             return False
     return True
+
+def is_category_safe(product: dict, rejected_categories: list) -> bool:
+    if not rejected_categories:
+        return True
+    group = str(product.get("group") or "").lower()
+    name = str(product.get("name") or "").lower()
+    desc = str(product.get("description") or "").lower()
+    for cat in rejected_categories:
+        cat_lower = str(cat).lower().strip()
+        if not cat_lower:
+            continue
+        if cat_lower in group or cat_lower in name or cat_lower in desc:
+            return False
+    return True

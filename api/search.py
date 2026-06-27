@@ -3630,6 +3630,11 @@ exactly this shape:
   "reject_rule": "one sentence: what to DROP (off-strategy, wrong gender, over budget, unsafe for a constraint, too romantic/expensive for this relationship)",
   "explain_hint": "one warm sentence justifying the pick AND, if relevant, why you avoided something (e.g. 'since you've only spoken a few times, I kept it light')"
 }
+8. RECOMMENDATION MEMORY: If you see "RECOMMENDATION MEMORY" in the context:
+- Avoid proposing any categories or products that have been previously shown or rejected.
+- You MUST generate "search_queries" targeting completely fresh, different categories.
+- You MUST add those shown/rejected categories to the "avoid" list in the JSON response.
+
 Keep queries specific, gendered, occasion- and budget-appropriate. Never include adult/intimate items. If you truly \
 lack enough to strategise, return {"insufficient": true}."""
 
@@ -4070,6 +4075,31 @@ def _is_greeting(text: str) -> bool:
         return True
     words = norm.split()
     return any(w in GREETING_WORDS for w in words)
+
+
+def _is_alternative_request(text: str) -> bool:
+    if not text:
+        return False
+    text = text.lower().strip()
+    text = re.sub(r"[.?!,;:]+$", "", text)
+    patterns = [
+        "something different",
+        "not these",
+        "show me another",
+        "i don't like those",
+        "i don't like these",
+        "show me something else",
+        "anything else",
+        "different categories",
+        "different options",
+        "other options",
+        "show me other",
+        "not those",
+        "different idea",
+        "different search",
+        "show me another idea"
+    ]
+    return any(p in text for p in patterns)
 
 
 def _greeting_reply(language: str | None, text: str = "") -> str:
@@ -4605,6 +4635,16 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     else:
         profile, uid, recipients, wishlist, orders = _load_user_context(access_token)
 
+    shown_products = context.get("shown_products") or []
+    shown_categories = context.get("shown_categories") or []
+    last_shown_categories = context.get("last_shown_categories") or []
+    rejected_categories = list(context.get("rejected_categories") or [])
+
+    if _is_alternative_request(user_en):
+        for cat in last_shown_categories:
+            if cat and cat not in rejected_categories:
+                rejected_categories.append(cat)
+
     # Active budget number (client > stated-in-chat > profile default) — surfaced
     # to the model so it can judge prices itself; not a hard filter.
     budget_ceiling = _effective_budget(context, conv, profile)
@@ -4905,7 +4945,21 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         return max(3.0, min(TRANSLATE_TIMEOUT, t0 + SEARCH_BUDGET - time.monotonic()))
 
     def finalize(answer: str, keep_names: list | None = None, alternative_question: str | None = None) -> dict:
-        products = validate_products(_prefilter_by_strategy(extract_products(results), active_strategy), active_strategy or {})
+        products = validate_products(
+            _prefilter_by_strategy(extract_products(results), active_strategy),
+            active_strategy or {},
+            shown_products=shown_products,
+            rejected_categories=rejected_categories
+        )
+        # Log recommendation memory details
+        print(f"[MEM_LOG] Shown categories: {shown_categories}")
+        print(f"[MEM_LOG] Rejected categories: {rejected_categories}")
+        next_cats = active_strategy.get("search_queries") if active_strategy else []
+        print(f"[MEM_LOG] Next search categories: {next_cats}")
+        for p in products:
+            reason = f"Selected '{p.get('name')}' because it fits constraints (price: {p.get('price')}) and is in a new category not previously rejected."
+            print(f"[MEM_LOG] Reason each recommendation was selected: {reason}")
+
         if already_shown:
             products = [p for p in products if _norm_text(p.get("name")) not in already_shown]
         # When the model curated which items to show (its scoring/rejection step),
@@ -4957,6 +5011,7 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "tools_available": tool_names,
             "tool_calls": trace,
             "results": results,
+            "rejected_categories": rejected_categories,
             "debug": {
                 "raw_found": len(extract_products(results)),
                 "shown": len(products),
@@ -5121,8 +5176,15 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
         strat_timeout = min(STRATEGY_TIMEOUT, (deadline - time.monotonic()) - (MIN_ROUND_SECONDS + 14))
         if strat_timeout >= 5:
             try:
+                mem_block = (
+                    "RECOMMENDATION MEMORY:\n"
+                    f"- Previously shown products: {shown_products}\n"
+                    f"- Previously shown categories: {shown_categories}\n"
+                    f"- Rejected categories: {rejected_categories}\n"
+                    "Avoid these categories and products entirely when searching for new gifts. Focus on different categories."
+                )
                 active_strategy = build_gift_strategy(
-                    conv, [profile_message(profile)] + extra_ctx, user_en, timeout=strat_timeout
+                    conv, [profile_message(profile)] + extra_ctx + [mem_block], user_en, timeout=strat_timeout
                 )
             except Exception:
                 active_strategy = None

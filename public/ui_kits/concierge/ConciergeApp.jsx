@@ -593,6 +593,7 @@ function App({
 }) {
   const [messages, setMessages] = useState([{ id: nid(), role: "bot", text: GREETING }]);
   const [conversation, setConversation] = useState([]);
+  const [rejectedCategories, setRejectedCategories] = useState([]);
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState([]);
   const [fav, setFav] = useState({});
@@ -762,7 +763,7 @@ function App({
     if (!messages.some((m) => m.role === "user")) return;
     const t = setTimeout(() => {
       saveChat(scope, chatId, {
-        messages, conversation, lastSuggestions, ts: Date.now(),
+        messages, conversation, lastSuggestions, rejectedCategories, ts: Date.now(),
       });
       const idx = loadChatIndex(scope).filter((c) => c.id !== chatId);
       idx.unshift({ id: chatId, title: chatTitleFrom(messages), ts: Date.now() });
@@ -770,12 +771,13 @@ function App({
       setChatList(idx);
     }, 500);
     return () => clearTimeout(t);
-  }, [messages, conversation, lastSuggestions, chatId, scope]);
+  }, [messages, conversation, lastSuggestions, rejectedCategories, chatId, scope]);
 
   const newChat = () => {
     setChatId(nid());
     setMessages([{ id: nid(), role: "bot", text: GREETING }]);
     setConversation([]);
+    setRejectedCategories([]);
     setLastSuggestions([]);
     setAwaitingAnswers(false);
     setMenuOpen(false);
@@ -789,6 +791,7 @@ function App({
     setChatId(id);
     setMessages(data.messages && data.messages.length ? data.messages : [{ id: nid(), role: "bot", text: GREETING }]);
     setConversation(data.conversation || []);
+    setRejectedCategories(data.rejectedCategories || []);
     setLastSuggestions(data.lastSuggestions || []);
     setAwaitingAnswers(false);
     setHistoryOpen(false);
@@ -1101,6 +1104,11 @@ function App({
     const nextConv = [...conversation, userTurn];
     setConversation(nextConv);
 
+    const shown_products = messages.flatMap((m) => m.products || []).map((p) => p.name);
+    const shown_categories = messages.flatMap((m) => m.products || []).map((p) => p.group || p.category || "Suggestions");
+    const lastBotMsg = [...messages].reverse().find((m) => m.role === "bot" && m.products?.length);
+    const last_shown_categories = lastBotMsg ? lastBotMsg.products.map((p) => p.group || p.category || "Suggestions") : [];
+
     const proceed = awaitingAnswers;
     setAwaitingAnswers(false);
 
@@ -1123,6 +1131,10 @@ function App({
           open_budget: openBudget || undefined,
           language: currentLang,
           access_token: accessToken || undefined,
+          shown_products,
+          shown_categories,
+          last_shown_categories,
+          rejected_categories,
         }),
       });
       let data;
@@ -1138,6 +1150,9 @@ function App({
       setExpectProducts(false);
 
       if (data.user_en) setLastUserEnglish(data.user_en);
+      if (Array.isArray(data.rejected_categories)) {
+        setRejectedCategories(data.rejected_categories);
+      }
 
       if (data.ok && data.needs_input) {
         setAwaitingAnswers(true);
