@@ -5020,6 +5020,8 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             missed = _uncovered_terms_in_answer(salient_terms, products, answer)
             if missed:
                 answer = HONEST_NO_MATCH_FALLBACK.format(terms=", ".join(sorted(missed)))
+        else:
+            answer = "I couldn't find any relevant results on Kapruka for this request. Would you like me to try a different category or search term? 😊"
         local = _translate(answer, "en", target_lang, _tr_timeout()) if (target_lang and answer) else answer
         local_q = _translate(alternative_question, "en", target_lang, _tr_timeout()) if (target_lang and alternative_question) else alternative_question
         if uid and profile and answer:
