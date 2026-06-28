@@ -1156,7 +1156,7 @@ function App({
           shown_products,
           shown_categories,
           last_shown_categories,
-          rejected_categories,
+          rejected_categories: rejectedCategories,
           results_count: resultsCount,
         }),
       });
