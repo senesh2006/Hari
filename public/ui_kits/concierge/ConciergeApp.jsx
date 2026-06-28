@@ -446,6 +446,18 @@ function SettingsPanel({
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
+        <label>Number of suggestions</label>
+        <select value={resultsCount} onChange={(e) => {
+          const val = +e.target.value;
+          setResultsCount(val);
+          try { localStorage.setItem("hari_results_count", String(val)); } catch (_) {}
+        }}>
+          <option value={2}>2 suggestions</option>
+          <option value={4}>4 suggestions</option>
+          <option value={6}>6 suggestions</option>
+          <option value={8}>8 suggestions</option>
+          <option value={10}>10 suggestions</option>
+        </select>
         <label className="check-row">
           <input type="checkbox" checked={corporate} onChange={(e) => setCorporate(e.target.checked)} />
           I often shop for colleagues / corporate gifts
@@ -594,6 +606,14 @@ function App({
   const [messages, setMessages] = useState([{ id: nid(), role: "bot", text: GREETING }]);
   const [conversation, setConversation] = useState([]);
   const [rejectedCategories, setRejectedCategories] = useState([]);
+  const [resultsCount, setResultsCount] = useState(() => {
+    try {
+      const saved = localStorage.getItem("hari_results_count");
+      return saved ? Number(saved) : 4;
+    } catch (_) {
+      return 4;
+    }
+  });
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState([]);
   const [fav, setFav] = useState({});
@@ -763,7 +783,7 @@ function App({
     if (!messages.some((m) => m.role === "user")) return;
     const t = setTimeout(() => {
       saveChat(scope, chatId, {
-        messages, conversation, lastSuggestions, rejectedCategories, ts: Date.now(),
+        messages, conversation, lastSuggestions, rejectedCategories, resultsCount, ts: Date.now(),
       });
       const idx = loadChatIndex(scope).filter((c) => c.id !== chatId);
       idx.unshift({ id: chatId, title: chatTitleFrom(messages), ts: Date.now() });
@@ -771,13 +791,14 @@ function App({
       setChatList(idx);
     }, 500);
     return () => clearTimeout(t);
-  }, [messages, conversation, lastSuggestions, rejectedCategories, chatId, scope]);
+  }, [messages, conversation, lastSuggestions, rejectedCategories, resultsCount, chatId, scope]);
 
   const newChat = () => {
     setChatId(nid());
     setMessages([{ id: nid(), role: "bot", text: GREETING }]);
     setConversation([]);
     setRejectedCategories([]);
+    setResultsCount(4);
     setLastSuggestions([]);
     setAwaitingAnswers(false);
     setMenuOpen(false);
@@ -792,6 +813,7 @@ function App({
     setMessages(data.messages && data.messages.length ? data.messages : [{ id: nid(), role: "bot", text: GREETING }]);
     setConversation(data.conversation || []);
     setRejectedCategories(data.rejectedCategories || []);
+    setResultsCount(data.resultsCount || 4);
     setLastSuggestions(data.lastSuggestions || []);
     setAwaitingAnswers(false);
     setHistoryOpen(false);
@@ -1135,6 +1157,7 @@ function App({
           shown_categories,
           last_shown_categories,
           rejected_categories,
+          results_count: resultsCount,
         }),
       });
       let data;
@@ -1603,6 +1626,11 @@ function App({
                         {p.customizable && (
                           <span style={{ position: "absolute", top: ".4rem", left: ".4rem", zIndex: 2, display: "inline-flex", alignItems: "center", gap: ".25rem", fontSize: ".68rem", fontWeight: 600, padding: ".2rem .45rem", borderRadius: ".5rem", background: "var(--accent, #e08aa0)", color: "#1a1a1f" }}>
                             <Icon name="sparkles" size={11} /> {p.customization_type === "photo" ? "Add your photo" : "Personalise"}
+                          </span>
+                        )}
+                        {p.badge && (
+                          <span style={{ position: "absolute", top: ".4rem", right: ".4rem", zIndex: 2, display: "inline-flex", alignItems: "center", gap: ".25rem", fontSize: ".68rem", fontWeight: 700, padding: ".2rem .55rem", borderRadius: ".5rem", background: "var(--grad-brand, linear-gradient(135deg, var(--c-coral), var(--c-lilac)))", color: "#ffffff", boxShadow: "0 2px 8px rgba(0,0,0,0.4)" }}>
+                            {p.badge}
                           </span>
                         )}
                         <ProductCard

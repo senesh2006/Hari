@@ -4645,6 +4645,26 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             if cat and cat not in rejected_categories:
                 rejected_categories.append(cat)
 
+    results_count = 4
+    if context.get("results_count"):
+        try:
+            results_count = int(context.get("results_count"))
+        except Exception:
+            pass
+
+    count_m = re.search(r"\b(show|give|return|need|want|find)\b\s+(?:me\s+)?(\d+)\b", user_en, re.I)
+    if not count_m:
+        count_m = re.search(r"\b(\d+)\s+(?:results|options|gifts|suggestions|picks|choices|items|products|ideas)\b", user_en, re.I)
+    if count_m:
+        try:
+            val = int(count_m.group(1) if count_m.group(1).isdigit() else count_m.group(2))
+            if 2 <= val <= 10:
+                results_count = val
+        except Exception:
+            pass
+
+    labels_map = {}
+
     # Active budget number (client > stated-in-chat > profile default) — surfaced
     # to the model so it can judge prices itself; not a hard filter.
     budget_ceiling = _effective_budget(context, conv, profile)
@@ -4980,7 +5000,16 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             products = [p for _, p in scored]
             if not products:
                 # Curation names didn't match catalogue titles — show top finds.
-                products = _prefilter_by_strategy(extract_products(results), active_strategy)[:4]
+                products = _prefilter_by_strategy(extract_products(results), active_strategy)[:results_count]
+
+        if labels_map:
+            for p in products:
+                name = p.get("name")
+                if name in labels_map:
+                    p["badge"] = labels_map[name]
+
+        products = products[:results_count]
+
         if products:
             answer = _strip_catalog_from_answer(answer, products)
             if not (answer or "").strip():
@@ -5068,13 +5097,14 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             "survivors best-first. The product CARDS render below your reply with full details and prices, so do NOT "
             "list products or prices in your reply. Respond with ONLY a JSON object: "
             '{"keep": [<item NUMBERS to show, RANKED best first>], '
+            '"labels": {"<item number>": "a SHORT (1-3 words) event-specific label/badge for this gift, e.g. \'🥇 Best fit\', \'🎂 Birthday Pick\', \'Relaxing Vibe\', \'Luxury Pick\'"}, '
             '"reply": "Start by showing you understand the relationship and occasion in one warm line. Then lead with '
             'your #1 best match (🥇) by name and one line on why it fits the relationship/occasion/goal. If relevant, '
             'one line on what you skipped and why. 2-3 warm sentences total, no numbered list, no prices.", '
             '"alternative_question": "A single warm question asking if the user would like to see other alternative '
             'options, recommending some other specific products or gift categories (e.g. flowers, a cake, or a giftset) '
             'that could also fit."}. '
-            "Keep only items that truly fit (usually 1-4). If none are safe/appropriate, keep:[] and say so kindly.",
+            f"Keep only items that truly fit (up to {results_count} items). If none are safe/appropriate, keep:[] and say so kindly.",
         }]
         content = ""
         for rf in ({"type": "json_object"}, None):
@@ -5100,13 +5130,27 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             if prods:
                 return finalize(
                     fallback_reply or "Pulled a few options — take a look below 😊",
-                    keep_names=[p.get("name") for p in prods[:4]],
+                    keep_names=[p.get("name") for p in prods[:results_count]],
                     alternative_question=fallback_alt_q,
                 )
             return finalize(
                 "Let me double-check these actually fit before showing them — mind resending? Was a touch slow my end 😊",
                 keep_names=[],
             )
+
+        nonlocal labels_map
+        labels_map = {}
+        labels_obj = obj.get("labels") or {}
+        for k, v in labels_obj.items():
+            if isinstance(v, str) and v.strip():
+                try:
+                    idx = int(k) - 1
+                    if 0 <= idx < len(prods):
+                        name = prods[idx].get("name")
+                        labels_map[name] = v.strip()
+                except Exception:
+                    pass
+
         reply = str(obj.get("reply") or "").strip()
         alt_q = str(obj.get("alternative_question") or "").strip() or None
         if not reply:
