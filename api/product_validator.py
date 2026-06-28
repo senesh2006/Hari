@@ -9,7 +9,7 @@ The validator enforces hard constraints only:
 It returns a list of products that satisfy all hard rules, preserving the original order.
 """
 
-from .validation_rules import is_price_within_budget, is_health_safe, is_category_safe
+from .validation_rules import is_price_within_budget, is_health_safe, is_category_safe, is_hobby_safe
 
 def validate_products(products: list, strategy: dict, shown_products: list = None, rejected_categories: list = None) -> list:
     """Filter `products` according to the supplied `strategy` and recommendation memory.
@@ -50,6 +50,10 @@ def validate_products(products: list, strategy: dict, shown_products: list = Non
             
         # Filter out rejected categories
         if not is_category_safe(p, rejected_categories):
+            continue
+
+        # Filter out hobby-inconsistent keyword matches (e.g. pet food for fishing)
+        if not is_hobby_safe(p, strategy):
             continue
 
         if avoid and any(term in name_desc for term in avoid):

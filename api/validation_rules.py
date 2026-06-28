@@ -52,3 +52,13 @@ def is_category_safe(product: dict, rejected_categories: list) -> bool:
         if cat_lower in group or cat_lower in name or cat_lower in desc:
             return False
     return True
+
+def is_hobby_safe(product: dict, strategy: dict) -> bool:
+    name_desc = f"{product.get('name', '')} {product.get('description', '')}".lower()
+    interests = [str(i).lower() for i in (strategy.get("interests") or [])]
+    is_fishing_related = any("fishing" in interest for interest in interests)
+    if is_fishing_related:
+        bad_terms = ["fish food", "fish oil", "fish tank", "pet fish", "ornamental fish", "growel bits", "slowly sinking"]
+        if any(term in name_desc for term in bad_terms):
+            return False
+    return True

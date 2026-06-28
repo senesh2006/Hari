@@ -5093,8 +5093,11 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             + strat_ctx
             + "\n\nAs the concierge, SCORE each on: relationship fit, occasion fit, interest fit, budget fit, "
             "constraint SAFETY (allergy/dietary/etc.), social appropriateness, and gift quality. REJECT every poor, "
-            "unsafe, over-budget, or irrelevant one — never keep a product just because it was returned. RANK the "
-            "survivors best-first. The product CARDS render below your reply with full details and prices, so do NOT "
+            "unsafe, over-budget, or irrelevant one — never keep a product just because it was returned. "
+            "Reject completely irrelevant literal/keyword matches that do not fit the user's semantic intent "
+            "(e.g. NEVER suggest pet fish food, fish tanks, or fish oil health supplements if the recipient "
+            "likes the sport of fishing; instead look for outdoor comforts like flasks, hats, or snack bowls). "
+            "RANK the survivors best-first. The product CARDS render below your reply with full details and prices, so do NOT "
             "list products or prices in your reply. Respond with ONLY a JSON object: "
             '{"keep": [<item NUMBERS to show, RANKED best first>], '
             '"labels": {"<item number>": "a SHORT (1-3 words) event-specific label/badge for this gift, e.g. \'🥇 Best fit\', \'🎂 Birthday Pick\', \'Relaxing Vibe\', \'Luxury Pick\'"}, '
