@@ -365,6 +365,8 @@ function SettingsPanel({
   onClose,
   onProfileUpdate,
   toast,
+  resultsCount,
+  setResultsCount,
 }) {
   const prefs = profile?.preferences || {};
   const [avoid, setAvoid] = useState(prefs.avoid_list || []);
@@ -647,6 +649,39 @@ function App({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [chatList, setChatList] = useState([]);
   const [expectProducts, setExpectProducts] = useState(false);
+  const [wrappingSelected, setWrappingSelected] = useState(false);
+  const [cardTone, setCardTone] = useState("warm");
+  const [cardRecipient, setCardRecipient] = useState("");
+  const [generatedCardMsg, setGeneratedCardMsg] = useState("");
+  const [cardLoading, setCardLoading] = useState(false);
+
+  const generateAICard = async () => {
+    setCardLoading(true);
+    try {
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate_card",
+          recipient_name: cardRecipient,
+          tone: cardTone,
+          items: cart
+        })
+      });
+      const data = await response.json();
+      if (data.ok && data.card_message) {
+        setGeneratedCardMsg(data.card_message);
+        toast("Greeting card written! 📝", "sparkles");
+      } else {
+        toast("Could not write card - using default.", "alert-triangle");
+        setGeneratedCardMsg(`Wishing you a wonderful celebration! Enjoy these lovely gifts! 😊`);
+      }
+    } catch (e) {
+      setGeneratedCardMsg(`Wishing you a wonderful celebration! Enjoy these lovely gifts! 😊`);
+    } finally {
+      setCardLoading(false);
+    }
+  };
 
   const restoredRef = useRef(false);
   const feedRef = useRef(null);
@@ -763,7 +798,7 @@ function App({
     { tx: "More like these", icon: "copy", prompt: "More like these" },
   ];
   const cartCount = cart.reduce((n, c) => n + c.qty, 0);
-  const cartSubtotal = () => cart.reduce((s, c) => s + priceNum(c) * c.qty, 0);
+  const cartSubtotal = () => cart.reduce((s, c) => s + priceNum(c) * c.qty, 0) + (wrappingSelected ? 750 : 0);
   const uiText = (k) => (UI_TEXT[currentLang] || UI_TEXT.en)[k];
   const closeMenu = () => setMenuOpen(false);
 
@@ -1633,6 +1668,9 @@ function App({
                             {p.badge}
                           </span>
                         )}
+                        <span style={{ position: "absolute", bottom: ".4rem", left: ".4rem", zIndex: 2, display: "inline-flex", alignItems: "center", gap: ".25rem", fontSize: ".68rem", fontWeight: 600, padding: ".2rem .45rem", borderRadius: ".5rem", background: "rgba(28, 28, 36, 0.85)", border: "1px solid var(--border)", color: "var(--primary)", backdropFilter: "blur(4px)" }}>
+                          <Icon name="truck" size={11} /> {checkoutCity || profile?.default_city || "Colombo"}: 1-2 days
+                        </span>
                         <ProductCard
                           {...p}
                           favorite={!!fav[p.name]}
@@ -1685,11 +1723,43 @@ function App({
         <div className="composer-inner">
           <p className="status">{listening ? "Listening…" : status}</p>
           {!started && (
-            <div className="cards">
-              {CHIPS.map((c) => (
-                <SuggestionCard key={c.prompt} icon={c.icon} tone={c.tone} onClick={() => send(c.prompt)}>
-                  {c.tx}
-                </SuggestionCard>
+            <React.Fragment>
+              {recipients && recipients.length > 0 && (
+                <div style={{ marginBottom: "1rem" }}>
+                  <p className="chip-section-title">Saved Recipients</p>
+                  <div className="cards" style={{ display: "flex", flexWrap: "wrap", gap: ".5rem" }}>
+                    {recipients.map((r) => {
+                      const prompt = `Find a gift for my ${r.relationship || "friend"} ${r.name} ${r.interests?.length ? "who likes " + r.interests.join(", ") : ""}`;
+                      return (
+                        <SuggestionCard key={r.id} icon="user" tone="mint" onClick={() => send(prompt)}>
+                          {r.name} ({r.relationship || "Friend"})
+                        </SuggestionCard>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <p className="chip-section-title">Gifting Ideas</p>
+              <div className="cards">
+                {CHIPS.map((c) => (
+                  <SuggestionCard key={c.prompt} icon={c.icon} tone={c.tone} onClick={() => send(c.prompt)}>
+                    {c.tx}
+                  </SuggestionCard>
+                ))}
+              </div>
+            </React.Fragment>
+          )}
+          {started && (
+            <div className="vibe-chips">
+              {["✨ Elegant", "🌸 Romantic", "🌿 Natural", "🧸 Playful", "🍫 Gourmet"].map((vibe) => (
+                <button
+                  type="button"
+                  key={vibe}
+                  className="vibe-chip"
+                  onClick={() => send(`make the vibe ${vibe.substring(2).toLowerCase()}`)}
+                >
+                  {vibe}
+                </button>
               ))}
             </div>
           )}
@@ -1723,53 +1793,131 @@ function App({
         <div className="body">
           {!checkoutView ? (
             <React.Fragment>
+              {cart.length > 0 && (
+                <div className="hamper-progress-container">
+                  <div className="hamper-progress-header">
+                    <span>🛍️ Gift Hamper Status</span>
+                    <span>
+                      {cart.length === 1 ? "Starter (1 item)" :
+                       cart.length === 2 ? "Cozy Hamper (2 items)" :
+                       cart.length >= 5 ? "Grand Luxury Hamper (5+ items)" :
+                       "Premium Gift Basket"}
+                    </span>
+                  </div>
+                  <div className="hamper-progress-bar-bg">
+                    <div
+                      className="hamper-progress-bar-fill"
+                      style={{ width: `${Math.min(100, (cart.length / 5) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               {cart.length === 0 ? (
                 <div className="empty">
                   <span className="ic"><Icon name="gift" size={40} strokeWidth={1.5} /></span>
                   Your cart is empty.<br />Add items from the suggestions, or just ask me to.
                 </div>
-              ) : cart.map((c) => (
-                <div key={c.name}>
-                  <div className="citem">
-                    {c.image ? <img className="ci-img" src={c.image} alt="" /> : <div className="ci-noimg"><Icon name="gift" size={20} /></div>}
-                    <div className="ci-main">
-                      <div className="ci-name">{c.name}</div>
-                      <div className="ci-price">{fmtMoney(priceNum(c) * c.qty, c.currency)}</div>
-                    </div>
-                    <div className="qty">
-                      <button type="button" aria-label="Decrease" onClick={() => setQty(c.name, -1)}><Icon name="minus" size={14} /></button>
-                      <span>{c.qty}</span>
-                      <button type="button" aria-label="Increase" onClick={() => setQty(c.name, 1)}><Icon name="plus" size={14} /></button>
-                    </div>
-                    <button type="button" className="ci-rm" title="Remove" onClick={() => setQty(c.name, -c.qty)}><Icon name="trash-2" size={16} /></button>
-                  </div>
-                  {c.customizable && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: ".5rem", alignItems: "center", margin: ".1rem 0 .6rem", paddingLeft: ".2rem" }}>
-                      <span style={{ fontSize: ".72rem", opacity: .7, display: "inline-flex", alignItems: "center", gap: ".3rem" }}>
-                        <Icon name="sparkles" size={13} /> Personalise
-                      </span>
-                      <input
-                        style={{ flex: "1 1 8rem", minWidth: "8rem", fontSize: ".82rem", padding: ".35rem .5rem", borderRadius: ".5rem", border: "1px solid var(--border, #3a3a46)", background: "var(--surface, #1c1c24)", color: "inherit" }}
-                        placeholder={c.customization_type === "photo" ? "Note for the print (optional)" : "Name / message to print"}
-                        value={c.customization?.text || ""}
-                        maxLength={120}
-                        onChange={(e) => setItemCustom(c.name, { text: e.target.value })}
-                      />
-                      {c.customization_type === "photo" && (
-                        isGuest ? (
-                          <span style={{ fontSize: ".72rem", opacity: .7 }}>Sign in to attach a photo</span>
-                        ) : (
-                          <label style={{ fontSize: ".76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: ".3rem", padding: ".35rem .55rem", borderRadius: ".5rem", border: "1px solid var(--border, #3a3a46)" }}>
-                            <Icon name={c.customization?.image_url ? "check" : "image"} size={14} />
-                            {c.customization?.image_url ? "Photo attached" : "Attach photo"}
-                            <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onUploadCustomPhoto(c, e.target.files?.[0])} />
-                          </label>
-                        )
+              ) : (
+                <React.Fragment>
+                  {cart.map((c) => (
+                    <div key={c.name}>
+                      <div className="citem">
+                        {c.image ? <img className="ci-img" src={c.image} alt="" /> : <div className="ci-noimg"><Icon name="gift" size={20} /></div>}
+                        <div className="ci-main">
+                          <div className="ci-name">{c.name}</div>
+                          <div className="ci-price">{fmtMoney(priceNum(c) * c.qty, c.currency)}</div>
+                        </div>
+                        <div className="qty">
+                          <button type="button" aria-label="Decrease" onClick={() => setQty(c.name, -1)}><Icon name="minus" size={14} /></button>
+                          <span>{c.qty}</span>
+                          <button type="button" aria-label="Increase" onClick={() => setQty(c.name, 1)}><Icon name="plus" size={14} /></button>
+                        </div>
+                        <button type="button" className="ci-rm" title="Remove" onClick={() => setQty(c.name, -c.qty)}><Icon name="trash-2" size={16} /></button>
+                      </div>
+                      {c.customizable && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: ".5rem", alignItems: "center", margin: ".1rem 0 .6rem", paddingLeft: ".2rem" }}>
+                          <span style={{ fontSize: ".72rem", opacity: .7, display: "inline-flex", alignItems: "center", gap: ".3rem" }}>
+                            <Icon name="sparkles" size={13} /> Personalise
+                          </span>
+                          <input
+                            style={{ flex: "1 1 8rem", minWidth: "8rem", fontSize: ".82rem", padding: ".35rem .5rem", borderRadius: ".5rem", border: "1px solid var(--border, #3a3a46)", background: "var(--surface, #1c1c24)", color: "inherit" }}
+                            placeholder={c.customization_type === "photo" ? "Note for the print (optional)" : "Name / message to print"}
+                            value={c.customization?.text || ""}
+                            maxLength={120}
+                            onChange={(e) => setItemCustom(c.name, { text: e.target.value })}
+                          />
+                          {c.customization_type === "photo" && (
+                            isGuest ? (
+                              <span style={{ fontSize: ".72rem", opacity: .7 }}>Sign in to attach a photo</span>
+                            ) : (
+                              <label style={{ fontSize: ".76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: ".3rem", padding: ".35rem .55rem", borderRadius: ".5rem", border: "1px solid var(--border, #3a3a46)" }}>
+                                <Icon name={c.customization?.image_url ? "check" : "image"} size={14} />
+                                {c.customization?.image_url ? "Photo attached" : "Attach photo"}
+                                <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onUploadCustomPhoto(c, e.target.files?.[0])} />
+                              </label>
+                            )
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              ))}
+                  ))}
+
+                  {/* Premium Gift Wrapping toggle */}
+                  <div className="check-row" style={{ marginTop: "1rem", padding: "0.5rem 0", borderTop: "1px solid var(--border)" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", margin: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={wrappingSelected}
+                        onChange={(e) => setWrappingSelected(e.target.checked)}
+                      />
+                      <span>🎀 Add Premium Box & Ribbon Hamper Wrapping (+LKR 750)</span>
+                    </label>
+                  </div>
+
+                  {/* AI Greeting Card generator widget */}
+                  <div className="card-generator-box" style={{ marginBottom: "1rem" }}>
+                    <h4><Icon name="sparkles" size={15} /> Write Greeting Card with AI</h4>
+                    <div className="card-generator-controls">
+                      <input
+                        type="text"
+                        placeholder="Recipient Name (optional)"
+                        value={cardRecipient}
+                        onChange={(e) => setCardRecipient(e.target.value)}
+                        style={{ flex: 1, fontSize: ".82rem", padding: ".35rem .5rem", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface-3)" }}
+                      />
+                      <select value={cardTone} onChange={(e) => setCardTone(e.target.value)} style={{ padding: ".35rem", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface-3)", color: "inherit" }}>
+                        <option value="warm">Warm</option>
+                        <option value="romantic">Romantic</option>
+                        <option value="funny">Funny</option>
+                        <option value="formal">Formal</option>
+                      </select>
+                    </div>
+                    <Button variant="soft" size="sm" full disabled={cardLoading} onClick={generateAICard}>
+                      {cardLoading ? "Writing card..." : "Generate Card Message"}
+                    </Button>
+                    {generatedCardMsg && (
+                      <div style={{ marginTop: "0.5rem" }}>
+                        <textarea
+                          rows={3}
+                          value={generatedCardMsg}
+                          onChange={(e) => setGeneratedCardMsg(e.target.value)}
+                          placeholder="Greeting card message..."
+                        />
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => {
+                            navigator.clipboard.writeText(generatedCardMsg);
+                            toast("Copied to clipboard!", "check");
+                          }}
+                        >
+                          📋 Copy message
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </React.Fragment>
+              )}
             </React.Fragment>
           ) : (
             <form ref={checkoutFormRef} className="formgrid" onSubmit={placeOrder}>
@@ -1920,6 +2068,8 @@ function App({
           onClose={() => setSettingsOpen(false)}
           onProfileUpdate={onProfileUpdate}
           toast={toast}
+          resultsCount={resultsCount}
+          setResultsCount={setResultsCount}
         />
       )}
       {peopleOpen && !isGuest && (

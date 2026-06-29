@@ -353,3 +353,129 @@
   padding: .35rem;
 }
 .people-form-title { font-size: .9rem; margin: .5rem 0 .65rem; }
+
+/* Vibe chips styling */
+.vibe-chips {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.25rem 0.25rem 0.5rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.vibe-chips::-webkit-scrollbar {
+  display: none;
+}
+.vibe-chip {
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-3, #1c1c24);
+  color: var(--text, #ececf1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.vibe-chip:hover {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface-3));
+}
+
+/* Recipient Vault Chips title styling */
+.chip-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 0.75rem 0 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Gift Hamper progress bar */
+.hamper-progress-container {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: var(--surface-2, #16161e);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.hamper-progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.76rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+.hamper-progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.hamper-progress-bar-fill {
+  height: 100%;
+  background: var(--grad-brand, linear-gradient(135deg, #ff5e62, #ff9966));
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+/* AI greeting card generator box */
+.card-generator-box {
+  margin-top: 1rem;
+  padding: 0.85rem;
+  background: var(--surface-2, #16161e);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+.card-generator-box h4 {
+  font-size: 0.85rem;
+  margin: 0 0 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.card-generator-controls {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.card-generator-controls select {
+  flex: 1;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  color: inherit;
+}
+.card-generator-box textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.84rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  color: inherit;
+  resize: vertical;
+  margin-bottom: 0.4rem;
+  box-sizing: border-box;
+}
+
+/* Product card delivery estimates */
+.delivery-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+  margin-top: 0.35rem;
+}

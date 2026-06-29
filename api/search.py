@@ -5516,6 +5516,27 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
     )
 
 
+def generate_card_message(recipient_name: str, tone: str, items: list) -> str:
+    item_str = ", ".join([str(i.get("name") or "") for i in items if i.get("name")])
+    prompt = (
+        f"You are a warm, thoughtful greeting card writer.\n"
+        f"Write a short, beautiful greeting card message (1-3 sentences) for a recipient named '{recipient_name or 'my loved one'}'.\n"
+        f"The tone of the card should be '{tone or 'warm'}'.\n"
+        f"The gifts accompanying this card are: {item_str}.\n"
+        f"Return ONLY the card message text. Do not include quotes, wrappers, or any introductory text."
+    )
+    messages = [
+        {"role": "system", "content": "You are an expert greeting card writer. Write only the card text itself."},
+        {"role": "user", "content": prompt}
+    ]
+    try:
+        completion = strategy_chat(messages, timeout=10)
+        content = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        return content.strip().strip('"').strip("'")
+    except Exception:
+        return f"Wishing you a wonderful celebration! Enjoy these lovely gifts! 😊"
+
+
 # =============================================================================
 # HTTP handler
 # =============================================================================
@@ -5558,6 +5579,14 @@ class handler(BaseHTTPRequestHandler):
             data = json.loads(raw or b"{}")
         except json.JSONDecodeError:
             return self._respond(400, {"ok": False, "error": "Body must be JSON."})
+
+        # Check for card generation action
+        if data.get("action") == "generate_card":
+            recipient_name = data.get("recipient_name")
+            tone = data.get("tone")
+            items = data.get("items") or []
+            msg = generate_card_message(recipient_name, tone, items)
+            return self._respond(200, {"ok": True, "card_message": msg})
 
         conversation = data.get("messages")
         if not isinstance(conversation, list) or not conversation:
