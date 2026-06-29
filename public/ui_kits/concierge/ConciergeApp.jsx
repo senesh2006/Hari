@@ -354,6 +354,31 @@ const DIETARY_OPTIONS = [
   { value: "no_dairy", label: "No dairy" },
 ];
 
+function DashboardHeader({ activeTab, setTab, title }) {
+  return (
+    <React.Fragment>
+      <div style={{ display: "flex", alignItems: "center", width: "100%", marginBottom: ".4rem" }}>
+        <h3 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: "1.1rem" }}>{title}</h3>
+        <IconButton icon="x" title="Close" style={{ marginLeft: "auto" }} onClick={() => setTab(null)} />
+      </div>
+      <div className="dashboard-tabs">
+        <button type="button" className={"db-tab-btn" + (activeTab === "preferences" ? " active" : "")} onClick={() => setTab("preferences")}>
+          <Icon name="sliders" size={14} /> <span>Settings</span>
+        </button>
+        <button type="button" className={"db-tab-btn" + (activeTab === "people" ? " active" : "")} onClick={() => setTab("people")}>
+          <Icon name="users" size={14} /> <span>People</span>
+        </button>
+        <button type="button" className={"db-tab-btn" + (activeTab === "history" ? " active" : "")} onClick={() => setTab("history")}>
+          <Icon name="clock" size={14} /> <span>Chats</span>
+        </button>
+        <button type="button" className={"db-tab-btn" + (activeTab === "wishlist" ? " active" : "")} onClick={() => setTab("wishlist")}>
+          <Icon name="heart" size={14} /> <span>Wishlist</span>
+        </button>
+      </div>
+    </React.Fragment>
+  );
+}
+
 function SettingsPanel({
   profile,
   supabase,
@@ -367,6 +392,8 @@ function SettingsPanel({
   toast,
   resultsCount,
   setResultsCount,
+  setTab,
+  isGuest,
 }) {
   const prefs = profile?.preferences || {};
   const [avoid, setAvoid] = useState(prefs.avoid_list || []);
@@ -413,10 +440,8 @@ function SettingsPanel({
 
   return (
     <aside className="drawer open side-drawer" aria-label="Settings">
-      <header>
-        <Icon name="sparkles" size={20} />
-        <h3>Your gifting style</h3>
-        <IconButton icon="x" title="Close" style={{ marginLeft: "auto" }} onClick={onClose} />
+      <header style={{ flexDirection: "column", gap: ".75rem", alignItems: "stretch" }}>
+        <DashboardHeader activeTab="preferences" setTab={setTab} title="Gifting Preferences" />
       </header>
       <div className="body settings-body">
         <label>Typical budget (LKR)</label>
@@ -486,6 +511,8 @@ function RecipientsPanel({
   onClose,
   onRefresh,
   toast,
+  setTab,
+  isGuest,
 }) {
   const empty = { name: "", relationship: "", birthday: "", anniversary: "", city: "", interests: "", avoid: "", notes: "" };
   const [form, setForm] = useState(empty);
@@ -510,22 +537,26 @@ function RecipientsPanel({
     if (!form.name.trim() || !supabase || !session?.user?.id) return;
     setBusy(true);
     try {
-      const row = {
-        id: editingId || undefined,
+      const payload = {
         name: form.name.trim(),
         relationship: form.relationship.trim() || null,
         birthday: form.birthday || null,
         anniversary: form.anniversary || null,
         city: form.city.trim() || null,
-        interests: form.interests.split(",").map((s) => s.trim()).filter(Boolean),
-        avoid: form.avoid.split(",").map((s) => s.trim()).filter(Boolean),
+        interests: form.interests ? form.interests.split(",").map((x) => x.trim()).filter(Boolean) : null,
+        avoid: form.avoid ? form.avoid.split(",").map((x) => x.trim()).filter(Boolean) : null,
         notes: form.notes.trim() || null,
       };
-      await window.KaprukaSupabase.upsertRecipient(supabase, session.user.id, row);
-      await onRefresh();
+      if (editingId) {
+        await window.KaprukaSupabase.updateRecipient(supabase, session.user.id, editingId, payload);
+        toast("Contact updated", "check");
+      } else {
+        await window.KaprukaSupabase.createRecipient(supabase, session.user.id, payload);
+        toast("Contact added", "check");
+      }
       setForm(empty);
       setEditingId(null);
-      toast("Contact saved", "heart");
+      await onRefresh();
     } catch (e) {
       toast(e.message || "Could not save", "x");
     } finally {
@@ -534,9 +565,9 @@ function RecipientsPanel({
   };
 
   const remove = async (id) => {
-    if (!supabase) return;
+    if (!supabase || !session?.user?.id) return;
     try {
-      await window.KaprukaSupabase.deleteRecipient(supabase, id);
+      await window.KaprukaSupabase.deleteRecipient(supabase, session.user.id, id);
       await onRefresh();
       if (editingId === id) {
         setForm(empty);
@@ -548,12 +579,27 @@ function RecipientsPanel({
     }
   };
 
+  if (isGuest) {
+    return (
+      <aside className="drawer open side-drawer" aria-label="My people">
+        <header style={{ flexDirection: "column", gap: ".75rem", alignItems: "stretch" }}>
+          <DashboardHeader activeTab="people" setTab={setTab} title="My People" />
+        </header>
+        <div className="body" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem", textAlign: "center", padding: "2rem" }}>
+          <Icon name="users" size={48} strokeWidth={1.5} style={{ color: "var(--primary)" }} />
+          <div>
+            <h3 style={{ margin: 0 }}>Recipient Profile Vault</h3>
+            <p style={{ fontSize: ".88rem", color: "var(--muted)", marginTop: ".4rem" }}>Sign in to save and manage details about the people you buy gifts for.</p>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="drawer open side-drawer" aria-label="My people">
-      <header>
-        <Icon name="heart" size={20} />
-        <h3>My people</h3>
-        <IconButton icon="x" title="Close" style={{ marginLeft: "auto" }} onClick={onClose} />
+      <header style={{ flexDirection: "column", gap: ".75rem", alignItems: "stretch" }}>
+        <DashboardHeader activeTab="people" setTab={setTab} title="My People" />
       </header>
       <div className="body settings-body">
         {recipients.length === 0 && (
@@ -621,7 +667,9 @@ function App({
   const [fav, setFav] = useState({});
   const [wishlist, setWishlist] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
-  const [wishlistOpen, setWishlistOpen] = useState(false);
+  const [dashboardTab, setDashboardTab] = useState(null); // 'preferences', 'people', 'history', 'wishlist'
+  const wishlistOpen = dashboardTab === "wishlist";
+  const setWishlistOpen = (v) => setDashboardTab(v ? "wishlist" : null);
   const [checkoutView, setCheckoutView] = useState(false);
   const [listening, setListening] = useState(false);
   const [status, setStatus] = useState("Tap the mic to talk, or type below");
@@ -640,13 +688,16 @@ function App({
   const [placing, setPlacing] = useState(false);
   const [modal, setModal] = useState(null);
   const [profileHydrated, setProfileHydrated] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [peopleOpen, setPeopleOpen] = useState(false);
+  const settingsOpen = dashboardTab === "preferences";
+  const setSettingsOpen = (v) => setDashboardTab(v ? "preferences" : null);
+  const peopleOpen = dashboardTab === "people";
+  const setPeopleOpen = (v) => setDashboardTab(v ? "people" : null);
   const [recipients, setRecipients] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [chatId, setChatId] = useState(() => nid());
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyOpen = dashboardTab === "history";
+  const setHistoryOpen = (v) => setDashboardTab(v ? "history" : null);
   const [chatList, setChatList] = useState([]);
   const [expectProducts, setExpectProducts] = useState(false);
   const [wrappingSelected, setWrappingSelected] = useState(false);
@@ -1668,7 +1719,7 @@ function App({
                             {p.badge}
                           </span>
                         )}
-                        <span style={{ position: "absolute", bottom: ".4rem", left: ".4rem", zIndex: 2, display: "inline-flex", alignItems: "center", gap: ".25rem", fontSize: ".68rem", fontWeight: 600, padding: ".2rem .45rem", borderRadius: ".5rem", background: "rgba(28, 28, 36, 0.85)", border: "1px solid var(--border)", color: "var(--primary)", backdropFilter: "blur(4px)" }}>
+                        <span style={{ position: "absolute", top: p.customizable ? "2.2rem" : ".4rem", left: ".4rem", zIndex: 2, display: "inline-flex", alignItems: "center", gap: ".25rem", fontSize: ".68rem", fontWeight: 600, padding: ".2rem .45rem", borderRadius: ".5rem", background: "rgba(28, 28, 36, 0.85)", border: "1px solid var(--border)", color: "var(--primary)", backdropFilter: "blur(4px)" }}>
                           <Icon name="truck" size={11} /> {checkoutCity || profile?.default_city || "Colombo"}: 1-2 days
                         </span>
                         <ProductCard
@@ -2000,10 +2051,8 @@ function App({
       </aside>
 
       <aside className={"drawer" + (wishlistOpen ? " open" : "")} aria-label="Wishlist">
-        <header>
-          <Icon name="heart" size={20} />
-          <h3>Your wishlist</h3>
-          <IconButton icon="x" title="Close" style={{ marginLeft: "auto" }} onClick={() => setWishlistOpen(false)} />
+        <header style={{ flexDirection: "column", gap: ".75rem", alignItems: "stretch" }}>
+          <DashboardHeader activeTab="wishlist" setTab={setDashboardTab} title="Your Wishlist" />
         </header>
         <div className="body">
           {wishlist.length === 0 ? (
@@ -2028,10 +2077,8 @@ function App({
       </aside>
 
       <aside className={"drawer" + (historyOpen ? " open" : "")} aria-label="Chat history">
-        <header>
-          <Icon name="clock" size={20} />
-          <h3>Your chats</h3>
-          <IconButton icon="x" title="Close" style={{ marginLeft: "auto" }} onClick={() => setHistoryOpen(false)} />
+        <header style={{ flexDirection: "column", gap: ".75rem", alignItems: "stretch" }}>
+          <DashboardHeader activeTab="history" setTab={setDashboardTab} title="Your Chats" />
         </header>
         <div className="body">
           <button type="button" className="hist-new" onClick={newChat}>
@@ -2056,7 +2103,7 @@ function App({
         </div>
       </aside>
 
-      {settingsOpen && !isGuest && (
+      {settingsOpen && (
         <SettingsPanel
           profile={profile}
           supabase={supabase}
@@ -2070,9 +2117,11 @@ function App({
           toast={toast}
           resultsCount={resultsCount}
           setResultsCount={setResultsCount}
+          setTab={setDashboardTab}
+          isGuest={isGuest}
         />
       )}
-      {peopleOpen && !isGuest && (
+      {peopleOpen && (
         <RecipientsPanel
           recipients={recipients}
           supabase={supabase}
@@ -2080,6 +2129,8 @@ function App({
           onClose={() => setPeopleOpen(false)}
           onRefresh={refreshRecipients}
           toast={toast}
+          setTab={setDashboardTab}
+          isGuest={isGuest}
         />
       )}
 
