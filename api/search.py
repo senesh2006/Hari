@@ -3630,10 +3630,12 @@ exactly this shape:
   "reject_rule": "one sentence: what to DROP (off-strategy, wrong gender, over budget, unsafe for a constraint, too romantic/expensive for this relationship)",
   "explain_hint": "one warm sentence justifying the pick AND, if relevant, why you avoided something (e.g. 'since you've only spoken a few times, I kept it light')"
 }
-8. RECOMMENDATION MEMORY: If you see "RECOMMENDATION MEMORY" in the context:
+8. RECOMMENDATION MEMORY & USER ADDITIONS: If you see "RECOMMENDATION MEMORY" in the context:
 - Avoid proposing any categories or products that have been previously shown or rejected.
 - You MUST generate "search_queries" targeting completely fresh, different categories.
 - You MUST add those shown/rejected categories to the "avoid" list in the JSON response.
+- CRITICAL: If the user explicitly asks for an item/category (e.g. "I need a cake", "also need flowers", "get a card too"), you MUST immediately REMOVE that item/category from the "avoid" list for this turn and generate "search_queries" specifically for it!
+- Handle common typos in user queries (e.g. "cacke" -> "cake", "flowrs" -> "flowers", "choclate" -> "chocolate").
 
 Keep queries specific, gendered, occasion- and budget-appropriate. Never include adult/intimate items. If you truly \
 lack enough to strategise, return {"insufficient": true}."""
@@ -5236,6 +5238,53 @@ def search(conversation, allow_questions: bool = True, context: dict | None = No
             except Exception:
                 active_strategy = None
             if active_strategy:
+                # Programmatic safeguard for requested terms and avoid list
+                avoid_list = active_strategy.get("avoid") or []
+                user_words = {w.lower() for w in re.findall(r"[a-zA-Z]+", user_en)}
+                
+                requested_keywords = []
+                keyword_map = {
+                    "cacke": "cake",
+                    "cake": "cake",
+                    "cakes": "cake",
+                    "flowers": "flowers",
+                    "flower": "flowers",
+                    "flowrs": "flowers",
+                    "chocolate": "chocolate",
+                    "chocolates": "chocolate",
+                    "choclate": "chocolate",
+                    "choclates": "chocolate",
+                    "card": "card",
+                    "cards": "card",
+                }
+                
+                for word in user_words:
+                    if word in keyword_map:
+                        mapped = keyword_map[word]
+                        requested_keywords.append(mapped)
+                
+                if requested_keywords:
+                    new_avoid = []
+                    for term in avoid_list:
+                        term_lower = str(term).lower().strip()
+                        if any(kw in term_lower for kw in requested_keywords):
+                            continue
+                        new_avoid.append(term)
+                    active_strategy["avoid"] = new_avoid
+                    
+                    queries = active_strategy.get("search_queries") or []
+                    for kw in requested_keywords:
+                        if not any(kw in q.lower() for q in queries):
+                            if kw == "cake":
+                                queries.insert(0, "birthday cake")
+                            elif kw == "flowers":
+                                queries.insert(0, "flower bouquet")
+                            elif kw == "chocolate":
+                                queries.insert(0, "chocolate box")
+                            else:
+                                queries.insert(0, kw)
+                    active_strategy["search_queries"] = queries[:5]
+
                 trace.append({"tool": "gift_strategy", "arguments": active_strategy})
                 clarify = str(active_strategy.get("clarify_question") or "").strip()
                 if (
