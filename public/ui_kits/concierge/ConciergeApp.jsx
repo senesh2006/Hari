@@ -1547,11 +1547,8 @@ function App({
                     onClick={() => {
                       closeMenu();
                       setChatList(loadChatIndex(scope));
-                      setHistoryOpen(true);
-                      setPeopleOpen(false);
-                      setSettingsOpen(false);
+                      setDashboardTab("history");
                       setCartOpen(false);
-                      setWishlistOpen(false);
                     }}
                   >
                     <Icon name="clock" size={18} />
@@ -1565,10 +1562,8 @@ function App({
                       role="menuitem"
                       onClick={() => {
                         closeMenu();
-                        setPeopleOpen(true);
-                        setSettingsOpen(false);
+                        setDashboardTab("people");
                         setCartOpen(false);
-                        setWishlistOpen(false);
                       }}
                     >
                       <Icon name="users" size={18} />
@@ -1582,8 +1577,7 @@ function App({
                       role="menuitem"
                       onClick={() => {
                         closeMenu();
-                        setSettingsOpen(true);
-                        setPeopleOpen(false);
+                        setDashboardTab("preferences");
                         setCartOpen(false);
                       }}
                     >
@@ -1597,10 +1591,8 @@ function App({
                     role="menuitem"
                     onClick={() => {
                       closeMenu();
-                      setWishlistOpen(true);
+                      setDashboardTab("wishlist");
                       setCartOpen(false);
-                      setPeopleOpen(false);
-                      setSettingsOpen(false);
                     }}
                   >
                     <Icon name="heart" size={18} />
