@@ -1782,14 +1782,6 @@ function App({
                   </div>
                 </div>
               )}
-              <p className="chip-section-title">Gifting Ideas</p>
-              <div className="cards">
-                {CHIPS.map((c) => (
-                  <SuggestionCard key={c.prompt} icon={c.icon} tone={c.tone} onClick={() => send(c.prompt)}>
-                    {c.tx}
-                  </SuggestionCard>
-                ))}
-              </div>
             </React.Fragment>
           )}
           {started && (
