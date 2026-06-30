@@ -141,7 +141,7 @@ body { height: 100dvh; overflow: hidden; }
   z-index: 50;
   animation: k-pop-in .2s var(--ease-out) both;
   transform-origin: top right;
-  max-height: calc(100dvh - 84px);
+  max-height: 850px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
